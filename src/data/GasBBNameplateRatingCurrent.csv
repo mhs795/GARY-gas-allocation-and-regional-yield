@@ -1,0 +1,209 @@
+facilityname,facilityid,facilitytype,capacitytype,receiptlocation,ReceiptLocationName,deliverylocation,DeliveryLocationName,capacitydescription,flowdirection,capacityquantity,effectivedate,description,LastUpdated
+Kincora,544253,PROD,MDQ,-1,,-1,,,NONE,20.000,29 Aug 2019 00:00:00,,2019/08/29 16:17:08
+Minerva,530043,PROD,MDQ,-1,,-1,,,NONE,0.000,09 Sep 2019 00:00:00,,2019/09/09 08:26:24
+Camden,520075,PROD,MDQ,-1,,-1,,,NONE,10.000,01 Apr 2022 00:00:00,,2022/03/25 10:05:08
+Dry Creek Power Station,555026,BBGPG,MDQ,-1,,-1,,,NONE,77.000,08 Jun 2023 00:00:00,Capacity quantity on the Dry Creek Connection Point,2023/06/08 16:46:19
+Mintaro Power Station,555031,BBGPG,MDQ,-1,,-1,,,NONE,32.300,08 Jun 2023 00:00:00,Capacity quantity on the Mintaro Connection Point,2023/06/08 16:46:19
+Pelican Point Power Station,555089,BBGPG,MDQ,-1,,-1,,,NONE,140.000,08 Jun 2023 00:00:00,Capacity quantity on the Pelican Point Connection Point,2023/06/08 16:34:46
+Bomaderry Gas Pipeline,523202,PIPE,MDQ,1290103,Bomaderry Receipt,1290104,Shoalhaven Starches Cogeneration Plant,"Fully contracted of the Pipeline, owner of capacity and owner of the gas",NONE,42.000,09 Jun 2023 00:00:00,Initial nameplate rating provided on registration,2023/06/09 09:09:22
+Shoalhaven Starches Cogeneration Plant,523203,BBLARGE,MDQ,-1,,-1,,,NONE,23.000,09 Jun 2023 00:00:00,Initial nameplate rating provided on registration,2023/06/09 09:09:22
+Barker Inlet Power Station,555088,BBGPG,MDQ,-1,,-1,,,NONE,165.000,17 Aug 2023 00:00:00,NamePlate Rating provided on registration,2023/08/17 11:40:09
+Bell Bay CCGT,577016,BBGPG,MDQ,-1,,-1,,,NONE,40.400,17 Aug 2023 00:00:00,NamePlate Rating provided on registration,2023/08/17 11:31:58
+Bell Bay GGT,577014,BBGPG,MDQ,-1,,-1,,,NONE,37.600,17 Aug 2023 00:00:00,NamePlate Rating provided on registration,2023/08/17 11:31:43
+Bell Bay OCGT,577015,BBGPG,MDQ,-1,,-1,,,NONE,15.000,17 Aug 2023 00:00:00,NamePlate Rating provided on registration,2023/08/17 11:31:51
+Braemar 2 Power Station,544085,BBGPG,MDQ,-1,,-1,,,NONE,150.000,17 Aug 2023 00:00:00,NamePlate Rating provided on registration,2023/08/17 11:20:14
+Queensland Aluminia,544012,BBLARGE,MDQ,-1,,-1,,,NONE,54.020,17 Aug 2023 00:00:00,NamePlate Rating provided on registration,2023/08/17 10:17:13
+Somerton,533174,BBGPG,MDQ,-1,,-1,,,NONE,99.800,17 Aug 2023 00:00:00,NamePlate Rating provided on registration,2023/08/17 09:53:02
+Swanbank Power Station,544104,BBGPG,MDQ,-1,,-1,,,NONE,107.400,17 Aug 2023 00:00:00,NamePlate Rating provided on registration,2023/08/17 11:21:46
+Torrens Island PS,555041,BBGPG,MDQ,-1,,-1,,,NONE,303.000,17 Aug 2023 00:00:00,NamePlate Rating provided on registration,2023/08/17 11:22:40
+Yelcherr,580180,PROD,MDQ,-1,,-1,,,NONE,108.000,11 Sep 2023 00:00:00,No change,2023/09/11 18:18:07
+Colongra,523120,BBGPG,MDQ,-1,,-1,,,NONE,78.000,15 Nov 2023 00:00:00,Initial submission,2023/11/15 09:29:16
+Laverton,533201,BBGPG,MDQ,-1,,-1,,,NONE,100.000,15 Nov 2023 00:00:00,Initial submission,2023/11/15 09:29:16
+Valley Power GPG,535024,BBGPG,MDQ,-1,,-1,,,NONE,115.200,15 Nov 2023 00:00:00,Initial submission,2023/11/15 09:29:16
+McArthur River Mine,580220,BBGPG,MDQ,-1,,-1,,,NONE,15.000,04 Dec 2023 00:00:00,Initial submission,2023/12/04 08:16:11
+Mereenie,580040,PROD,MDQ,-1,,-1,,,NONE,55.000,07 Mar 2024 00:00:00,Update name plate capacity,2024/03/07 11:05:40
+Palm Valley,580060,PROD,MDQ,-1,,-1,,,NONE,15.000,07 Mar 2024 00:00:00,Update name plate capacity,2024/03/07 11:05:40
+ICF,530071,COMPRESSOR,MDQ,-1,,-1,,Maximum Compression capacity,NONE,230.000,18 Mar 2024 00:00:00,Same nameplate rating capacity,2024/03/18 10:27:13
+Iona UGS,530042,STOR,MDQ,-1,,-1,,,DELIVERY,570.000,18 Mar 2024 00:00:00,Same nameplate rating capacity,2024/03/18 10:27:21
+Iona UGS,530042,STOR,MDQ,-1,,-1,,,RECEIPT,155.000,18 Mar 2024 00:00:00,Same nameplate rating capacity,2024/03/18 10:27:21
+Iona UGS,530042,STOR,STORAGE,-1,,-1,,,NONE,24400.000,18 Mar 2024 00:00:00,Same nameplate rating capacity,2024/03/18 10:27:21
+Viva Energy Refinery,535018,BBLARGE,MDQ,-1,,-1,,,NONE,22.440,19 Mar 2024 00:00:00,Viva Energy AEMO Requirements 09Mar2023,2024/03/19 09:21:39
+Channel Island Power Station,580231,BBGPG,MDQ,-1,,-1,,,NONE,53.500,09 May 2024 00:00:00,Initial Submission,2024/05/09 09:56:59
+Katherine Power Station,580233,BBGPG,MDQ,-1,,-1,,,NONE,10.400,09 May 2024 00:00:00,Initial Submission,2024/05/09 10:26:48
+Owen Springs Power Station,580235,BBGPG,MDQ,-1,,-1,,,NONE,90.000,09 May 2024 00:00:00,Initial Submission,2024/05/09 10:34:48
+Ron Goodin Power Station,580234,BBGPG,MDQ,-1,,-1,,,NONE,40.000,09 May 2024 00:00:00,Initial Submission,2024/05/09 10:33:07
+Weddell Power Station,580232,BBGPG,MDQ,-1,,-1,,,NONE,33.000,09 May 2024 00:00:00,Initial Submission,2024/05/09 09:58:45
+Australia Pacific LNG,544273,LNGEXPORT,MDQ,-1,,-1,,,PROCESSED,1591.000,19 Aug 2024 00:00:00,2023 Name Plate Capacity  ,2024/08/19 11:30:26
+Qenos,533203,BBLARGE,MDQ,-1,,-1,,,NONE,0.000,04 Mar 2025 00:00:00,No Change,2025/03/04 11:34:30
+Qenos (Botany),523207,BBLARGE,MDQ,-1,,-1,,,NONE,6.000,04 Mar 2025 00:00:00,No Change,2025/03/04 11:34:30
+Diamantina Power Station,544077,BBGPG,MDQ,-1,,-1,,,NONE,67.000,12 Mar 2025 00:00:00,Maximum facility capacity achieved under normal operating conditions,2025/03/12 14:07:45
+Whyalla Steelworks,555085,BBLARGE,MDQ,-1,,-1,,,NONE,35.000,01 Apr 2025 00:00:00,Maximum Capacity of the Whyalla Steelworks,2025/02/12 13:17:46
+ADELAIDE METROPOLITAN DISTRIBUTION Blended-NETWORK,555293,BDIST,MDQ,-1,,-1,,,NONE,419.100,30 Jun 2025 00:00:00,New BB blended gas distribution system.  Reporting blend in part of network receiving hydrogen from HyPSA at Tonsley (MDQ 1.3 TJ),2025/06/30 10:53:06
+Longford,530040,PROD,MDQ,-1,,-1,,,NONE,720.000,07 Jul 2025 00:00:00,Improved plant performance,2025/07/07 09:24:53
+Hunter Power Station,523210,BBGPG,MDQ,-1,,-1,,,NONE,165.600,30 Jul 2025 00:00:00,Kurri Kurri (HUNTER) Power Station,2025/07/30 13:23:17
+Tanami GP,580210,PIPE,MDQ,1808047,Amadeus Gas Pipeline Receipt Point,1808061,Dead Bullock Soak Power Station Outlet Point,Amadeus to Dead Bullock Soak,NONE,6.630,15 Dec 2025 00:00:00,Amadeus Pipeline Receipt to Dead Bullocks Soak,2025/12/15 13:08:04
+Tanami GP,580210,PIPE,MDQ,1808047,Amadeus Gas Pipeline Receipt Point,1808071,Granites Power Station Outlet Point,Amadeus to Granites,NONE,3.440,15 Dec 2025 00:00:00,Amadeus Pipeline Receipt to Granites,2025/12/15 13:08:04
+Yarwun,544282,BBGPG,MDQ,-1,,-1,,,NONE,118.000,17 Dec 2025 00:00:00,The 2018 GMRG published Yarwun station capacity is 118TJ/d,2025/12/17 08:27:17
+Orbost,530041,PROD,MDQ,-1,,-1,,,NONE,71.000,29 Jan 2026 00:00:00,Increase in nameplate capacity,2026/01/29 16:09:55
+MPL,530061,PIPE,MDQ,1305069,MIJ-001 - MPL,1305071,Mortlake PRMS Delivery,Maximum pipeline capacity achieved under normal operating conditions for flow from MIJ-001 Receipt point to Mortlake PRMS Delivery point.,NONE,150.000,04 Feb 2026 00:00:00,Initial Nameplate Capacity Rating,2026/02/04 15:29:03
+PCI,530060,PIPE,MDQ,1305053,Athena (PCI) Receipt,1305059,SWP Delivery,Maximum pipeline capacity achieved under normal operating conditions for West to East flow from Minerva East Receipt point to SWP Delivery point. Capacity is limited by operating pressures.,NONE,400.000,04 Feb 2026 00:00:00,Initial Nameplate Capacity Rating,2026/02/04 15:29:02
+PCI,530060,PIPE,MDQ,1305058,SWP Receipt,1305054,Athena (PCI) Delivery,Maximum pipeline capacity achieved under normal operating conditions for East to West flow from SWP Receipt point to Minerva East Delivery point. Capacity is limited by operating pressures.,NONE,400.000,04 Feb 2026 00:00:00,Initial Nameplate Capacity Rating,2026/02/04 15:29:02
+Condamine Power Station,544274,BBGPG,MDQ,-1,,-1,,,NONE,24.000,19 Feb 2026 00:00:00,This is maximum quantity of natural gas that the Condamine Power Station (Large User facility) can receive from a pipeline on a gas day,2026/02/19 13:49:41
+Australian Paper (Opal),535021,BBLARGE,MDQ,-1,,-1,,,NONE,30.000,27 Feb 2026 00:00:00,No Change,2026/02/27 12:02:45
+Lang Lang,530039,PROD,MDQ,-1,,-1,,,NONE,67.000,06 Mar 2026 00:00:00,nameplate,2026/03/06 09:57:13
+Otway,530044,PROD,MDQ,-1,,-1,,,NONE,205.000,06 Mar 2026 00:00:00,nameplate,2026/03/06 09:56:57
+Bairnsdale Power Station,535020,BBGPG,MDQ,-1,,-1,,,NONE,37.200,10 Mar 2026 00:00:00,Normal Firm Capacity,2026/03/10 11:08:30
+Braemar Power Station,544252,BBGPG,MDQ,-1,,-1,,,NONE,120.000,10 Mar 2026 00:00:00,Normal Firm Capacity,2026/03/10 11:08:02
+Atlas East Central Processing Facility,640008,PROD,MDQ,-1,,-1,,,NONE,57.000,12 Mar 2026 00:00:00,Maximum Capacity,2026/03/12 16:07:54
+RMNGPF,640011,PROD,MDQ,-1,,-1,,,NONE,28.500,12 Mar 2026 00:00:00,Maximum Capacity,2026/03/12 16:13:23
+Rolleston,540073,PROD,MDQ,-1,,-1,,,NONE,10.000,13 Mar 2026 00:00:00,Nameplate restricted to current operating well capacity of approximately 10.0 TJ/d. Note nominal facilities nameplate capacity remains at 15 TJ/d.,2026/03/09 10:21:50
+Yellowbank,540074,PROD,MDQ,-1,,-1,,,NONE,18.000,13 Mar 2026 00:00:00,Capacity has been reduced to reflect overall well decline offset by new wells coming on line which results in a peak throughput increasing to 18.0 TJ/d. Note nominal Facilities nameplate capacity remains at 30 TJ/d but reduced to 26 TJ due to current proc,2026/03/09 10:21:50
+B1PL,540077,PIPE,MDQ,1404250,Tipton to Braemar,1404256,Braemar-RBP,Normal Firm Capacity,NONE,80.000,15 Mar 2026 00:00:00,Normal Firm Capacity,2026/03/15 13:01:05
+B1PL,540077,PIPE,MDQ,1404251,Daandine to Braemar,1404252,Braemar to Braemar Power Station,Normal Firm Capacity,NONE,40.000,15 Mar 2026 00:00:00,Normal Firm Capacity,2026/03/15 13:01:05
+B1PL,540077,PIPE,MDQ,1404252,Braemar to Braemar Power Station,1404255,Windibri to Braemar,Normal Firm Capacity,NONE,40.000,15 Mar 2026 00:00:00,Normal Firm Capacity,2026/03/15 13:01:05
+B1PL,540077,PIPE,MDQ,1404255,Windibri to Braemar,1404252,Braemar to Braemar Power Station,Normal Firm Capacity,NONE,120.000,15 Mar 2026 00:00:00,Normal Firm Capacity,2026/03/15 13:01:05
+ATHENA,535014,PROD,MDQ,-1,,-1,,,NONE,22.000,18 Mar 2026 00:00:00,Updated based on offshore well performance,2026/03/18 10:05:28
+BCF,540047,COMPRESSOR,MDQ,-1,,-1,,Ballera Compression Nameplate Rating,NONE,120.000,19 Mar 2026 00:00:00,Ballera Compression Nameplate Rating,2026/03/19 18:07:01
+Moomba,550045,PROD,MDQ,-1,,-1,,,NONE,290.000,19 Mar 2026 00:00:00,Moomba Plant (inclusive of LDB Storage capacity),2026/03/19 18:07:01
+Moomba Storage,550046,STOR,MDQ,-1,,-1,,,DELIVERY,4.900,19 Mar 2026 00:00:00,MLDB Withdrawal Capacity,2026/03/19 18:07:01
+Moomba Storage,550046,STOR,MDQ,-1,,-1,,,RECEIPT,0.000,19 Mar 2026 00:00:00,MLDB Injection Capacity,2026/03/19 18:07:01
+Moomba Storage,550046,STOR,STORAGE,-1,,-1,,,NONE,70000.000,19 Mar 2026 00:00:00,MLDB Maximum Storage Holding Capacity (HCAP),2026/03/19 18:07:01
+Arcadia,540101,PROD,MDQ,-1,,-1,,,NONE,105.000,23 Mar 2026 00:00:00,Capacity matched to field production,2026/03/23 15:43:09
+CRWP,540098,PIPE,MDQ,1404175,CRWP Receipt Point,1404180,WDS to SWQP Delivery point,Capacity that can flow to Wallumbilla,NONE,175.000,23 Mar 2026 00:00:00,Capacity that can flow to Wallumbilla,2026/03/23 15:43:07
+CRWP,540098,PIPE,MDQ,1404179,WCS3 Receipt from SWQP,1404174,CRWP Delivery point,Capacity that can flow to GTP,NONE,950.000,23 Mar 2026 00:00:00,Capacity that can flow to GTP,2026/03/23 15:43:07
+Fairview,540070,PROD,MDQ,-1,,-1,,,NONE,295.000,23 Mar 2026 00:00:00,Capacity matched to field production,2026/03/23 15:43:09
+GLNG (Curtis Island),544276,LNGEXPORT,MDQ,-1,,-1,,Capacity that can be processed by LNG plant,PROCESSED,1384.000,23 Mar 2026 00:00:00,Capacity that can be processed by LNG plant,2026/03/23 15:43:07
+GLNG (Curtis Island),544276,LNGEXPORT,MDQ,-1,,-1,,Capacity that can be received by LNG plant,RECEIPT,1497.000,23 Mar 2026 00:00:00,Capacity that can be received by LNG plant,2026/03/23 15:43:07
+GLNG Pipeline,540092,PIPE,MDQ,1404172,CRWP Receipt point,1404160,GTP Outlet Station Receipt point,Capacity that can flow to LNG plant,NONE,1430.000,23 Mar 2026 00:00:00,Capacity that can flow to LNG plant,2026/03/23 15:43:07
+Meridian,540064,PROD,MDQ,-1,,-1,,,NONE,54.000,23 Mar 2026 00:00:00,Annual Submission,2026/03/23 07:35:43
+Pipeline Compression Station,544279,COMPRESSOR,MDQ,-1,,-1,,Capacity that can be processed by PCS,NONE,175.000,23 Mar 2026 00:00:00,Capacity that can be processed by PCS,2026/03/23 15:43:07
+Roma,540095,PROD,MDQ,-1,,-1,,,NONE,245.000,23 Mar 2026 00:00:00,"Storage withdrawal capacity, within the total Roma figure, matched to current storage inventory levels",2026/03/23 15:43:12
+RUGS,540040,STOR,MDQ,-1,,-1,,,DELIVERY,10.000,23 Mar 2026 00:00:00,RUGS (storage) withdrawal capacity matched to current storage inventory levels,2026/03/23 15:43:12
+RUGS,540040,STOR,MDQ,-1,,-1,,,RECEIPT,150.000,23 Mar 2026 00:00:00,RUGS (storage) injection capacity matched to current storage inventory levels,2026/03/23 15:43:12
+RUGS,540040,STOR,STORAGE,-1,,-1,,,NONE,54000.000,23 Mar 2026 00:00:00,Volume that can be stored in RUGS,2026/03/23 15:43:12
+Scotia,540072,PROD,MDQ,-1,,-1,,,NONE,110.000,23 Mar 2026 00:00:00,Capacity matched to field production,2026/03/23 15:43:12
+Wallumbilla Compression Station,544280,COMPRESSOR,MDQ,-1,,-1,,Capacity that can be processed by WCS,NONE,177.000,23 Mar 2026 00:00:00,Capacity that can be processed by WCS,2026/03/23 15:43:07
+RNMGP,640012,PIPE,MDQ,1490109,Mimas Gas Pipeline Receipt Point,1490110,Mimas Gas Pipeline Delivery to Mooga QGP,Mimas to Mooga,NONE,54.000,24 Mar 2026 00:00:00,Maximum Capacity,2026/03/24 09:41:46
+RNMGP,640012,PIPE,MDQ,1490109,Mimas Gas Pipeline Receipt Point,1490111,Mimas Gas Pipeline Delivery to CRWP,Mimas to CRWP,NONE,54.000,24 Mar 2026 00:00:00,Maximum Capacity,2026/03/24 09:41:46
+Bellevue,540083,PROD,MDQ,-1,,-1,,,NONE,254.000,25 Mar 2026 00:00:00,This capacity is the amount of gas that the Bellevue production facility is able to process.,2026/03/23 09:07:28
+EO4PL,540055,PIPE,MDQ,1404246,Windibri Connection Point (E04),1404249,Kenya Connection Point (E04),This transmission capacity is the amount of gas that the E04 pipeline is able to receipt from Windbri Connection Point and deliver to Kenya Connection points.,NONE,147.000,25 Mar 2026 00:00:00,no change from previous,2026/03/23 09:07:28
+EO4PL,540055,PIPE,MDQ,1404248,Kenya Connection Point (E04),1404247,Windibri Connection Point (E04),This transmission capacity is the amount of gas that the E04 pipeline is able to receipt from Kenya Connection Point and deliver to Windbri Connection points.,NONE,180.000,25 Mar 2026 00:00:00,no change from previous,2026/03/23 09:07:28
+Jordan,540088,PROD,MDQ,-1,,-1,,,NONE,507.000,25 Mar 2026 00:00:00,This capacity is the amount of gas that the Jordan production facility is able to process.,2026/03/23 09:07:28
+Kenya,540075,PROD,MDQ,-1,,-1,,,NONE,184.000,25 Mar 2026 00:00:00,This capacity is the amount of gas that the Kenya Gas Plant production facility is able to process.,2026/03/23 09:07:28
+QCLNG LNG Plant,544272,LNGEXPORT,MDQ,-1,,-1,,,PROCESSED,1420.000,25 Mar 2026 00:00:00,The capacity is the  maximum quantity of natural gas that the QCLNG LNG export facility can process to a liquefied state on a gas day under normal operating conditions,2026/03/24 20:26:29
+QCLNG LNG Plant,544272,LNGEXPORT,MDQ,-1,,-1,,,RECEIPT,1573.000,25 Mar 2026 00:00:00,The capacity is the maximum quantity of natural gas that the QCLNG LNG export facility  facility can receive from a pipeline on a gas day under normal operating conditions,2026/03/24 20:26:29
+Ruby Jo,540082,PROD,MDQ,-1,,-1,,,NONE,507.000,25 Mar 2026 00:00:00,This capacity is the amount of gas that the Ruby Jo production facility is able to process.,2026/03/23 09:07:28
+WGP,540091,PIPE,MDQ,1404143,Woleebee Creek,1404194,Curtis Island  - D,This transmission capacity is the amount of gas that the WGP is able to Store and deliver to Curtis Island,NONE,1598.000,25 Mar 2026 00:00:00,no change from previous,2026/03/23 09:07:28
+Windibri,540069,PROD,MDQ,-1,,-1,,,NONE,147.000,25 Mar 2026 00:00:00,This capacity is the amount of gas that the Windibri production facility is able to process.,2026/03/23 09:07:28
+Woleebee Creek,540087,PROD,MDQ,-1,,-1,,,NONE,761.000,25 Mar 2026 00:00:00,This capacity is the amount of gas that the Woleebee Creek production facility is able to process.,2026/03/23 09:07:28
+Bolivar,555008,BBGPG,MDQ,-1,,-1,,,NONE,33.600,26 Mar 2026 00:00:00,no change to initial registry,2026/03/26 16:29:51
+DDPS,544027,BBGPG,MDQ,-1,,-1,,,NONE,150.000,26 Mar 2026 00:00:00,nameplate rating of GPG,2026/03/26 12:52:07
+Ladbroke Grove PS,555086,BBGPG,MDQ,-1,,-1,,,NONE,24.000,26 Mar 2026 00:00:00,nameplate rating of GPG,2026/03/26 12:52:07
+Mortlake PS,530063,BBGPG,MDQ,-1,,-1,,,NONE,150.000,26 Mar 2026 00:00:00,nameplate rating of GPG,2026/03/26 12:52:07
+Osborne,555033,BBGPG,MDQ,-1,,-1,,,NONE,53.300,26 Mar 2026 00:00:00,nameplate rating of GPG,2026/03/26 12:52:07
+Quarantine Power Station,555087,BBGPG,MDQ,-1,,-1,,,NONE,135.000,26 Mar 2026 00:00:00,nameplate rating of GPG,2026/03/26 12:52:07
+Roma Power Station,540120,BBGPG,MDQ,-1,,-1,,,NONE,19.200,26 Mar 2026 00:00:00,nameplate rating of GPG,2026/03/26 12:52:07
+Smithfield Energy Facility,522004,BBGPG,MDQ,-1,,-1,,,NONE,36.000,26 Mar 2026 00:00:00,no change to initial registry,2026/03/26 16:31:02
+Uranquinty Power Station,522047,BBGPG,MDQ,-1,,-1,,,NONE,180.000,26 Mar 2026 00:00:00,nameplate rating of GPG,2026/03/26 12:52:07
+PVP,580070,PIPE,MDQ,1808030,Palm Valley Interconnect Receipt Point,1808049,Ron Goodin Power Station delivery point,Maximum daily capacity of the Palm Valley Pipeline,NONE,16.000,30 Mar 2026 00:00:00,Current nameplate capacity of the Palm Valley Pipeline,2026/03/30 02:59:07
+APLNG Pipeline,540093,PIPE,MDQ,1404048,DDP to APLNG Pipeline,1404050,Curtis Island,Standing Capacity on Facility,NONE,1760.000,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 17:33:27
+B2PL,540071,PIPE,MDQ,1404235,DAA-B2PL,1404241,WIN-B2PL,"80.5km between Windibri - Daandine and upstream pressure constraint of 6.5MPa, the max flow is approximately 5955001sm3/day. At typical HV this equates to a nameplate rating of 219.144 TJ/day.",NONE,219.144,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 11:00:12
+Combabula,540094,PROD,MDQ,-1,,-1,,,NONE,305.000,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 17:33:27
+Condabri Central,540080,PROD,MDQ,-1,,-1,,,NONE,195.000,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 17:33:27
+Condabri North,540090,PROD,MDQ,-1,,-1,,,NONE,185.000,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 17:33:27
+Condabri South,540086,PROD,MDQ,-1,,-1,,,NONE,190.000,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 17:33:27
+Eurombah Creek,540089,PROD,MDQ,-1,,-1,,,NONE,185.000,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 17:33:27
+Hallett,555029,BBGPG,MDQ,-1,,-1,,,NONE,82.086,31 Mar 2026 00:00:00,Capacity under normal operating conditions.,2026/03/18 16:01:08
+Jeerelang,533161,BBGPG,MDQ,-1,,-1,,,NONE,163.680,31 Mar 2026 00:00:00,Capacity under normal operating conditions.,2026/03/18 16:08:42
+Loy Yang B,533163,BBGPG,MDQ,-1,,-1,,,NONE,146.000,31 Mar 2026 00:00:00,Large User Facility,2026/03/20 14:25:58
+LYB Transmission Pipeline,535023,PIPE,MDQ,1390036,LYB Pipe Receipt from VTS,1390037,LYB Pipe delivery to LYB GPG,Normal Firm Capacity,NONE,146.000,31 Mar 2026 00:00:00,LYB Pipeline,2026/03/20 14:25:58
+Newport,533171,BBGPG,MDQ,-1,,-1,,,NONE,111.130,31 Mar 2026 00:00:00,Capacity under normal operating conditions.,2026/03/18 16:04:19
+Oakey PS,544095,BBGPG,MDQ,-1,,-1,,,NONE,96.000,31 Mar 2026 00:00:00,This is maximum quantity of natural gas that the OakeyPower Station (Large User facility) can receive from a pipeline on a gas day,2026/02/02 15:12:53
+Orana,540084,PROD,MDQ,-1,,-1,,,NONE,195.000,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 17:33:27
+Orica,544011,BBLARGE,MDQ,-1,,-1,,,NONE,9.500,31 Mar 2026 00:00:00,No Change,2026/03/31 13:17:21
+Peat,540065,PROD,MDQ,-1,,-1,,,NONE,12.000,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 17:33:27
+Reedy Creek,540085,PROD,MDQ,-1,,-1,,,NONE,190.000,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 17:33:27
+SEPS,550061,PIPE,MDQ,1505076,SESA,1505078,Apcel MS,SEP Forward Haul Capacity,NONE,16.000,31 Mar 2026 00:00:00,Forward Haul,2026/03/31 17:52:05
+Spring Gully,540066,PROD,MDQ,-1,,-1,,,NONE,64.000,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 17:33:27
+Strathblane,540067,PROD,MDQ,-1,,-1,,,NONE,73.000,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 17:33:27
+Talinga,540076,PROD,MDQ,-1,,-1,,,NONE,125.000,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 17:33:27
+Tallawarra,522002,BBGPG,MDQ,-1,,-1,,,NONE,180.000,31 Mar 2026 00:00:00,Capacity under normal operating conditions.,2026/03/18 15:52:45
+Tallawarra Pipeline,523201,PIPE,MDQ,1390028,Tallawarra Pipeline Receipt,1390029,Tallawarra Pipeline Delivery,Pipeline capacity under normal operating conditions,NONE,192.000,31 Mar 2026 00:00:00,Pipeline capacity under normal operating conditions,2026/03/18 16:11:19
+Taloona,540068,PROD,MDQ,-1,,-1,,,NONE,70.000,31 Mar 2026 00:00:00,Standing Capacity,2026/03/31 17:33:27
+VTS,530110,PIPE,MDQ,1203003,M126 Culcairn Injection,1303054,M115 KEON PARK EAST,The amount of gas that Culcairn is able to inject into the VTS.,NONE,221.000,31 Mar 2026 00:00:00,No change in capacity,2026/03/31 10:49:07
+VTS,530110,PIPE,MDQ,1303000,M001 Longford Injection,1303046,M003 DANDENONG NORTH,"The amount of gas that Longford, VicHub, TasHub and Lang Lang are able to inject into the VTS.",NONE,1114.000,31 Mar 2026 00:00:00,No change in capacity,2026/03/31 10:49:07
+VTS,530110,PIPE,MDQ,1303008,M101 Iona UGS Injection,1303084,M008 BROOKLYN,"The amount of gas that can be transported from Otway, Mortlake, Athena, Iona Underground Gas Storage and SEAgas to Brooklyn City Gate.",NONE,515.000,31 Mar 2026 00:00:00,No change in capacity,2026/03/31 10:49:07
+VTS,530110,PIPE,MDQ,1303054,M115 KEON PARK EAST,1203004,M126 Culcairn Withdrawal,The amount of gas that Culcairn is able to withdraw from the VTS.,NONE,225.000,31 Mar 2026 00:00:00,No change in capacity,2026/03/31 10:49:07
+VTS,530110,PIPE,MDQ,1303084,M008 BROOKLYN,1303007,M101 Iona UGS Withdrawal,"The amount of gas that can be transported from Wollert and Brooklyn City Gate to Iona Underground Gas Storage, SEAGas and the Western Transmission System.",NONE,330.000,31 Mar 2026 00:00:00,No change in capacity,2026/03/31 10:49:07
+BPP,530030,PIPE,MDQ,1303211,BassGas Receipt,1303210,Pakenham Metering Point,NamePlate Capacity for BPP,NONE,67.000,01 Apr 2026 00:00:00,BPP NamePlate  Rating,2026/04/01 09:38:43
+BPP,530030,PIPE,MDQ,1307016,Pakenham Metering Point (Receipt Point),1307034,South Gippsland Gate Station Delivery,NamePlate Capacity for BPP,NONE,67.000,01 Apr 2026 00:00:00,BPP NamePlate  Rating,2026/04/01 09:38:43
+NGS,520060,STOR,MDQ,-1,,-1,,,DELIVERY,120.000,01 Apr 2026 00:00:00,Normal Operation,2026/03/13 13:29:54
+NGS,520060,STOR,MDQ,-1,,-1,,,RECEIPT,12.500,01 Apr 2026 00:00:00,Normal Operation,2026/03/13 13:29:54
+NGS,520060,STOR,STORAGE,-1,,-1,,,NONE,1500.000,01 Apr 2026 00:00:00,Normal Operation,2026/03/13 13:29:54
+PCA,550052,PIPE,MDQ,1305050,UGS Receipt,1505088,Pelican Point Delivery - PS,Maximum pipeline capacity achieved under normal operating conditions for flow from Iona Receipt Zone points to the Adelaide Delivery Zone points.,NONE,258.879,01 Apr 2026 00:00:00,Updated PCA Capacity,2026/02/04 15:29:00
+Phosphate Hill,544081,BBLARGE,MDQ,-1,,-1,,,NONE,32.000,01 Apr 2026 00:00:00,No change to nameplate capacity for the Facility.,2026/03/09 09:55:58
+Dandenong Liquefaction Plant,535025,STOR,MDQ,-1,,-1,,,DELIVERY,6.591,13 Apr 2026 00:00:00,Nameplate Capacity,2026/04/13 17:38:56
+Dandenong Liquefaction Plant,535025,STOR,MDQ,-1,,-1,,,RECEIPT,6.591,13 Apr 2026 00:00:00,Nameplate Capacity,2026/04/13 17:38:56
+MAPS,550054,PIPE,MDQ,1505013,Moomba Injection,1505035,Pelican Point,MAP Southern Haul Capacity,NONE,252.000,30 Apr 2026 00:00:00,Southern Haul,2026/04/29 17:08:07
+SSP,540103,PIPE,MDQ,1404219,Silver Springs Delivery Stream,1404220,Silver Springs Storage,Wallumbilla to Silver Springs,NONE,40.000,04 May 2026 00:00:00,Normal Operation,2026/05/04 11:10:26
+SSP,540103,PIPE,MDQ,1404221,Silver Springs Storage,1404218,Wallumbilla1 Delivery Stream,Delivered to RBP at Wallumbilla,NONE,40.000,04 May 2026 00:00:00,Normal Operation,2026/05/04 11:10:26
+SSSF,540062,STOR,MDQ,-1,,-1,,,DELIVERY,5.300,04 May 2026 00:00:00,Normal Operation,2026/05/04 11:10:26
+SSSF,540062,STOR,MDQ,-1,,-1,,,RECEIPT,25.000,04 May 2026 00:00:00,Normal Operation,2026/05/04 11:10:26
+SSSF,540062,STOR,STORAGE,-1,,-1,,,NONE,45000.000,04 May 2026 00:00:00,Normal Operation,2026/05/04 11:10:26
+MRP,580100,PIPE,MDQ,1808026,Daly Waters Scrap Station on the AGP,1808069,McArthur River Mine Delivery Point,Forward Haul Capacity,NONE,15.000,10 May 2026 00:00:00,Forward Haul Capacity,2026/05/09 09:21:03
+TGP,570050,PIPE,MDQ,1307000,Longford Victoria,1707012,Bell Bay CCGT,TGP Forward Haul Capacity,NONE,129.000,28 May 2026 00:00:00,Standard capacity,2026/05/28 22:02:05
+Daandine,540050,PROD,MDQ,-1,,-1,,,NONE,74.340,29 May 2026 00:00:00,Standing Capacity,2026/05/29 13:51:59
+Tipton,540051,PROD,MDQ,-1,,-1,,,NONE,37.000,29 May 2026 00:00:00,Standing Capacity,2026/05/29 13:51:33
+Snapper Point,555090,BBGPG,MDQ,-1,,-1,,,NONE,39.840,04 Jun 2026 00:00:00,Change,2026/06/04 12:05:08
+Adelaide Brighton,555091,BBLARGE,MDQ,-1,,-1,,,NONE,18.000,06 Jun 2026 00:00:00,No change,2026/06/06 12:38:41
+ATGP,640013,PIPE,MDQ,1490107,Atlas Processing Facility to Atlas Gas Pipeline,1490032,Atlas Lateral to DDP Delivery point,Atlas Receipt to Atlas Delivery,NONE,54.000,06 Jun 2026 00:00:00,Default Capacity,2026/06/06 18:00:14
+Atlas,544261,PROD,MDQ,-1,,-1,,,NONE,48.000,06 Jun 2026 00:00:00,Default Capacity,2026/06/06 18:01:22
+BlueScope,523204,BBLARGE,MDQ,-1,,-1,,,NONE,35.000,06 Jun 2026 00:00:00,No change,2026/06/06 11:56:41
+ColongraGP,520090,PIPE,MDQ,1202075,Munmorah Compressor Station,1202076,Munmorah Delivery Station,Munmorah Compressor Station to Munmorah Delivery Station,NONE,43.000,06 Jun 2026 00:00:00,Munmorah Compressor Station - Munmorah Delivery Station,2026/06/06 18:00:19
+DDP,540097,PIPE,MDQ,1404021,Talinga GPF,1404027,DDPS,Talinga GPF to DDPS,NONE,161.700,06 Jun 2026 00:00:00,Updated Capacity,2026/06/06 18:00:14
+DDP,540097,PIPE,MDQ,1404021,Talinga GPF,1404030,Wallumbilla (Run 6),Talinga GPF to Wallumbilla,NONE,414.000,06 Jun 2026 00:00:00,Updated Capacity,2026/06/06 18:00:14
+DDP,540097,PIPE,MDQ,1404026,Ruby,1404021,Talinga GPF,Ruby to Talinga GPF,NONE,549.980,06 Jun 2026 00:00:00,Uplift capacity,2026/06/06 18:00:14
+DDP,540097,PIPE,MDQ,1404030,Wallumbilla (Run 6),1404021,Talinga GPF,Wallumbilla to Talinga GPF,NONE,284.000,06 Jun 2026 00:00:00,Updated Capacity,2026/06/06 18:00:14
+DDP,540097,PIPE,MDQ,1404033,Taloona,1404034,SG Manifold,Taloona to SG Manifold,NONE,40.000,06 Jun 2026 00:00:00,Nameplate Capacity,2026/06/06 18:00:14
+DDP,540097,PIPE,MDQ,1404035,SG Manifold,1404030,Wallumbilla (Run 6),SG Manifold to Wallumbilla,NONE,153.500,06 Jun 2026 00:00:00,Updated Capacity,2026/06/06 18:00:14
+EGP,520047,PIPE,MDQ,1302000,Longford,1202003,Horsley Park,Longford - Horsley Park,NONE,349.030,06 Jun 2026 00:00:00,EGP winter capacity,2026/06/06 18:00:07
+NGP,580050,PIPE,MDQ,1490098,Mt Isa,1808074,Tennant Creek,Mt Isa to Tennant Creek,NONE,60.000,06 Jun 2026 00:00:00,Western Mode Capacity. Nil western mode capacity is available when pipeline is in eastern mode. ,2026/06/06 18:01:18
+NGP,580050,PIPE,MDQ,1808028,Phillip Creek,1404296,Mt Isa,Tennant Creek to Mt Isa,NONE,90.000,06 Jun 2026 00:00:00,Eastern Mode Capacity,2026/06/06 18:01:18
+Orica (Kooragang Island),523206,BBLARGE,MDQ,-1,,-1,,,NONE,42.000,06 Jun 2026 00:00:00,No Change,2026/06/06 11:44:42
+QGP,540058,PIPE,MDQ,1404003,Wallumbilla SWQP to QGP Receipt Point,1404009,Gladstone,Wallumbilla - Gladstone,NONE,145.000,06 Jun 2026 00:00:00,Summer Capacity,2026/06/06 18:01:09
+QGP,540058,PIPE,MDQ,1404009,Gladstone,1404004,Wallumbilla QGP to RBP Delivery Point,Gladstone - Wallumbilla,NONE,33.000,06 Jun 2026 00:00:00,Capacity effective from 13 March 2026,2026/06/06 18:01:09
+RNP,640009,PIPE,MDQ,1490103,Roma North Gas Pipeline Receipt Point,1490028,Roma North Gas Pipeline Delivery Point,Roma North to CRWP,NONE,52.600,06 Jun 2026 00:00:00,Default Capacity,2026/06/06 18:01:13
+Roma North,544260,PROD,MDQ,-1,,-1,,,NONE,24.000,06 Jun 2026 00:00:00,Default Capacity,2026/06/06 18:01:20
+RPL,540110,PIPE,MDQ,1404291,SWQP Receipt (Gate Station),1404292,Roma Power Station Offtake,FULL CAPACITY AVAILABLE,NONE,19.200,06 Jun 2026 00:00:00,NO CHANGES TO CAPACITY,2026/06/06 16:30:57
+RPL,540110,PIPE,MDQ,1404291,SWQP Receipt (Gate Station),1404293,Roma Township Offtake,FULL CAPACITY AVAILABLE,NONE,19.200,06 Jun 2026 00:00:00,NO CHANGES TO CAPACITY,2026/06/06 16:30:57
+VicHub,532005,PIPE,MDQ,1390011,Eastern Gas Pipeline - Receipt,1390013,Victorian Transmission System - Delivery,Eastern Gas Pipeline - Declared Transmission System,NONE,150.000,06 Jun 2026 00:00:00,Nameplate Rating,2026/06/06 18:01:26
+AGP,580010,PIPE,MDQ,1808012,Palm Valley,1808003,Channel Island LP,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,165.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+Atlas to Reedy Creek Pipeline,640007,PIPE,MDQ,1490101,Atlas East Central Processing Facility,1490100,Reedy Creek to Wallumbilla Pipeline,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,189.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+BGP,580020,PIPE,MDQ,1808018,Wadeye Delivery Stream,1808020,Ban Ban Springs Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,108.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+BWP,540096,PIPE,MDQ,1404069,Berwyndale Entry Delivery Stream,1404073,Silver Springs Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,164.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+BWP,540096,PIPE,MDQ,1404071,BWP from SWQP (Wallumbilla) Delivery Stream,1404070,Berwyndale Exit Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,276.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+CGP,540059,PIPE,MDQ,1404225,CGP NGP Entry Delivery Stream,1404074,CGP Ballera Exit,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,65.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+CGP,540059,PIPE,MDQ,1404227,CGP Ballera Entry,1404079,Mt Isa Mines Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,119.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+CWP,520054,PIPE,MDQ,1202071,Marsden Delivery Stream,1202062,Dubbo Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,13.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+Dandenong LNG,530038,STOR,MDQ,-1,,-1,,,DELIVERY,237.168,07 Jun 2026 00:00:00,Maximum storage facility capacity achieved under normal operating conditions,2026/06/01 01:18:22
+Dandenong LNG,530038,STOR,MDQ,-1,,-1,,,RECEIPT,8.235,07 Jun 2026 00:00:00,Maximum storage facility capacity achieved under normal operating conditions,2026/06/01 01:18:22
+Dandenong LNG,530038,STOR,STORAGE,-1,,-1,,,NONE,680.760,07 Jun 2026 00:00:00,Maximum storage facility capacity achieved under normal operating conditions,2026/06/01 01:18:22
+KKLP,523209,PIPE,MDQ,1290159,KKLP Lenaghan Entry Delivery Stream,1290160,KKLP Lenaghan Exit Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,60.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+KKLP,523209,PIPE,MDQ,1290159,KKLP Lenaghan Entry Delivery Stream,1290161,KKSP HPS Exit Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,52.800,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+Kogan North,540061,PROD,MDQ,-1,,-1,,,NONE,13.000,07 Jun 2026 00:00:00,Maximum production facility capacity achieved under normal operating conditions,2026/06/01 01:18:22
+MCF,550050,COMPRESSOR,MDQ,-1,,-1,,Maximum compression facility capacity achieved under normal operating conditions,NONE,360.000,07 Jun 2026 00:00:00,Maximum compression facility capacity achieved under normal operating conditions,2026/06/01 01:18:22
+MSP,520053,PIPE,MDQ,1202025,Culcairn North Delivery Stream,1202054,Young Delivery Stream,"Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified, independent of flows on mainline MSP between Moomba and Wilton",NONE,200.000,07 Jun 2026 00:00:00,"Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified, independent of flows on mainline MSP between Moomba and Wilton",2026/06/01 01:18:22
+MSP,520053,PIPE,MDQ,1202038,MSP EGP Entry DS,1502057,MSP SWQP Exit Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,193.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+MSP,520053,PIPE,MDQ,1202054,Young Delivery Stream,1202026,Culcairn South Delivery Stream,"Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified, independent of flows on mainline MSP between Moomba and Wilton",NONE,195.000,07 Jun 2026 00:00:00,"Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified, independent of flows on mainline MSP between Moomba and Wilton",2026/06/01 01:18:22
+MSP,520053,PIPE,MDQ,1502045,MSP Inlet Delivery Stream,1202052,Wilton Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,590.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+RBP,540057,PIPE,MDQ,1404091,Kogan North Delivery Stream,1404097,Wallumbilla3 Exit Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,125.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+RBP,540057,PIPE,MDQ,1404107,Wallumbilla1 Delivery Stream,1404090,Gibson Island Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,167.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+RCWP,540102,PIPE,MDQ,1404213,RCWP Entry Delivery Steam,1404214,RCWP to SWQP (Wallumbilla) Exit Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,520.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+RCWP,540102,PIPE,MDQ,1404215,RCWP from SWQP (Wallumbilla) Entry Delivery Stream,1404212,RCWP Exit Delivery Steam,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,300.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+SESA,550060,PIPE,MDQ,1305075,SESA Poolaijelo Inlet Station Delivery Stream,1505074,SESA South East Pipeline Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,40.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+SWQP,540060,PIPE,MDQ,1404217,SWQP from RCWP (Wallumbilla) Entry Delivery Stream,1504233,SWQP MAPS Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,512.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+SWQP,540060,PIPE,MDQ,1504232,Moomba Delivery Stream,1404216,SWQP to RCWP (Wallumbilla) Exit Delivery Stream,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,340.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+WCFA,540045,COMPRESSOR,MDQ,-1,,-1,,Maximum compression facility capacity achieved under normal operating conditions,NONE,319.000,07 Jun 2026 00:00:00,Maximum compression facility capacity achieved under normal operating conditions,2026/06/01 01:18:22
+WCFB,540046,COMPRESSOR,MDQ,-1,,-1,,Maximum compression facility capacity achieved under normal operating conditions,NONE,550.000,07 Jun 2026 00:00:00,Maximum compression facility capacity achieved under normal operating conditions,2026/06/01 01:18:22
+WPP,580030,PIPE,MDQ,1808021,Darwin City Gate Entry DS,1808024,Bladin Point Exit DS,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,70.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22
+WPP,580030,PIPE,MDQ,1808025,Wickham Point Entry DS,1808022,Darwin City Gate Exit DS,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,NONE,100.000,07 Jun 2026 00:00:00,Maximum pipeline capacity achieved under normal operating conditions for the direction of flow specified,2026/06/01 01:18:22

@@ -1,0 +1,34 @@
+AUSTRALIAN GAS MARKET EXPLORER — INSTALLATION
+==============================================
+
+REQUIREMENTS
+  - Python 3.10 or later  (https://www.python.org/downloads/)
+  - Internet connection for first run (downloads dependencies)
+
+QUICK START
+-----------
+
+Windows:
+  1. Double-click run_dashboard.bat
+  2. Open http://127.0.0.1:8050 in your browser
+
+Mac / Linux:
+  1. Open a terminal in this folder
+  2. Run:  ./run_dashboard.sh
+  3. Open http://127.0.0.1:8050 in your browser
+
+The first run installs all dependencies automatically (~2 min).
+Subsequent runs start in a few seconds.
+
+RUNNING SCENARIOS
+-----------------
+  - Use the sidebar sliders to set Winter Stress and LNG Demand levels
+  - Click "Run Scenario" to solve one combination (~1-2 min)
+  - Click "Run All Scenarios" to pre-calculate all 9 combinations (~15 min)
+  - Results are saved and reloaded automatically between sessions
+
+NOTES
+-----
+  - Tested on Windows 11, macOS 14, Ubuntu 24.04
+  - Requires ~500 MB disk space for dependencies
+  - Results cache is stored in src/data/precalculated_results.pkl

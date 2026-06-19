@@ -1,0 +1,11 @@
+pandas
+numpy
+pyomo
+highspy
+plotly
+dash
+dash-bootstrap-components
+diskcache
+multiprocess
+psutil
+python-docx

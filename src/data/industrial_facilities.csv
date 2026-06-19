@@ -1,0 +1,9 @@
+FacilityName,Node,Sector,BaseDailyDemand,Intensity
+QAL_Alumina,Gladstone,Industrial,50,60.0
+Yarwun_Alumina,Gladstone,Industrial,60,60.0
+Tomago_Smelter,Sydney,Industrial,4.5,55.0
+Whyalla_Steel,Adelaide,Industrial,4,1666.0
+Orica_Kooragang,Sydney,Industrial,15,45.0
+Incitec_Pivot,Brisbane,Industrial,35,48.0
+Iona_Industrial,Iona,Industrial,15,55.0
+Port_Kembla_Steel,Port_Kembla,Industrial,2.7,6600.0

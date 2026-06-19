@@ -1,0 +1,6 @@
+Parameter,Value,Description
+lng_daily_target,3680,Total cluster target (TJ/day) - 100% Nameplate
+aplng_factor,0.357,APLNG share of cluster demand (100% utilization)
+glng_factor,0.31,GLNG share of cluster demand (100% utilization)
+qclng_factor,0.333,QCLNG share of cluster demand (100% utilization)
+volatility,0.03,Daily random demand volatility modifier

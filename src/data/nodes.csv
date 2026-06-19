@@ -1,0 +1,15 @@
+Name,Type,Description,StorageCapacity,MaxInjection,MaxWithdrawal
+Surat,Supply,Queensland gas basin,0,0,0
+Moomba,Hub,Central Australian gas hub and supply,32000,150,150
+Gippsland,Supply,Victorian gas basin (offshore),0,0,0
+Sydney,Demand,Major demand center,0,0,0
+Melbourne,Demand,Major demand center,0,0,0
+Adelaide,Demand,Major demand center,0,0,0
+Brisbane,Demand,Major demand center,0,0,0
+Gladstone,Hub,LNG hub and export center,0,0,0
+APLNG,LNG,APLNG export terminal,0,0,0
+GLNG,LNG,GLNG export terminal,0,0,0
+QCLNG,LNG,QCLNG export terminal,0,0,0
+Port_Kembla,Import,Potential LNG import terminal,0,0,0
+Iona,Storage,Gas storage facility,25000,155,570
+Silver_Springs,Storage,Queensland storage,35000,150,30

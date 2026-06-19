@@ -1,0 +1,8 @@
+Node,Capacity,Cost,IsPotential,DeclineRate
+Surat,4000,4,False,-0.01
+Moomba,400,6,False,-0.03
+Gippsland,766,5,False,-0.12
+Iona,350,7,False,0
+Surat_Potential,3000,10,True,0
+Gippsland_Potential,300,12,True,0
+Port_Kembla,500,14,True,0

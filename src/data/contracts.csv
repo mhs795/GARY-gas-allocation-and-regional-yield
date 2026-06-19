@@ -1,0 +1,6 @@
+Target,MinVolume,Description
+GLD_APLNG,250,Long-term export contract commitment
+GLD_GLNG,200,Long-term export contract commitment
+GLD_QCLNG,250,Long-term export contract commitment
+MSP,30,Base-load contractual flow to NSW
+MAPS,20,Base-load contractual flow to SA

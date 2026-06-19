@@ -1,0 +1,6 @@
+Name,Type,Target,NewCapacity,CapEx
+Port_Kembla_Terminal,Terminal,Port_Kembla,500,250000000
+VNI_Expansion,Pipeline,VNI,200,80000000
+EGP_Expansion,Pipeline,EGP,200,100000000
+MSP_Expansion,Pipeline,MSP,200,120000000
+SWQP_Expansion,Pipeline,SWQP,200,60000000

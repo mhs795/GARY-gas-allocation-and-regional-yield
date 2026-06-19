@@ -1,0 +1,9 @@
+#!/bin/bash
+# GAS - Run the Nodal Gas Market Optimization Dashboard
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+cd "$DIR"
+
+# Launch dashboard directly (on-demand scenario solving is now handled in GUI)
+source venv/bin/activate
+export PYTHONPATH=$PYTHONPATH:$(pwd)/src
+python src/dashboard.py
