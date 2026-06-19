@@ -844,6 +844,7 @@ def get_filtered(key, end_year):
 
 def build_summary(filtered_results):
     rows, prices_trend, builds_timeline, total_cost = [], [], [], 0
+    exp_lookup = static_data['expansion'].set_index('Name').to_dict('index')
     for res in filtered_results:
         y = res['Year']
         _prices = pd.DataFrame(res['prices'])
@@ -859,11 +860,18 @@ def build_summary(filtered_results):
             prices_trend.append({'Year': y, 'Node': p['Node'], 'Price': p['Price']})
         for b in res['builds']:
             if not any(bt['Project'] == b for bt in builds_timeline):
-                builds_timeline.append({'Year': y, 'Project': b})
+                info = exp_lookup.get(b, {})
+                builds_timeline.append({
+                    'Year': y,
+                    'Project': b,
+                    'Type': info.get('Type', '—'),
+                    'New Capacity (TJ/d)': info.get('NewCapacity', '—'),
+                    'CapEx ($M)': f"{info['CapEx']/1e6:,.0f}" if info.get('CapEx') else '—',
+                })
     return (
         pd.DataFrame(rows) if rows else pd.DataFrame(columns=['Year','Production_PJ','Shortage_TJ','Avg_Price']),
         pd.DataFrame(prices_trend) if prices_trend else pd.DataFrame(columns=['Year','Node','Price']),
-        pd.DataFrame(builds_timeline) if builds_timeline else pd.DataFrame(columns=['Year','Project']),
+        pd.DataFrame(builds_timeline) if builds_timeline else pd.DataFrame(columns=['Year','Project','Type','New Capacity (TJ/d)','CapEx ($M)']),
         total_cost,
     )
 
@@ -1087,6 +1095,11 @@ def update_map(key, end_year, map_year, options):
     fig = go.Figure()
     PIPE_CASING = '#0d0d0d';  PIPE_FILL = '#B8860B';  PIPE_W = 3
 
+    # Which arcs have been expanded by map_year?
+    expanded_arcs = set(
+        exp_info[(exp_info['Name'].isin(built_now)) & (exp_info['Type'] == 'Pipeline')]['Target'].tolist()
+    )
+
     for _, arc_row in static_data['arcs'].iterrows():
         arc  = arc_row['Name']
         cap  = (arc_caps.get(arc, 0) + exp_info[
@@ -1095,11 +1108,14 @@ def update_map(key, end_year, map_year, options):
         path = ARC_WAYPOINTS.get(arc, [COORDS[arc_row['From']], COORDS[arc_row['To']]])
         lats = [p[0] for p in path];  lons = [p[1] for p in path]
         if show_capacity and cap > 0:
-            hover = f"<b>{arc}</b><br>{arc_row['From']} → {arc_row['To']}<br>Capacity: {cap:.0f} PJ/yr"
+            is_exp = arc in expanded_arcs
+            fill   = '#FFD600' if is_exp else PIPE_FILL
+            exp_tag = ' ✦ EXPANDED' if is_exp else ''
+            hover = f"<b>{arc}</b>{exp_tag}<br>{arc_row['From']} → {arc_row['To']}<br>Capacity: {cap:.0f} PJ/yr"
             fig.add_trace(go.Scattermapbox(lat=lats, lon=lons, mode='lines',
                 line=dict(width=PIPE_W+3, color=PIPE_CASING), opacity=0.85, hoverinfo='skip', showlegend=False))
             fig.add_trace(go.Scattermapbox(lat=lats, lon=lons, mode='lines',
-                line=dict(width=PIPE_W, color=PIPE_FILL), opacity=0.55,
+                line=dict(width=PIPE_W, color=fill), opacity=0.7 if is_exp else 0.55,
                 text=hover, hoverinfo='text', showlegend=False))
 
     for _, row in flow_map.iterrows():
@@ -1108,13 +1124,19 @@ def update_map(key, end_year, map_year, options):
                     (exp_info['Target'] == arc) &
                     (exp_info['Name'].isin(built_now))]['NewCapacity'].sum()) * 365 / 1000
         util   = (row['Value'] / cap) if cap > 0 else 0
+        is_exp = arc in expanded_arcs
         path   = ARC_WAYPOINTS.get(arc, [COORDS[row['From']], COORDS[row['To']]])
         lats   = [p[0] for p in path];  lons = [p[1] for p in path]
         color  = '#ef4444' if util > 0.9 else ('#f97316' if util > 0.7 else '#22c55e')
         casing = '#7f1d1d' if util > 0.9 else ('#7c2d12' if util > 0.7 else '#14532d')
         fw     = max(3, min(9, 2 + np.log1p(row['Value']) * 1.5))
-        hover  = (f"<b>{arc}</b><br>Flow: {row['Value']:.1f} PJ"
+        exp_tag = ' ✦ EXPANDED' if is_exp else ''
+        hover  = (f"<b>{arc}</b>{exp_tag}<br>Flow: {row['Value']:.1f} PJ"
                   f"<br>Utilisation: {util:.1%}<br>Capacity: {cap:.0f} PJ/yr")
+        # Draw gold outer glow for expanded pipelines
+        if is_exp:
+            fig.add_trace(go.Scattermapbox(lat=lats, lon=lons, mode='lines',
+                line=dict(width=fw+8, color='#FFD600'), opacity=0.35, hoverinfo='skip', showlegend=False))
         fig.add_trace(go.Scattermapbox(lat=lats, lon=lons, mode='lines',
             line=dict(width=fw+3, color=casing), opacity=1.0, hoverinfo='skip', showlegend=False))
         fig.add_trace(go.Scattermapbox(lat=lats, lon=lons, mode='lines',
@@ -1172,6 +1194,48 @@ def update_map(key, end_year, map_year, options):
             customdata=df_t['Tooltip'],
             name=nt,
         ))
+
+    # Overlay gold star markers for built expansion projects
+    if built_now:
+        exp_lats, exp_lons, exp_tips, exp_labels = [], [], [], []
+        for proj in built_now:
+            row_e = exp_info[exp_info['Name'] == proj]
+            if row_e.empty:
+                continue
+            e = row_e.iloc[0]
+            target = e['Target']
+            # Find coordinates: arc target → midpoint of arc, or node target → COORDS
+            if target in COORDS:
+                lat, lon = COORDS[target]
+            else:
+                arc_row_e = static_data['arcs'][static_data['arcs']['Name'] == target]
+                if arc_row_e.empty:
+                    continue
+                path_e = ARC_WAYPOINTS.get(target)
+                if path_e:
+                    mid = path_e[len(path_e) // 2]
+                    lat, lon = mid[0], mid[1]
+                else:
+                    from_n = arc_row_e.iloc[0]['From']
+                    to_n   = arc_row_e.iloc[0]['To']
+                    lat = (COORDS[from_n][0] + COORDS[to_n][0]) / 2
+                    lon = (COORDS[from_n][1] + COORDS[to_n][1]) / 2
+            built_yr = builds_df[builds_df['Project'] == proj]['Year'].iloc[0] if not builds_df.empty else '?'
+            exp_lats.append(lat); exp_lons.append(lon)
+            exp_labels.append(proj.replace('_', ' '))
+            exp_tips.append(f"<b>✦ {proj}</b><br>Type: {e['Type']}<br>Built: {built_yr}<br>+{e['NewCapacity']} TJ/d<br>CapEx: ${e['CapEx']/1e6:,.0f}M")
+        if exp_lats:
+            fig.add_trace(go.Scattermapbox(
+                lat=exp_lats, lon=exp_lons,
+                mode='markers+text' if show_labels else 'markers',
+                marker=dict(size=20, symbol='star', color='#FFD600'),
+                text=exp_labels if show_labels else None,
+                textposition='top center',
+                textfont=dict(size=11, color='#B8860B', family='Arial Black'),
+                hovertemplate='%{customdata}<extra></extra>',
+                customdata=exp_tips,
+                name='New Infrastructure',
+            ))
 
     fig.update_layout(
         mapbox=dict(style='open-street-map', center=dict(lat=-31, lon=146), zoom=4.2),
@@ -1353,9 +1417,45 @@ def update_expansions(key, end_year):
     _, _, builds_df, _ = build_summary(filtered)
     if builds_df.empty:
         return md_alert('No new infrastructure built in this scenario.', 'success')
-    return dbc.Table.from_dataframe(builds_df.sort_values('Year'),
-                                    striped=False, bordered=False, hover=True,
-                                    dark=True, size='sm')
+
+    sorted_df = builds_df.sort_values('Year').reset_index(drop=True)
+
+    # Gantt-style bar chart
+    type_colors = {'Pipeline': '#1976D2', 'Terminal': '#E65100', 'LNG': '#2E7D32'}
+    fig = go.Figure()
+    for _, row in sorted_df.iterrows():
+        color = type_colors.get(row.get('Type', ''), '#78909C')
+        label = f"<b>{row['Project']}</b><br>Built: {row['Year']}<br>Type: {row.get('Type','—')}<br>Capacity: {row.get('New Capacity (TJ/d)','—')} TJ/d<br>CapEx: ${row.get('CapEx ($M)','—')}M"
+        fig.add_trace(go.Bar(
+            x=[end_year - row['Year'] + 1],
+            y=[row['Project']],
+            base=[row['Year']],
+            orientation='h',
+            marker_color=color,
+            marker_line_width=0,
+            text=f"  {row['Year']}",
+            textposition='inside',
+            hovertext=label,
+            hoverinfo='text',
+            showlegend=False,
+        ))
+    fig.update_layout(
+        template=CHART_TEMPLATE,
+        title='Infrastructure Build Timeline',
+        xaxis=dict(title='Year', range=[2025, end_year]),
+        yaxis=dict(title=''),
+        barmode='overlay',
+        height=max(200, 80 + len(sorted_df) * 55),
+        margin=dict(l=0, r=20, t=40, b=40),
+    )
+
+    table = dbc.Table.from_dataframe(
+        sorted_df.drop(columns=['Type'], errors='ignore') if 'Type' not in sorted_df.columns else sorted_df,
+        striped=True, bordered=False, hover=True, size='sm',
+        className='table-light',
+        style={'fontSize': '0.85rem'},
+    )
+    return html.Div([dcc.Graph(figure=fig, config={'displayModeBar': False}), table])
 
 # ---------------------------------------------------------------------------
 # Industrial
