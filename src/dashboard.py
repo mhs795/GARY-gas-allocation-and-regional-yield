@@ -348,16 +348,28 @@ body, html {
 }
 
 /* ── Progress bar ───────────────────────────────────────────────────────── */
-.md-progress-wrap { margin: 4px 0 8px; }
+.md-progress-wrap { margin: 8px 0 12px; }
 .md-progress-wrap .progress {
-  height: 3px !important;
-  border-radius: 2px !important;
+  height: 22px !important;
+  border-radius: 11px !important;
   background-color: rgba(255,255,255,0.15) !important;
   overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
 }
 .md-progress-wrap .progress-bar {
-  background-color: #fff !important;
-  transition: width 0.3s ease !important;
+  background: linear-gradient(90deg, #64B5F6, #1976D2, #64B5F6) !important;
+  background-size: 200% 100% !important;
+  animation: progress-shimmer 1.5s linear infinite !important;
+  transition: width 0.4s ease !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.5px !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4) !important;
+  line-height: 22px !important;
+}
+@keyframes progress-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 /* ── Dropdown – in light content area ──────────────────────────────────── */
@@ -709,7 +721,8 @@ sidebar = html.Div(className='md-sidebar', children=[
 
         html.Div(id='run-status', className='md-status'),
         html.Div(className='md-progress-wrap', children=[
-            dbc.Progress(id='solver-progress', value=0,
+            dbc.Progress(id='solver-progress', value=0, label='',
+                         striped=False, animated=False,
                          style={'display': 'none'}),
         ]),
 
@@ -916,13 +929,15 @@ def show_tab(active):
          {'display': 'block'}, {'display': 'none'}),
         (Output('run-status', 'children'), '⏳  Solving…', ''),
     ],
-    progress=Output('solver-progress', 'value'),
+    progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
     prevent_initial_call=True,
 )
 def run_scenario(set_progress, n_clicks, wi, li, gap, refresh):
     w, l = LEVELS[wi], LEVELS[li]
-    result = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap,
-                            callback=lambda yr, p: set_progress(int(p * 100)))
+    def _cb(yr, p):
+        pct = int(p * 100)
+        set_progress((pct, f'Solving {yr}… {pct}%'))
+    result = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap, callback=_cb)
     key = f'ADGSM_False_Winter_{w}_LNG_{l}'
     data = load_results()
     data['all_scenarios'][key] = result
@@ -947,7 +962,7 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, refresh):
          {'display': 'block'}, {'display': 'none'}),
         (Output('run-status', 'children'), '⏳  Batch running…', ''),
     ],
-    progress=Output('solver-progress', 'value'),
+    progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
     prevent_initial_call=True,
 )
 def run_batch(set_progress, n_clicks, gap, refresh):
@@ -956,10 +971,15 @@ def run_batch(set_progress, n_clicks, gap, refresh):
     for i, (w, l) in enumerate(combos):
         key = f'ADGSM_False_Winter_{w}_LNG_{l}'
         if key not in data['all_scenarios']:
-            data['all_scenarios'][key] = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap)
+            pct_base = int(i / len(combos) * 100)
+            def _cb(yr, p, _i=i, _n=len(combos), _w=w, _l=l):
+                overall = int((_i + p) / _n * 100)
+                set_progress((overall, f'Winter {_w} · LNG {_l} · Year {yr} — {overall}%'))
+            data['all_scenarios'][key] = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap, callback=_cb)
             data['current_key'] = key
             save_results(data)
-        set_progress(int((i + 1) / len(combos) * 100))
+        pct = int((i + 1) / len(combos) * 100)
+        set_progress((pct, f'Scenario {i+1}/{len(combos)} complete — {pct}%'))
     return (refresh or 0) + 1, f'✓  Batch complete — {len(combos)} scenarios'
 
 # ---------------------------------------------------------------------------
