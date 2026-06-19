@@ -669,8 +669,8 @@ sidebar = html.Div(className='md-sidebar', children=[
     html.Div(className='md-sidebar-brand', children=[
         html.Div('⚡', className='md-sidebar-brand-icon'),
         html.Div([
-            html.Div('Gas Market', className='md-sidebar-brand-text'),
-            html.Div('Explorer 2050', className='md-sidebar-brand-sub'),
+            html.Div('GARY', className='md-sidebar-brand-text'),
+            html.Div('2025–2050', className='md-sidebar-brand-sub'),
         ]),
     ]),
 
