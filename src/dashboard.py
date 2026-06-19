@@ -708,8 +708,7 @@ sidebar = html.Div(className='md-sidebar', children=[
         slider_group('Optimality Gap',
             dcc.Slider(id='gap-slider', min=0, max=0.05, step=0.001, value=0.01,
                        marks={0: '0%', 0.01: '1%', 0.02: '2%', 0.05: '5%'},
-                       tooltip={'placement': 'bottom', 'always_visible': True,
-                                'transform': 'percentValue'})),
+                       tooltip={'placement': 'bottom', 'always_visible': True})),
 
         html.Hr(className='md-divider'),
 
