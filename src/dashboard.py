@@ -1121,7 +1121,7 @@ def _update_map_inner(key, end_year, map_year, options):
         map_kpi('Total Production',        f"{_prod['Value'].sum()/1000:.1f} PJ"),
         map_kpi('Total Shortage',
                 f"{sum(s['Value'] for s in res['shortage']):.1f} TJ" if res['shortage'] else '0 TJ'),
-        map_kpi('Active Pipelines',        str(len(_flow[_flow['Value'] > 10]))),
+        map_kpi('Active Pipelines',        str(_flow[_flow['Value'] > 10]['Arc'].nunique())),
     ]
 
     price_map = _prices.groupby('Node')['Price'].mean()
