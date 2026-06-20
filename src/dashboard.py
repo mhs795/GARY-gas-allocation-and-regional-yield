@@ -641,7 +641,7 @@ def add_arrowhead(fig, lat1, lon1, lat2, lon2, color, width, size=0.45):
     b1_lon  = tip_lon - size*u_lon + size*0.6*p_lon
     b2_lat  = tip_lat - size*u_lat - size*0.6*p_lat
     b2_lon  = tip_lon - size*u_lon - size*0.6*p_lon
-    fig.add_trace(go.Scattermapbox(
+    fig.add_trace(go.Scattermap(
         lat=[b1_lat, tip_lat, b2_lat, b1_lat],
         lon=[b1_lon, tip_lon, b2_lon, b1_lon],
         mode='lines', fill='toself', fillcolor=color,
@@ -1086,7 +1086,7 @@ def update_map(key, end_year, map_year, options):
         print(f'[MAP ERROR] {e}')
         traceback.print_exc()
         fig = go.Figure()
-        fig.update_layout(mapbox=dict(style='open-street-map', center=dict(lat=-31,lon=146), zoom=4.2),
+        fig.update_layout(map=dict(style='open-street-map', center=dict(lat=-31,lon=146), zoom=4.2),
                           margin=dict(l=0,r=0,t=0,b=0), height=720, paper_bgcolor='white')
         return [html.Span(f'Map error: {e}', style={'color':'red'})], fig
 
@@ -1097,7 +1097,7 @@ def _update_map_inner(key, end_year, map_year, options):
     def empty():
         fig = go.Figure()
         fig.update_layout(
-            mapbox=dict(style='open-street-map', center=dict(lat=-31, lon=146), zoom=4.2),
+            map=dict(style='open-street-map', center=dict(lat=-31, lon=146), zoom=4.2),
             margin=dict(l=0, r=0, t=0, b=0), height=720,
             paper_bgcolor='white',
         )
@@ -1153,9 +1153,9 @@ def _update_map_inner(key, end_year, map_year, options):
             fill   = '#FFD600' if is_exp else PIPE_FILL
             exp_tag = ' ✦ EXPANDED' if is_exp else ''
             hover = f"<b>{arc}</b>{exp_tag}<br>{arc_row['From']} → {arc_row['To']}<br>Capacity: {cap:.0f} PJ/yr"
-            fig.add_trace(go.Scattermapbox(lat=lats, lon=lons, mode='lines',
+            fig.add_trace(go.Scattermap(lat=lats, lon=lons, mode='lines',
                 line=dict(width=PIPE_W+3, color=PIPE_CASING), opacity=0.85, hoverinfo='skip', showlegend=False))
-            fig.add_trace(go.Scattermapbox(lat=lats, lon=lons, mode='lines',
+            fig.add_trace(go.Scattermap(lat=lats, lon=lons, mode='lines',
                 line=dict(width=PIPE_W, color=fill), opacity=0.7 if is_exp else 0.55,
                 text=hover, hoverinfo='text', showlegend=False))
 
@@ -1176,11 +1176,11 @@ def _update_map_inner(key, end_year, map_year, options):
                   f"<br>Utilisation: {util:.1%}<br>Capacity: {cap:.0f} PJ/yr")
         # Draw gold outer glow for expanded pipelines
         if is_exp:
-            fig.add_trace(go.Scattermapbox(lat=lats, lon=lons, mode='lines',
+            fig.add_trace(go.Scattermap(lat=lats, lon=lons, mode='lines',
                 line=dict(width=fw+8, color='#FFD600'), opacity=0.35, hoverinfo='skip', showlegend=False))
-        fig.add_trace(go.Scattermapbox(lat=lats, lon=lons, mode='lines',
+        fig.add_trace(go.Scattermap(lat=lats, lon=lons, mode='lines',
             line=dict(width=fw+3, color=casing), opacity=1.0, hoverinfo='skip', showlegend=False))
-        fig.add_trace(go.Scattermapbox(lat=lats, lon=lons, mode='lines',
+        fig.add_trace(go.Scattermap(lat=lats, lon=lons, mode='lines',
             line=dict(width=fw, color=color), opacity=0.9, text=hover, hoverinfo='text', showlegend=False))
         add_arrowhead(fig, path[-2][0], path[-2][1], path[-1][0], path[-1][1], color, fw)
 
@@ -1221,7 +1221,7 @@ def _update_map_inner(key, end_year, map_year, options):
         if df_t.empty:
             continue
         size = df_t['Supply'].apply(lambda x: 14 + np.sqrt(x) * sm) if sm > 0 else 16
-        fig.add_trace(go.Scattermapbox(
+        fig.add_trace(go.Scattermap(
             lat=df_t['Lat'], lon=df_t['Lon'],
             mode='markers+text' if show_labels else 'markers',
             marker=dict(
@@ -1250,7 +1250,7 @@ def _update_map_inner(key, end_year, map_year, options):
     df_active   = df_import[df_import['Node'].isin(built_terminals)]
 
     if not df_proposed.empty:
-        fig.add_trace(go.Scattermapbox(
+        fig.add_trace(go.Scattermap(
             lat=df_proposed['Lat'], lon=df_proposed['Lon'],
             mode='markers+text' if show_labels else 'markers',
             marker=dict(size=14, symbol='circle-open', color='#9E9E9E'),
@@ -1274,7 +1274,7 @@ def _update_map_inner(key, end_year, map_year, options):
                    f"Status: <b>OPERATIONAL</b> (built {built_yr})<br>"
                    f"Capacity: {e_cap} TJ/d<br>CapEx: {e_capex}")
         # Outer glow ring
-        fig.add_trace(go.Scattermapbox(
+        fig.add_trace(go.Scattermap(
             lat=df_active['Lat'], lon=df_active['Lon'],
             mode='markers',
             marker=dict(size=38, symbol='circle', color='#00BCD4'),
@@ -1282,7 +1282,7 @@ def _update_map_inner(key, end_year, map_year, options):
             hoverinfo='skip', showlegend=False,
         ))
         # Middle ring
-        fig.add_trace(go.Scattermapbox(
+        fig.add_trace(go.Scattermap(
             lat=df_active['Lat'], lon=df_active['Lon'],
             mode='markers',
             marker=dict(size=26, symbol='circle', color='#00BCD4'),
@@ -1290,7 +1290,7 @@ def _update_map_inner(key, end_year, map_year, options):
             hoverinfo='skip', showlegend=False,
         ))
         # Core marker
-        fig.add_trace(go.Scattermapbox(
+        fig.add_trace(go.Scattermap(
             lat=df_active['Lat'], lon=df_active['Lon'],
             mode='markers+text' if show_labels else 'markers',
             marker=dict(size=16, symbol='star', color='#00BCD4'),
@@ -1330,7 +1330,7 @@ def _update_map_inner(key, end_year, map_year, options):
             exp_labels.append(proj.replace('_', ' '))
             exp_tips.append(f"<b>✦ {proj}</b><br>Type: {e['Type']}<br>Built: {built_yr}<br>+{e['NewCapacity']} TJ/d<br>CapEx: ${e['CapEx']/1e6:,.0f}M")
         if exp_lats:
-            fig.add_trace(go.Scattermapbox(
+            fig.add_trace(go.Scattermap(
                 lat=exp_lats, lon=exp_lons,
                 mode='markers+text' if show_labels else 'markers',
                 marker=dict(size=20, symbol='star', color='#FFD600'),
@@ -1344,7 +1344,7 @@ def _update_map_inner(key, end_year, map_year, options):
 
     scenario_label = key.replace('ADGSM_False_Winter_','Winter ').replace('_LNG_',' · LNG ')
     fig.update_layout(
-        mapbox=dict(style='open-street-map', center=dict(lat=-31, lon=146), zoom=4.2),
+        map=dict(style='open-street-map', center=dict(lat=-31, lon=146), zoom=4.2),
         margin=dict(l=0, r=0, t=40, b=0), height=720,
         title=dict(text=f'<b>{scenario_label}</b>  |  Year {map_year}',
                    x=0.5, xanchor='center',
