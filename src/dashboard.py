@@ -1023,15 +1023,22 @@ def regen_demand(n):
     Input('refresh-counter', 'data'),
     State('result-selector',   'value'),
 )
-def update_selector(_, current):
+def update_selector(refresh, current):
     data = load_results()
     keys = list(data['all_scenarios'].keys())
     if not keys:
         return [], None, 2050
-    selected = current if current in keys else (data.get('current_key') or keys[0])
+    # After a solve (refresh > 0), jump to the newly run scenario.
+    # On initial load (refresh is None/0), honour the current dropdown value.
+    if refresh and data.get('current_key') and data['current_key'] in keys:
+        selected = data['current_key']
+    elif current and current in keys:
+        selected = current
+    else:
+        selected = data.get('current_key') or keys[0]
     results  = data['all_scenarios'].get(selected, [])
     max_year = max((r['Year'] for r in results), default=2050)
-    return [{'label': k, 'value': k} for k in keys], selected, max_year
+    return [{'label': k.replace('ADGSM_False_Winter_','Winter ').replace('_LNG_',' · LNG ') , 'value': k} for k in keys], selected, max_year
 
 # ---------------------------------------------------------------------------
 # Header chip + KPI row
@@ -1335,13 +1342,17 @@ def _update_map_inner(key, end_year, map_year, options):
                 name='Pipeline Expansion',
             ))
 
+    scenario_label = key.replace('ADGSM_False_Winter_','Winter ').replace('_LNG_',' · LNG ')
     fig.update_layout(
         mapbox=dict(style='open-street-map', center=dict(lat=-31, lon=146), zoom=4.2),
-        margin=dict(l=0, r=0, t=0, b=0), height=720,
+        margin=dict(l=0, r=0, t=40, b=0), height=720,
+        title=dict(text=f'<b>{scenario_label}</b>  |  Year {map_year}',
+                   x=0.5, xanchor='center',
+                   font=dict(size=13, color='#1976D2')),
         legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
                     bgcolor='rgba(255,255,255,0.88)', font=dict(color='#111', size=11)),
         paper_bgcolor='white',
-        uirevision=f'{key}_{map_year}',  # reset view on scenario/year change
+        uirevision=f'{key}_{map_year}',
     )
     return map_kpis, fig
 
