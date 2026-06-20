@@ -930,7 +930,7 @@ main = html.Div(className='md-main', children=[
 # Root layout
 # ---------------------------------------------------------------------------
 app.layout = html.Div(
-    style={'display': 'flex', 'minHeight': '100vh', 'backgroundColor': MD_BG},
+    style={'display': 'flex', 'minHeight': '100vh', 'backgroundColor': 'var(--md-bg)'},
     children=[
         dcc.Store(id='refresh-counter', data=0),
         dcc.Store(id='theme-store', storage_type='local', data='light'),
