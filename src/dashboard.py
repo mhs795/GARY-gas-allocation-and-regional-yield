@@ -132,6 +132,29 @@ pio.templates['material_dark'] = go.layout.Template(
 
 CHART_TEMPLATE = 'material_dark'
 
+# Dark version of the template
+pio.templates['gary_dark'] = go.layout.Template(
+    layout=dict(
+        paper_bgcolor='#1E1E2E',
+        plot_bgcolor='#1E1E2E',
+        font=dict(family='Roboto, sans-serif', color='rgba(255,255,255,0.87)', size=13),
+        title=dict(font=dict(size=15, weight=500, color='rgba(255,255,255,0.87)'),
+                   x=0.0, xanchor='left', pad=dict(l=4, t=4)),
+        colorway=MD_COLORWAY,
+        xaxis=dict(gridcolor='rgba(255,255,255,0.08)', linecolor='rgba(255,255,255,0.15)',
+                   zerolinecolor='rgba(255,255,255,0.08)',
+                   tickfont=dict(color='rgba(255,255,255,0.55)', size=11)),
+        yaxis=dict(gridcolor='rgba(255,255,255,0.08)', linecolor='rgba(255,255,255,0.15)',
+                   zerolinecolor='rgba(255,255,255,0.08)',
+                   tickfont=dict(color='rgba(255,255,255,0.55)', size=11)),
+        legend=dict(bgcolor='rgba(30,30,46,0.95)', bordercolor='rgba(255,255,255,0.15)',
+                    borderwidth=1, font=dict(size=12, color='rgba(255,255,255,0.87)')),
+        hoverlabel=dict(bgcolor='#2A2A3E', bordercolor='rgba(255,255,255,0.15)',
+                        font=dict(family='Roboto, sans-serif', size=13, color='rgba(255,255,255,0.87)')),
+        margin=dict(l=48, r=24, t=48, b=40),
+    )
+)
+
 # ---------------------------------------------------------------------------
 # App – Bootstrap base (we override everything with Material CSS)
 # ---------------------------------------------------------------------------
@@ -614,6 +637,56 @@ body, html {
 
 /* ── Tooltip ────────────────────────────────────────────────────────────── */
 .dash-tooltip { font-family: var(--font) !important; }
+
+/* ── Dark mode overrides ────────────────────────────────────────────────── */
+.dark {
+  --md-bg:          #0F0F1A;
+  --md-surface:     #1E1E2E;
+  --md-surface-2:   #252535;
+  --md-surface-3:   #2E2E42;
+  --md-primary:     #90CAF9;
+  --md-primary-dim: rgba(144,202,249,0.12);
+  --md-text:        rgba(255,255,255,0.87);
+  --md-text-med:    rgba(255,255,255,0.60);
+  --md-text-low:    rgba(255,255,255,0.38);
+  --md-divider:     rgba(255,255,255,0.10);
+  --md-hover:       rgba(255,255,255,0.06);
+  --md-e1: 0 1px 3px rgba(0,0,0,0.40), 0 1px 2px rgba(0,0,0,0.30);
+  --md-e4: 0 2px 8px rgba(0,0,0,0.50), 0 3px 6px rgba(0,0,0,0.35);
+  --md-e8: 0 5px 14px rgba(0,0,0,0.55), 0 8px 10px rgba(0,0,0,0.40);
+}
+.dark .Select-control {
+  background-color: var(--md-surface-2) !important;
+  border-color: rgba(255,255,255,0.12) !important;
+  color: var(--md-text) !important;
+}
+.dark .Select-menu-outer {
+  background-color: var(--md-surface) !important;
+  border-color: rgba(255,255,255,0.12) !important;
+}
+.dark .Select-option { background-color: var(--md-surface) !important; color: var(--md-text) !important; }
+.dark .Select-option.is-focused { background-color: var(--md-surface-2) !important; }
+.dark .Select-option.is-selected { background-color: var(--md-primary-dim) !important; color: var(--md-primary) !important; }
+.dark .Select-value-label { color: var(--md-text) !important; }
+.dark .Select-placeholder { color: var(--md-text-low) !important; }
+.dark .Select-arrow { border-top-color: var(--md-text-med) !important; }
+.dark .md-table table { background: var(--md-surface) !important; }
+.dark .md-table thead th { background-color: var(--md-surface-2) !important; color: var(--md-text-low) !important; border-color: var(--md-divider) !important; }
+.dark .md-table tbody td { color: var(--md-text) !important; border-color: rgba(255,255,255,0.05) !important; }
+.dark .md-alert-success { background-color: rgba(46,125,50,0.15) !important; color: #81C784 !important; }
+.dark .md-alert-info    { background-color: rgba(25,118,210,0.15) !important; color: #90CAF9 !important; }
+.dark .md-alert-warn    { background-color: rgba(230,81,0,0.15)  !important; color: #FFCC80 !important; }
+.theme-toggle {
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; margin: 12px 0 4px; padding: 8px 12px;
+  border-radius: var(--md-r-btn);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--sb-text-med); font-size: 12px; font-weight: 500;
+  letter-spacing: 0.4px; cursor: pointer; width: 100%;
+  transition: background 0.18s;
+}
+.theme-toggle:hover { background: rgba(255,255,255,0.15); color: var(--sb-text); }
 """
 
 app.index_string = f"""<!DOCTYPE html>
@@ -752,6 +825,10 @@ sidebar = html.Div(className='md-sidebar', children=[
         dcc.Slider(id='horizon-slider', min=2025, max=2050, step=1, value=2050,
                    marks={y: str(y) for y in range(2025, 2051, 5)}),
     ]),
+
+    html.Div(style={'padding': '12px 20px 20px', 'borderTop': '1px solid rgba(255,255,255,0.10)', 'marginTop': 'auto'}, children=[
+        html.Button('◑  Dark Mode', id='theme-toggle-btn', className='theme-toggle'),
+    ]),
 ])
 
 # ---------------------------------------------------------------------------
@@ -856,6 +933,7 @@ app.layout = html.Div(
     style={'display': 'flex', 'minHeight': '100vh', 'backgroundColor': MD_BG},
     children=[
         dcc.Store(id='refresh-counter', data=0),
+        dcc.Store(id='theme-store', storage_type='local', data='light'),
         sidebar,
         main,
     ],
@@ -902,9 +980,9 @@ def build_summary(filtered_results):
         total_cost,
     )
 
-def blank_fig():
+def blank_fig(tmpl=CHART_TEMPLATE):
     fig = go.Figure()
-    fig.update_layout(template=CHART_TEMPLATE,
+    fig.update_layout(template=tmpl,
                       paper_bgcolor=MD_SURFACE, plot_bgcolor=MD_SURFACE)
     return fig
 
@@ -1091,12 +1169,14 @@ _MAP_CONFIG = {'scrollZoom': True, 'displayModeBar': True, 'modeBarButtonsToRemo
     Input('horizon-slider',  'value'),
     Input('map-year',        'value'),
     Input('map-options',     'value'),
+    Input('theme-store',     'data'),
 )
-def update_map(key, end_year, map_year, options):
-    cache_key = (key, end_year, map_year, tuple(sorted(options or [])))
+def update_map(key, end_year, map_year, options, theme):
+    dark = (theme == 'dark')
+    cache_key = (key, end_year, map_year, tuple(sorted(options or [])), dark)
     try:
         if cache_key not in _map_fig_cache:
-            _map_fig_cache[cache_key] = _update_map_inner(key, end_year, map_year, options)
+            _map_fig_cache[cache_key] = _update_map_inner(key, end_year, map_year, options, dark=dark)
             if len(_map_fig_cache) > 36:   # cap at ~36 combos
                 _map_fig_cache.pop(next(iter(_map_fig_cache)))
         kpis, fig = _map_fig_cache[cache_key]
@@ -1104,8 +1184,8 @@ def update_map(key, end_year, map_year, options):
         import traceback
         traceback.print_exc()
         fig = go.Figure()
-        fig.update_layout(map=dict(style='open-street-map', center=dict(lat=-31,lon=146), zoom=4.2),
-                          margin=dict(l=0,r=0,t=0,b=0), height=720, paper_bgcolor='white')
+        fig.update_layout(map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-31,lon=146), zoom=4.2),
+                          margin=dict(l=0,r=0,t=0,b=0), height=720, paper_bgcolor='#1E1E2E' if dark else 'white')
         return [html.Span(f'Map error: {e}', style={'color':'red'})], dcc.Graph(
             id='map-graph-err', figure=fig, style={'height':'720px'}, config=_MAP_CONFIG)
     # Unique id per (key, map_year) forces React to fully remount the Plotly canvas
@@ -1116,16 +1196,16 @@ def update_map(key, end_year, map_year, options):
         config=_MAP_CONFIG,
     )
 
-def _update_map_inner(key, end_year, map_year, options):
+def _update_map_inner(key, end_year, map_year, options, dark=False):
     show_labels   = 'labels'   in (options or [])
     show_capacity = 'capacity' in (options or [])
 
     def empty():
         fig = go.Figure()
         fig.update_layout(
-            map=dict(style='open-street-map', center=dict(lat=-31, lon=146), zoom=4.2),
+            map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-31, lon=146), zoom=4.2),
             margin=dict(l=0, r=0, t=0, b=0), height=720,
-            paper_bgcolor='white',
+            paper_bgcolor='#1E1E2E' if dark else 'white',
         )
         return [], fig
 
@@ -1258,8 +1338,8 @@ def _update_map_inner(key, end_year, map_year, options):
                 showscale=show_colorbar,
                 colorbar=dict(title='Price ($/GJ)', thickness=14, x=1.0,
                               y=0.3, len=0.4, tickformat='.0f',
-                              bgcolor='rgba(255,255,255,0.9)',
-                              tickfont=dict(color='#111')) if show_colorbar else None,
+                              bgcolor='rgba(30,30,46,0.85)' if dark else 'rgba(255,255,255,0.85)',
+                              tickfont=dict(color='rgba(255,255,255,0.87)' if dark else '#333')) if show_colorbar else None,
             ),
             text=df_t['Node'] if show_labels else None,
             textposition='top center',
@@ -1370,14 +1450,15 @@ def _update_map_inner(key, end_year, map_year, options):
 
     scenario_label = key.replace('ADGSM_False_Winter_','Winter ').replace('_LNG_',' · LNG ')
     fig.update_layout(
-        map=dict(style='open-street-map', center=dict(lat=-31, lon=146), zoom=4.2),
+        map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-31, lon=146), zoom=4.2),
         margin=dict(l=0, r=0, t=40, b=0), height=720,
         title=dict(text=f'<b>{scenario_label}</b>  |  Year {map_year}',
                    x=0.5, xanchor='center',
-                   font=dict(size=13, color='#1976D2')),
+                   font=dict(size=13, color='#90CAF9' if dark else '#1976D2')),
         legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
-                    bgcolor='rgba(255,255,255,0.88)', font=dict(color='#111', size=11)),
-        paper_bgcolor='white',
+                    bgcolor='rgba(30,30,46,0.92)' if dark else 'rgba(255,255,255,0.88)',
+                    font=dict(color='rgba(255,255,255,0.87)' if dark else '#111', size=11)),
+        paper_bgcolor='#1E1E2E' if dark else 'white',
     )
     return map_kpis, fig
 
@@ -1392,11 +1473,13 @@ def _update_map_inner(key, end_year, map_year, options):
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
     Input('main-tabs',       'active_tab'),
+    Input('theme-store',     'data'),
 )
-def update_prod(key, end_year, active_tab):
+def update_prod(key, end_year, active_tab, theme):
     if active_tab != 'tab-prod':
         return no_update, no_update, no_update, no_update
-    b = blank_fig()
+    tmpl = 'gary_dark' if theme == 'dark' else CHART_TEMPLATE
+    b = blank_fig(tmpl)
     if not key:
         return b, b, b, html.Div()
     filtered = get_filtered(key, end_year)
@@ -1412,7 +1495,7 @@ def update_prod(key, end_year, active_tab):
     ann_prod = all_prod.groupby(['Year','Node'])['Value'].sum().reset_index()
     ann_prod['Value'] /= 1000
     fig_ann = px.area(ann_prod, x='Year', y='Value', color='Node',
-                      title='Annual Production (PJ)', template=CHART_TEMPLATE,
+                      title='Annual Production (PJ)', template=tmpl,
                       labels={'Value': 'PJ'})
     fig_ann.update_yaxes(rangemode='tozero')
 
@@ -1425,7 +1508,7 @@ def update_prod(key, end_year, active_tab):
     if daily:
         df_d = pd.concat(daily)
         fig_disp = px.area(df_d, x='GlobalDay', y='Value', color='Node',
-                           title='Continuous Dispatch (TJ/d)', template=CHART_TEMPLATE,
+                           title='Continuous Dispatch (TJ/d)', template=tmpl,
                            labels={'GlobalDay': 'Days from 2025', 'Value': 'TJ/d'})
         fig_disp.update_layout(xaxis_rangeslider_visible=True)
     else:
@@ -1439,7 +1522,7 @@ def update_prod(key, end_year, active_tab):
                     .groupby(['Year','Arc'])['Value'].sum().reset_index())
         ann_flow['Value'] /= 1000
         fig_flow = px.line(ann_flow, x='Year', y='Value', color='Arc',
-                           title='Major Pipeline Flows (PJ)', template=CHART_TEMPLATE,
+                           title='Major Pipeline Flows (PJ)', template=tmpl,
                            labels={'Value': 'PJ'})
         fig_flow.update_yaxes(rangemode='tozero')
     else:
@@ -1451,7 +1534,7 @@ def update_prod(key, end_year, active_tab):
         df_s = pd.concat(short_frames).groupby(['Year','Node'])['Value'].sum().reset_index()
         df_s['Value'] /= 1000
         fig_s = px.bar(df_s, x='Year', y='Value', color='Node',
-                       title='Annual Shortages (PJ)', template=CHART_TEMPLATE,
+                       title='Annual Shortages (PJ)', template=tmpl,
                        labels={'Value': 'PJ'})
         fig_s.update_yaxes(rangemode='tozero')
         shortage = dcc.Graph(figure=fig_s)
@@ -1469,11 +1552,13 @@ def update_prod(key, end_year, active_tab):
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
     Input('main-tabs',       'active_tab'),
+    Input('theme-store',     'data'),
 )
-def update_storage(key, end_year, active_tab):
+def update_storage(key, end_year, active_tab, theme):
     if active_tab != 'tab-storage':
         return no_update, no_update
-    b = blank_fig()
+    tmpl = 'gary_dark' if theme == 'dark' else CHART_TEMPLATE
+    b = blank_fig(tmpl)
     if not key:
         return b, html.Div()
     filtered = get_filtered(key, end_year)
@@ -1492,14 +1577,14 @@ def update_storage(key, end_year, active_tab):
 
     df_s = pd.concat(frames)
     fig_inv = px.line(df_s, x='GlobalDay', y='Inventory', color='Node',
-                      title='Storage Inventory (TJ)', template=CHART_TEMPLATE,
+                      title='Storage Inventory (TJ)', template=tmpl,
                       labels={'GlobalDay': 'Days from 2025', 'Inventory': 'TJ'})
     fig_inv.update_layout(xaxis_rangeslider_visible=True)
 
     if 'Injection' in df_s.columns and 'Withdrawal' in df_s.columns:
         df_s['RelFlow'] = df_s['Injection'] - df_s['Withdrawal']
         fig_act = px.bar(df_s, x='GlobalDay', y='RelFlow', color='Node',
-                         title='Net Storage Activity (TJ/d)', template=CHART_TEMPLATE,
+                         title='Net Storage Activity (TJ/d)', template=tmpl,
                          labels={'GlobalDay': 'Days from 2025', 'RelFlow': 'TJ/d'})
         activity = dcc.Graph(figure=fig_act)
     else:
@@ -1516,11 +1601,13 @@ def update_storage(key, end_year, active_tab):
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
     Input('main-tabs',       'active_tab'),
+    Input('theme-store',     'data'),
 )
-def update_prices(key, end_year, active_tab):
+def update_prices(key, end_year, active_tab, theme):
     if active_tab != 'tab-price':
         return no_update, no_update
-    b = blank_fig()
+    tmpl = 'gary_dark' if theme == 'dark' else CHART_TEMPLATE
+    b = blank_fig(tmpl)
     if not key:
         return b, b
     filtered = get_filtered(key, end_year)
@@ -1529,7 +1616,7 @@ def update_prices(key, end_year, active_tab):
 
     summary, prices_df, _, _ = build_summary(filtered)
     fig_vwap = px.line(summary, x='Year', y='Avg_Price', title='Volume-Weighted Average Price ($/GJ)',
-                       template=CHART_TEMPLATE, labels={'Avg_Price': '$/GJ'})
+                       template=tmpl, labels={'Avg_Price': '$/GJ'})
     fig_vwap.update_yaxes(rangemode='tozero')
 
     all_prod = pd.concat([pd.DataFrame(r['production']).assign(Year=r['Year'])
@@ -1540,7 +1627,7 @@ def update_prices(key, end_year, active_tab):
     nf       = nf[nf['Value'] > 0.1]
     fig_n    = px.line(nf, x='Year', y='Price', color='Node',
                        title='Nodal Prices — Supply Nodes ($/GJ)',
-                       template=CHART_TEMPLATE, labels={'Price': '$/GJ'})
+                       template=tmpl, labels={'Price': '$/GJ'})
     fig_n.update_yaxes(rangemode='tozero')
     return fig_vwap, fig_n
 
@@ -1552,10 +1639,12 @@ def update_prices(key, end_year, active_tab):
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
     Input('main-tabs',       'active_tab'),
+    Input('theme-store',     'data'),
 )
-def update_expansions(key, end_year, active_tab):
+def update_expansions(key, end_year, active_tab, theme):
     if active_tab != 'tab-exp':
         return no_update
+    tmpl = 'gary_dark' if theme == 'dark' else CHART_TEMPLATE
     if not key:
         return md_alert('No results loaded.', 'info')
     filtered = get_filtered(key, end_year)
@@ -1587,7 +1676,7 @@ def update_expansions(key, end_year, active_tab):
             showlegend=False,
         ))
     fig.update_layout(
-        template=CHART_TEMPLATE,
+        template=tmpl,
         title='Infrastructure Build Timeline',
         xaxis=dict(title='Year', range=[2025, end_year]),
         yaxis=dict(title=''),
@@ -1612,11 +1701,13 @@ def update_expansions(key, end_year, active_tab):
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
     Input('main-tabs',       'active_tab'),
+    Input('theme-store',     'data'),
 )
-def update_industrial(key, end_year, active_tab):
+def update_industrial(key, end_year, active_tab, theme):
     if active_tab != 'tab-ind':
         return no_update
-    b = blank_fig()
+    tmpl = 'gary_dark' if theme == 'dark' else CHART_TEMPLATE
+    b = blank_fig(tmpl)
     if not key:
         return b
     filtered = get_filtered(key, end_year)
@@ -1629,9 +1720,36 @@ def update_industrial(key, end_year, active_tab):
     df = pd.concat(frames).groupby(['Year','Facility'])['Value'].sum().reset_index()
     df['PJ'] = df['Value'] / 1000
     fig = px.line(df, x='Year', y='PJ', color='Facility',
-                  title='Industrial Facility Gas Use (PJ)', template=CHART_TEMPLATE)
+                  title='Industrial Facility Gas Use (PJ)', template=tmpl)
     fig.update_yaxes(rangemode='tozero')
     return fig
+
+# ---------------------------------------------------------------------------
+# Theme toggle
+# ---------------------------------------------------------------------------
+app.clientside_callback(
+    """
+    function(theme) {
+        if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+        return theme === 'dark' ? '◑  Light Mode' : '◑  Dark Mode';
+    }
+    """,
+    Output('theme-toggle-btn', 'children'),
+    Input('theme-store', 'data'),
+)
+
+@app.callback(
+    Output('theme-store', 'data'),
+    Input('theme-toggle-btn', 'n_clicks'),
+    State('theme-store', 'data'),
+    prevent_initial_call=True,
+)
+def toggle_theme(n, current):
+    return 'dark' if current != 'dark' else 'light'
 
 # ---------------------------------------------------------------------------
 # Entry point
