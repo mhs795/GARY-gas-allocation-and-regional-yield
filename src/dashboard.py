@@ -26,18 +26,29 @@ background_callback_manager = DiskcacheManager(_disk_cache)
 # ---------------------------------------------------------------------------
 RESULTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "precalculated_results.pkl")
 
+_results_mem = {'data': None, 'mtime': -1.0}
+
 def load_results():
-    if os.path.exists(RESULTS_FILE):
+    try:
+        mtime = os.path.getmtime(RESULTS_FILE)
+    except FileNotFoundError:
+        return {'all_scenarios': {}, 'current_key': None}
+    if _results_mem['data'] is None or mtime > _results_mem['mtime']:
         try:
             with open(RESULTS_FILE, 'rb') as f:
-                return pickle.load(f)
+                _results_mem['data'] = pickle.load(f)
+            _results_mem['mtime'] = mtime
+            _map_fig_cache.clear()   # invalidate map cache when data changes
         except Exception:
             pass
-    return {'all_scenarios': {}, 'current_key': None}
+    return _results_mem['data'] or {'all_scenarios': {}, 'current_key': None}
 
 def save_results(data):
     with open(RESULTS_FILE, 'wb') as f:
         pickle.dump(data, f)
+
+# Map figure cache — keyed by (key, end_year, map_year, options_tuple)
+_map_fig_cache: dict = {}
 
 def load_static_data():
     d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -799,8 +810,9 @@ main = html.Div(className='md-main', children=[
                                   inline=True),
                 ]),
                 html.Div(id='map-kpi-row', className='md-map-kpi-row'),
-                dcc.Graph(id='map-graph', style={'height': '720px', 'borderRadius': '10px', 'overflow': 'hidden'},
-                          config={'scrollZoom': True, 'displayModeBar': True, 'modeBarButtonsToRemove': ['lasso2d','select2d']}),
+                dcc.Loading(type='circle', color='#1976D2', children=
+                    html.Div(id='map-graph-wrap', style={'height': '720px', 'borderRadius': '10px', 'overflow': 'hidden'})
+                ),
             ]),
 
             # Production & Dispatch
@@ -1070,25 +1082,39 @@ def update_header_kpis(key, end_year):
 # ---------------------------------------------------------------------------
 # Network Map
 # ---------------------------------------------------------------------------
+_MAP_CONFIG = {'scrollZoom': True, 'displayModeBar': True, 'modeBarButtonsToRemove': ['lasso2d','select2d']}
+
 @app.callback(
-    Output('map-kpi-row', 'children'),
-    Output('map-graph',   'figure'),
+    Output('map-kpi-row',    'children'),
+    Output('map-graph-wrap', 'children'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
     Input('map-year',        'value'),
     Input('map-options',     'value'),
 )
 def update_map(key, end_year, map_year, options):
+    cache_key = (key, end_year, map_year, tuple(sorted(options or [])))
     try:
-        return _update_map_inner(key, end_year, map_year, options)
+        if cache_key not in _map_fig_cache:
+            _map_fig_cache[cache_key] = _update_map_inner(key, end_year, map_year, options)
+            if len(_map_fig_cache) > 36:   # cap at ~36 combos
+                _map_fig_cache.pop(next(iter(_map_fig_cache)))
+        kpis, fig = _map_fig_cache[cache_key]
     except Exception as e:
         import traceback
-        print(f'[MAP ERROR] {e}')
         traceback.print_exc()
         fig = go.Figure()
         fig.update_layout(map=dict(style='open-street-map', center=dict(lat=-31,lon=146), zoom=4.2),
                           margin=dict(l=0,r=0,t=0,b=0), height=720, paper_bgcolor='white')
-        return [html.Span(f'Map error: {e}', style={'color':'red'})], fig
+        return [html.Span(f'Map error: {e}', style={'color':'red'})], dcc.Graph(
+            id='map-graph-err', figure=fig, style={'height':'720px'}, config=_MAP_CONFIG)
+    # Unique id per (key, map_year) forces React to fully remount the Plotly canvas
+    graph_id = f'map-graph-{key or "none"}-{map_year}'
+    return kpis, dcc.Graph(
+        id=graph_id, figure=fig,
+        style={'height': '720px', 'borderRadius': '10px', 'overflow': 'hidden'},
+        config=_MAP_CONFIG,
+    )
 
 def _update_map_inner(key, end_year, map_year, options):
     show_labels   = 'labels'   in (options or [])
@@ -1352,7 +1378,6 @@ def _update_map_inner(key, end_year, map_year, options):
         legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
                     bgcolor='rgba(255,255,255,0.88)', font=dict(color='#111', size=11)),
         paper_bgcolor='white',
-        uirevision=f'{key}_{map_year}',
     )
     return map_kpis, fig
 
@@ -1366,8 +1391,11 @@ def _update_map_inner(key, end_year, map_year, options):
     Output('shortage-content',    'children'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
+    Input('main-tabs',       'active_tab'),
 )
-def update_prod(key, end_year):
+def update_prod(key, end_year, active_tab):
+    if active_tab != 'tab-prod':
+        return no_update, no_update, no_update, no_update
     b = blank_fig()
     if not key:
         return b, b, b, html.Div()
@@ -1440,8 +1468,11 @@ def update_prod(key, end_year):
     Output('storage-activity-content', 'children'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
+    Input('main-tabs',       'active_tab'),
 )
-def update_storage(key, end_year):
+def update_storage(key, end_year, active_tab):
+    if active_tab != 'tab-storage':
+        return no_update, no_update
     b = blank_fig()
     if not key:
         return b, html.Div()
@@ -1484,8 +1515,11 @@ def update_storage(key, end_year):
     Output('price-nodal-graph', 'figure'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
+    Input('main-tabs',       'active_tab'),
 )
-def update_prices(key, end_year):
+def update_prices(key, end_year, active_tab):
+    if active_tab != 'tab-price':
+        return no_update, no_update
     b = blank_fig()
     if not key:
         return b, b
@@ -1517,8 +1551,11 @@ def update_prices(key, end_year):
     Output('expansions-content', 'children'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
+    Input('main-tabs',       'active_tab'),
 )
-def update_expansions(key, end_year):
+def update_expansions(key, end_year, active_tab):
+    if active_tab != 'tab-exp':
+        return no_update
     if not key:
         return md_alert('No results loaded.', 'info')
     filtered = get_filtered(key, end_year)
@@ -1574,8 +1611,11 @@ def update_expansions(key, end_year):
     Output('ind-graph', 'figure'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
+    Input('main-tabs',       'active_tab'),
 )
-def update_industrial(key, end_year):
+def update_industrial(key, end_year, active_tab):
+    if active_tab != 'tab-ind':
+        return no_update
     b = blank_fig()
     if not key:
         return b
