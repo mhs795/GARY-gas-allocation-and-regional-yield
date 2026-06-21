@@ -5,14 +5,38 @@ cd "$DIR"
 
 URL="http://127.0.0.1:8050"
 
-# If the server is already running, just open/refresh the browser and exit
-if lsof -ti :8050 >/dev/null 2>&1; then
-    echo "GARY already running at $URL — refreshing browser..."
+# Make sure the browser is already running before we ever hand it a URL.
+# If Brave is cold-started together with a URL argument, it both restores
+# the previous session AND opens the new URL, producing two tabs. Pre-warming
+# the browser first means xdg-open always lands on an already-running
+# instance, which just adds the one tab.
+ensure_browser_running() {
+    if pgrep -x brave-browser >/dev/null 2>&1; then
+        return
+    fi
+    if command -v brave-browser >/dev/null 2>&1; then
+        nohup brave-browser >/dev/null 2>&1 &
+    fi
+    for i in $(seq 1 20); do
+        pgrep -x brave-browser >/dev/null 2>&1 && break
+        sleep 0.25
+    done
+    sleep 1
+}
+
+open_browser() {
+    ensure_browser_running
     if command -v xdg-open >/dev/null 2>&1; then
         xdg-open "$URL"
     elif command -v open >/dev/null 2>&1; then
         open "$URL"
     fi
+}
+
+# If the server is already running, just open/refresh the browser and exit
+if lsof -ti :8050 >/dev/null 2>&1; then
+    echo "GARY already running at $URL — refreshing browser..."
+    open_browser
     exit 0
 fi
 
@@ -32,13 +56,7 @@ for i in $(seq 1 30); do
 done
 
 # Open browser
-if command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "$URL"
-elif command -v open >/dev/null 2>&1; then
-    open "$URL"
-else
-    echo "Open your browser at $URL"
-fi
+open_browser
 
 echo "GARY running at $URL  (PID $SERVER_PID)"
 echo "Press Ctrl+C to stop."
