@@ -1338,10 +1338,19 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
             tt += f"- {fr['FacilityName']}: {fac_dem_map.get(fr['FacilityName'], 0):.1f} PJ<br>"
         gv, gc = gpg_serv.get(node, 0), gpg_cur.get(node, 0)
         iv, ic = ind_serv.get(node, 0), ind_cur.get(node, 0)
+        def _fac_lines(df):
+            s = ''
+            if df is not None and not df.empty:
+                rows = df[df['Node'] == node].sort_values('MeanDemand', ascending=False)
+                for _, fr in rows.iterrows():
+                    s += f"&nbsp;&nbsp;· {fr['FacilityName']}: {fr['MeanDemand'] * 365 / 1000:.1f} PJ/yr<br>"
+            return s
         if gv + gc > 0.01:
             tt += f"⚡ GPG: {gv:.1f} PJ" + (f" <i>(shed {gc:.1f})</i>" if gc > 0.01 else "") + "<br>"
+            tt += _fac_lines(static_data.get('gpg_facs'))
         if iv + ic > 0.01:
             tt += f"🏭 Large industrial: {iv:.1f} PJ" + (f" <i>(shed {ic:.1f})</i>" if ic > 0.01 else "") + "<br>"
+            tt += _fac_lines(static_data.get('ind_bbg'))
         map_nodes.append({'Node': node, 'Lat': c[0], 'Lon': c[1],
                           'Type': n_t, 'Price': p_v, 'Supply': s_v, 'Tooltip': tt})
 
