@@ -57,7 +57,15 @@ def load_static_data():
         'arcs':      pd.read_csv(os.path.join(d, "arcs.csv")),
         'ind_facs':  pd.read_csv(os.path.join(d, "industrial_facilities.csv")),
         'expansion': pd.read_csv(os.path.join(d, "expansion_options.csv")),
+        'gpg_facs':  _safe_csv(os.path.join(d, "gpg_facilities.csv")),
+        'ind_bbg':   _safe_csv(os.path.join(d, "industrial_facilities_bbg.csv")),
     }
+
+def _safe_csv(path):
+    try:
+        return pd.read_csv(path)
+    except FileNotFoundError:
+        return pd.DataFrame()
 
 static_data = load_static_data()
 
@@ -884,7 +892,7 @@ main = html.Div(className='md-main', children=[
                 dbc.Tab(label='Storage Dynamics',      tab_id='tab-storage'),
                 dbc.Tab(label='Price Outcomes',        tab_id='tab-price'),
                 dbc.Tab(label='Expansions',            tab_id='tab-exp'),
-                dbc.Tab(label='Industrial Use',        tab_id='tab-ind'),
+                dbc.Tab(label='GPG & Large Users',     tab_id='tab-ind'),
             ]),
         ]),
 
@@ -1315,6 +1323,11 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
     node_types  = static_data['nodes'].set_index('Name')['Type'].to_dict()
     fac_dem_map = (pd.DataFrame(res['facility_demand']).groupby('Facility')['Value'].sum() / 1000
                    if res['facility_demand'] else {})
+    def _node_sum(stream, col):
+        df = pd.DataFrame(res.get(stream, []))
+        return (df.groupby('Node')[col].sum() / 1000).to_dict() if not df.empty else {}
+    gpg_serv, gpg_cur = _node_sum('gpg', 'Served'), _node_sum('gpg', 'Curtailed')
+    ind_serv, ind_cur = _node_sum('industrial', 'Served'), _node_sum('industrial', 'Curtailed')
     map_nodes = []
     for node, c in COORDS.items():
         n_t = node_types.get(node, 'Hub')
@@ -1323,6 +1336,12 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
         tt  = f"<b>{node} ({n_t})</b><br>Price: ${p_v:.2f}/GJ<br>"
         for _, fr in static_data['ind_facs'][static_data['ind_facs']['Node'] == node].iterrows():
             tt += f"- {fr['FacilityName']}: {fac_dem_map.get(fr['FacilityName'], 0):.1f} PJ<br>"
+        gv, gc = gpg_serv.get(node, 0), gpg_cur.get(node, 0)
+        iv, ic = ind_serv.get(node, 0), ind_cur.get(node, 0)
+        if gv + gc > 0.01:
+            tt += f"⚡ GPG: {gv:.1f} PJ" + (f" <i>(shed {gc:.1f})</i>" if gc > 0.01 else "") + "<br>"
+        if iv + ic > 0.01:
+            tt += f"🏭 Large industrial: {iv:.1f} PJ" + (f" <i>(shed {ic:.1f})</i>" if ic > 0.01 else "") + "<br>"
         map_nodes.append({'Node': node, 'Lat': c[0], 'Lon': c[1],
                           'Type': n_t, 'Price': p_v, 'Supply': s_v, 'Tooltip': tt})
 
@@ -1735,6 +1754,28 @@ def update_industrial(key, end_year, active_tab, theme):
     filtered = get_filtered(key, end_year)
     if not filtered:
         return b
+    # Curtailable large-user demand (GPG + industrial): served vs shed per year.
+    rows = []
+    for r in filtered:
+        yr = r['Year']
+        for stream, lbl in (('gpg', 'GPG'), ('industrial', 'Large Industrial')):
+            df = pd.DataFrame(r.get(stream, []))
+            if df.empty:
+                continue
+            rows.append({'Year': yr, 'Tier': f'{lbl} served', 'PJ': df['Served'].sum() / 1000})
+            cur = df['Curtailed'].sum() / 1000
+            if cur > 0.001:
+                rows.append({'Year': yr, 'Tier': f'{lbl} curtailed', 'PJ': cur})
+    if rows:
+        dd = pd.DataFrame(rows)
+        cmap = {'GPG served': '#2563eb', 'GPG curtailed': '#93c5fd',
+                'Large Industrial served': '#b45309', 'Large Industrial curtailed': '#fcd34d'}
+        fig = px.area(dd, x='Year', y='PJ', color='Tier', color_discrete_map=cmap,
+                      title='GPG & Large-Industrial Gas Demand — served vs curtailed (PJ)',
+                      template=tmpl)
+        fig.update_yaxes(rangemode='tozero')
+        return fig
+    # Fallback: legacy facility_demand view (pre-curtailment result sets)
     frames = [pd.DataFrame(r['facility_demand']).assign(Year=r['Year'])
               for r in filtered if r['facility_demand']]
     if not frames:

@@ -18,6 +18,30 @@ class GasMarketModel:
         # Load supplemental data for industrial facilities
         base_path = os.path.dirname(__file__)
         self.ind_facs = pd.read_csv(os.path.join(base_path, "data", "industrial_facilities.csv"))
+
+        # --- Curtailable large-user demand (GPG + large industrial) ---------
+        # Exogenous, empirically-derived (GBB BBGPG / BBLARGE) daily demand added
+        # on top of the distribution-level node demand. Each tier is served
+        # unless the nodal gas price exceeds its strike price, above which it
+        # sheds load instead of being supplied. See build_curtailable_demand.py.
+        data_dir = os.path.join(base_path, "data")
+        def _load_profile(fname):
+            try:
+                df = pd.read_csv(os.path.join(data_dir, fname))
+                return df.set_index(['Node', 'Day'])['Demand'].to_dict()
+            except FileNotFoundError:
+                return {}
+        self.gpg_demand = _load_profile("gpg_demand_profile.csv")
+        self.ind_demand = _load_profile("industrial_demand_profile.csv")
+        try:
+            strikes = pd.read_csv(os.path.join(data_dir, "curtailment_params.csv")
+                                  ).set_index('Tier')['StrikePrice'].to_dict()
+        except FileNotFoundError:
+            strikes = {}
+        self.strike_gpg = float(strikes.get('GPG', 22.0))
+        self.strike_ind = float(strikes.get('Industrial', 120.0))
+        self.gpg_nodes = sorted({n for (n, _) in self.gpg_demand})
+        self.ind_nodes = sorted({n for (n, _) in self.ind_demand})
         
         # Optimized Lookups
         self.facility_node_map = self.ind_facs.set_index('FacilityName')['Node'].to_dict()
@@ -46,7 +70,15 @@ class GasMarketModel:
         m.withdrawal = pyo.Var(m.StorageNodes, m.T, domain=pyo.NonNegativeReals)
         m.build = pyo.Var(m.Expansion, domain=pyo.Binary)
 
+        # Curtailable large-user demand: served unless price exceeds strike.
+        m.GPGNodes = pyo.Set(initialize=[n for n in self.gpg_nodes if n in self.nodes['Name'].tolist()])
+        m.INDNodes = pyo.Set(initialize=[n for n in self.ind_nodes if n in self.nodes['Name'].tolist()])
+        m.gpg_curtail = pyo.Var(m.GPGNodes, m.T, domain=pyo.NonNegativeReals)
+        m.ind_curtail = pyo.Var(m.INDNodes, m.T, domain=pyo.NonNegativeReals)
+
         node_demand = self.demand.set_index(['Node', 'Day'])['Demand'].to_dict()
+        gpg_dem = self.gpg_demand
+        ind_dem = self.ind_demand
         arc_data = self.arcs.set_index('Name').to_dict('index')
         supply_dict = self.supply.set_index(['Node', 'IsPotential']).to_dict('index')
         exp_data = self.expansion.set_index('Name').to_dict('index')
@@ -58,7 +90,13 @@ class GasMarketModel:
             shortage_penalty = sum(m.shortage[n, t] * 300000 for n in m.Nodes for t in m.T)
             storage_cost = sum((m.injection[sn, t] + m.withdrawal[sn, t]) * 0.5 * 1000 for sn in m.StorageNodes for t in m.T)
             exp_capex = sum(m.build[e] * exp_data[e]['CapEx'] * 0.08 for e in m.Expansion)
-            return prod_cost + trans_cost + shortage_penalty + storage_cost + exp_capex
+            # Curtailment penalties = strike price ($/GJ) x 1000 (GJ/TJ). Shedding a
+            # tier costs its strike price, so a tier only sheds when the marginal
+            # cost of supplying it would exceed that strike (GPG $22 < industrial
+            # $120 < mass-market value-of-lost-load $300/GJ).
+            gpg_pen = sum(m.gpg_curtail[n, t] * self.strike_gpg * 1000 for n in m.GPGNodes for t in m.T)
+            ind_pen = sum(m.ind_curtail[n, t] * self.strike_ind * 1000 for n in m.INDNodes for t in m.T)
+            return prod_cost + trans_cost + shortage_penalty + storage_cost + exp_capex + gpg_pen + ind_pen
         m.obj = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
 
         arcs_to = {n: [a for a in m.Arcs if arc_data[a]['To'] == n] for n in m.Nodes}
@@ -66,12 +104,23 @@ class GasMarketModel:
         supply_at = {n: [s for s in m.Supply if s[0] == n] for n in m.Nodes}
 
         def balance_rule(m, n, t):
-            return (sum(m.production[s[0], s[1], t] for s in supply_at[n]) + 
-                    sum(m.flow[a, t] for a in arcs_to[n]) + 
-                    (m.withdrawal[n, t] - m.injection[n, t] if n in m.StorageNodes else 0) + 
-                    m.shortage[n, t] == node_demand.get((n, t), 0) + 
+            # Total demand at the node = distribution (mass-market) + GPG + large
+            # industrial. GPG/industrial may be shed via their curtail variables.
+            return (sum(m.production[s[0], s[1], t] for s in supply_at[n]) +
+                    sum(m.flow[a, t] for a in arcs_to[n]) +
+                    (m.withdrawal[n, t] - m.injection[n, t] if n in m.StorageNodes else 0) +
+                    m.shortage[n, t] +
+                    (m.gpg_curtail[n, t] if n in m.GPGNodes else 0) +
+                    (m.ind_curtail[n, t] if n in m.INDNodes else 0) ==
+                    node_demand.get((n, t), 0) + gpg_dem.get((n, t), 0) + ind_dem.get((n, t), 0) +
                     sum(m.flow[a, t] for a in arcs_from[n]))
         m.balance = pyo.Constraint(m.Nodes, m.T, rule=balance_rule)
+
+        # A tier can shed at most its own demand.
+        m.gpg_curtail_cap = pyo.Constraint(m.GPGNodes, m.T,
+            rule=lambda m, n, t: m.gpg_curtail[n, t] <= gpg_dem.get((n, t), 0))
+        m.ind_curtail_cap = pyo.Constraint(m.INDNodes, m.T,
+            rule=lambda m, n, t: m.ind_curtail[n, t] <= ind_dem.get((n, t), 0))
 
         def supply_cap_rule(m, node, is_pot, t):
             cap = supply_dict[node, is_pot]['Capacity']
@@ -140,16 +189,18 @@ class GasMarketModel:
 
     def get_results(self):
         m = self.model
-        res = {k: [] for k in ['prices', 'production', 'flow', 'storage', 'shortage', 'builds', 'facility_demand']}
+        res = {k: [] for k in ['prices', 'production', 'flow', 'storage', 'shortage', 'builds', 'facility_demand', 'gpg', 'industrial']}
         demand_dict = self.demand.set_index(['Node', 'Day'])['Demand'].to_dict()
         supply_at = {n: [s for s in m.Supply if s[0] == n] for n in m.Nodes}
-        
+
         pv = m.production.get_values()
         fv = m.flow.get_values()
         sv = m.shortage.get_values()
         iv = m.inventory.get_values()
         inj_v = m.injection.get_values()
         wd_v = m.withdrawal.get_values()
+        gpg_cv = m.gpg_curtail.get_values()
+        ind_cv = m.ind_curtail.get_values()
         
         for t in m.T:
             for n in m.Nodes:
@@ -163,7 +214,19 @@ class GasMarketModel:
                     row = self.arcs[self.arcs['Name'] == a].iloc[0]
                     res['flow'].append({'Day': t, 'Arc': a, 'From': row['From'], 'To': row['To'], 'Value': float(fv[a, t])})
             for sn in m.StorageNodes: res['storage'].append({'Day': t, 'Node': sn, 'Inventory': float(iv[sn, t]), 'Injection': float(inj_v[sn, t]), 'Withdrawal': float(wd_v[sn, t])})
-            
+
+            # Curtailable large-user demand: served vs shed
+            for n in m.GPGNodes:
+                dem = self.gpg_demand.get((n, t), 0)
+                cur = float(gpg_cv[n, t] or 0)
+                if dem > 0.001:
+                    res['gpg'].append({'Day': t, 'Node': n, 'Demand': float(dem), 'Served': float(dem - cur), 'Curtailed': cur})
+            for n in m.INDNodes:
+                dem = self.ind_demand.get((n, t), 0)
+                cur = float(ind_cv[n, t] or 0)
+                if dem > 0.001:
+                    res['industrial'].append({'Day': t, 'Node': n, 'Demand': float(dem), 'Served': float(dem - cur), 'Curtailed': cur})
+
             # Keep facility-level demand info
             for fac_name, node in self.facility_node_map.items():
                 if node in ['APLNG', 'GLNG', 'QCLNG', 'Sydney', 'Melbourne', 'Adelaide', 'Brisbane']: out_v = demand_dict.get((node, t), 0)

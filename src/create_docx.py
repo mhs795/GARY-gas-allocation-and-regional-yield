@@ -123,6 +123,83 @@ def create_docs():
         'nodal prices "decouple," reflecting local scarcity or surplus.'
     )
 
+    # -----------------------------------------------------------------
+    doc.add_heading('6. Curtailable Large-User Demand: GPG & Large Industrial', level=1)
+    doc.add_paragraph(
+        'Gas-powered generation (GPG) and large transmission-connected industrial users are '
+        'modelled as explicit, curtailable demand tiers added on top of the distribution-level '
+        'node demand. This was added in 2026 to capture demand that the nodal traces did not '
+        'previously represent.'
+    )
+
+    doc.add_heading('6.1 Why these loads are additive (not double-counted)', level=2)
+    doc.add_paragraph(
+        'The model\'s nodal demand was calibrated from Gas Bulletin Board (GBB) Actual Flow data '
+        'at the city distribution level. On the GBB, GPG plants (FacilityType BBGPG) and large '
+        'industrial users (BBLARGE) are metered as their own facilities, separate from the '
+        'distribution PIPE deliveries that the node traces track. A reconstruction of the demand '
+        'decomposition from the same GBB source confirmed that node demand closely matches '
+        'city-gate distribution delivery in every region (e.g. Sydney 235 vs 217 TJ/d; Adelaide '
+        '53 vs 48; Brisbane 81 vs 63), with a worst-case residual overlap of ~2 TJ/d at Sydney. '
+        'This is consistent with AEMO\'s own demand segmentation, which forecasts Tariff V '
+        '(residential/commercial), Tariff D (industrial) and GPG as separate categories. GPG and '
+        'large industrial are therefore genuinely additive, not embedded.'
+    )
+
+    doc.add_heading('6.2 Data source and seasonality', level=2)
+    doc.add_paragraph(
+        'Per-facility daily demand traces are derived from the GBB Actual Flow & Storage data '
+        '(2022-2026), averaged into a representative 365-day shape per facility - the same method '
+        'used for the distribution demand traces. Facilities are mapped to the nearest modelled '
+        'node (NSW->Sydney; SA->Adelaide; VIC->Melbourne/Gippsland; QLD Surat basin->Surat, '
+        'Gladstone cogen->Gladstone, SEQ->Brisbane). NT, Tasmania and off-network North '
+        'Queensland (Mount Isa) facilities are excluded. Mapped totals are ~106 TJ/day GPG and '
+        '~67 TJ/day large industrial (annual mean).'
+    )
+    p = doc.add_paragraph(style='List Bullet')
+    p.add_run('GPG seasonality (empirical): ').bold = True
+    p.add_run('winter-peaking, with eastern-states demand peaking in June at ~1.5x the annual '
+              'mean. Winter/summer ratios are state-specific - Victoria 3.6x, NSW 2.4x, SA 1.9x, '
+              'and Queensland ~1.0x (flat, dominated by baseload CCGTs such as Darling Downs).')
+    p = doc.add_paragraph(style='List Bullet')
+    p.add_run('Industrial seasonality: ').bold = True
+    p.add_run('near-flat (winter/summer ~1.1x), consistent with baseload process load.')
+
+    doc.add_heading('6.3 Three-tier curtailable demand stack', level=2)
+    doc.add_paragraph(
+        'GPG and large industrial are price-responsive in reality: when gas becomes expensive, '
+        'gas generators switch to alternatives and some industrials curtail. To capture this '
+        'without making demand fully endogenous, each tier is modelled as curtailable demand with '
+        'a strike price - the nodal gas price above which the load sheds instead of being supplied. '
+        'This avoids the unrealistic price/shortage overstatement that fully-inelastic demand would '
+        'produce. The resulting merit order of load-shedding is:'
+    )
+    for tier, sp, note in [
+        ('Gas-powered generation', '$22/GJ', 'sheds first - generators become uneconomic vs coal, batteries and imports'),
+        ('Large industrial', '$120/GJ', 'sheds only in extreme scarcity - high cost of lost production, few alternatives'),
+        ('Mass-market (firm)', '$300/GJ', 'value of lost load - residential/commercial, shed last via the shortage variable'),
+    ]:
+        q = doc.add_paragraph(style='List Bullet')
+        q.add_run(f'{tier} ({sp}): ').bold = True
+        q.add_run(note)
+    doc.add_paragraph(
+        'Formally, each tier adds its demand to the nodal balance and a non-negative curtailment '
+        'variable bounded by that demand; the objective charges curtailment at the strike price '
+        '(x1000 GJ/TJ). A tier sheds only when the marginal cost of supplying it would exceed its '
+        'strike. GPG and industrial demand are held exogenous and flat across 2025-2050 (their '
+        'own empirical seasonality is retained); they are not scaled by the winter or LNG demand '
+        'multipliers, which apply to mass-market demand only.'
+    )
+
+    doc.add_heading('6.4 Limitations and next steps', level=2)
+    doc.add_paragraph(
+        'GPG/industrial levels are exogenous (price-responsive in dispatch via the strike, but not '
+        'a function of the electricity market), and held flat in real terms to 2050 given genuine '
+        'uncertainty about GPG\'s future role. A future extension would make GPG demand endogenous '
+        'to electricity-market dispatch. The ~2 TJ/d Sydney residual overlap is immaterial and left '
+        'unadjusted. Strike prices are tunable parameters (data/curtailment_params.csv).'
+    )
+
     # Save
     doc.save('gas_market_model/Gas_Market_Model_Documentation.docx')
     print("Created Gas_Market_Model_Documentation.docx")
