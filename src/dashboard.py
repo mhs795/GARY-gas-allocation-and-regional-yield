@@ -1791,18 +1791,18 @@ def update_industrial(key, end_year, active_tab, theme):
     if not parts:
         return b
     allr = pd.concat(parts)
-    allr['Month'] = allr['Date'].dt.to_period('M').dt.to_timestamp()
-    g = allr.groupby(['Month', 'Tier_base'])[['Served', 'Curtailed']].sum().reset_index()
+    allr['Quarter'] = allr['Date'].dt.to_period('Q').dt.to_timestamp()
+    g = allr.groupby(['Quarter', 'Tier_base'])[['Served', 'Curtailed']].sum().reset_index()
     rows = []
     for _, x in g.iterrows():
-        rows.append({'Month': x['Month'], 'Tier': f"{x['Tier_base']} served", 'PJ': x['Served'] / 1000})
+        rows.append({'Quarter': x['Quarter'], 'Tier': f"{x['Tier_base']} served", 'PJ': x['Served'] / 1000})
         if x['Curtailed'] / 1000 > 0.0001:
-            rows.append({'Month': x['Month'], 'Tier': f"{x['Tier_base']} curtailed", 'PJ': x['Curtailed'] / 1000})
+            rows.append({'Quarter': x['Quarter'], 'Tier': f"{x['Tier_base']} curtailed", 'PJ': x['Curtailed'] / 1000})
     dd = pd.DataFrame(rows)
     cmap = {'GPG served': '#2563eb', 'GPG curtailed': '#93c5fd',
             'Large Industrial served': '#b45309', 'Large Industrial curtailed': '#fcd34d'}
-    fig = px.area(dd, x='Month', y='PJ', color='Tier', color_discrete_map=cmap,
-                  title='GPG & Large-Industrial Gas — served vs curtailed (monthly, PJ)',
+    fig = px.area(dd, x='Quarter', y='PJ', color='Tier', color_discrete_map=cmap,
+                  title='GPG & Large-Industrial Gas — served vs curtailed (quarterly, PJ)',
                   template=tmpl)
     fig.update_yaxes(rangemode='tozero')
     return fig
