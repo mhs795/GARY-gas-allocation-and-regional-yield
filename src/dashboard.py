@@ -1661,18 +1661,15 @@ def update_prices(key, end_year, active_tab, theme):
     summary, prices_df, _, _ = build_summary(filtered)
     fig_vwap = px.line(summary, x='Year', y='Avg_Price', title='Volume-Weighted Average Price ($/GJ)',
                        template=tmpl, labels={'Avg_Price': '$/GJ'})
-    fig_vwap.update_yaxes(rangemode='tozero')
+    fig_vwap.update_yaxes(range=[0, 150])
 
-    all_prod = pd.concat([pd.DataFrame(r['production']).assign(Year=r['Year'])
-                          for r in filtered if r['production']])
+    demand_nodes = static_data['nodes'][static_data['nodes']['Type'] == 'Demand']['Name'].tolist()
     nodal_p  = prices_df.groupby(['Year','Node'])['Price'].mean().reset_index()
-    active   = all_prod.groupby(['Year','Node'])['Value'].sum().reset_index()
-    nf       = pd.merge(nodal_p, active, on=['Year','Node'], how='left')
-    nf       = nf[nf['Value'] > 0.1]
+    nf       = nodal_p[nodal_p['Node'].isin(demand_nodes)]
     fig_n    = px.line(nf, x='Year', y='Price', color='Node',
-                       title='Nodal Prices — Supply Nodes ($/GJ)',
+                       title='Nodal Prices — Demand Centres ($/GJ)',
                        template=tmpl, labels={'Price': '$/GJ'})
-    fig_n.update_yaxes(rangemode='tozero')
+    fig_n.update_yaxes(range=[0, 150])
     return fig_vwap, fig_n
 
 # ---------------------------------------------------------------------------
