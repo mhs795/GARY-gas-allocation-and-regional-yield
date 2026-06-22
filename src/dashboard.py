@@ -1562,12 +1562,14 @@ def update_prod(key, end_year, active_tab, theme):
     if flow_frames:
         all_flow = pd.concat(flow_frames)
         major    = ['MSP','EGP','VNI','WGP_Pipe','APLNG_Pipe','GLNG_Pipe']
-        ann_flow = (all_flow[all_flow['Arc'].isin(major)]
-                    .groupby(['Year','Arc'])['Value'].sum().reset_index())
-        ann_flow['Value'] /= 1000
-        fig_flow = px.line(ann_flow, x='Year', y='Value', color='Arc',
-                           title='Major Pipeline Flows (PJ)', template=tmpl,
-                           labels={'Value': 'PJ'})
+        mf = all_flow[all_flow['Arc'].isin(major)].copy()
+        mf['Date'] = pd.to_datetime(mf['Year'].astype(str) + mf['Day'].astype(int).astype(str).str.zfill(3), format='%Y%j')
+        mf['Month'] = mf['Date'].dt.to_period('M').dt.to_timestamp()
+        mon_flow = mf.groupby(['Month', 'Arc'])['Value'].sum().reset_index()
+        mon_flow['Value'] /= 1000
+        fig_flow = px.line(mon_flow, x='Month', y='Value', color='Arc',
+                           title='Major Pipeline Flows (monthly, PJ)', template=tmpl,
+                           labels={'Value': 'PJ', 'Month': ''})
         fig_flow.update_yaxes(rangemode='tozero')
     else:
         fig_flow = b
