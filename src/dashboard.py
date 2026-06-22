@@ -1564,10 +1564,17 @@ def update_prod(key, end_year, active_tab, theme):
         major    = ['MSP','EGP','VNI','WGP_Pipe','APLNG_Pipe','GLNG_Pipe']
         df_flow = all_flow[all_flow['Arc'].isin(major)].copy()
         df_flow['Date'] = pd.to_datetime(df_flow['Year'].astype(str) + df_flow['Day'].astype(int).astype(str).str.zfill(3), format='%Y%j')
-        df_flow = df_flow.sort_values('Date')
-        fig_flow = px.line(df_flow, x='Date', y='Value', color='Arc',
+        # Reindex to every modelled day so idle (zero-flow) days are NaN; the line
+        # then breaks at those gaps instead of interpolating across them.
+        years = sorted(df_flow['Year'].unique())
+        full  = pd.to_datetime([f'{y}{d:03d}' for y in years for d in range(1, 366)], format='%Y%j')
+        pivot = df_flow.pivot_table(index='Date', columns='Arc', values='Value').reindex(full)
+        pivot.index.name = 'Date'
+        long  = pivot.reset_index().melt(id_vars='Date', var_name='Arc', value_name='Value')
+        fig_flow = px.line(long, x='Date', y='Value', color='Arc',
                            title='Major Pipeline Flows (daily, TJ/d)', template=tmpl,
                            labels={'Value': 'TJ/d', 'Date': ''}, render_mode='webgl')
+        fig_flow.update_traces(connectgaps=False)
         fig_flow.update_yaxes(rangemode='tozero')
     else:
         fig_flow = b
