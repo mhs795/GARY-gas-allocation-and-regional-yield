@@ -1562,14 +1562,12 @@ def update_prod(key, end_year, active_tab, theme):
     if flow_frames:
         all_flow = pd.concat(flow_frames)
         major    = ['MSP','EGP','VNI','WGP_Pipe','APLNG_Pipe','GLNG_Pipe']
-        mf = all_flow[all_flow['Arc'].isin(major)].copy()
-        mf['Date'] = pd.to_datetime(mf['Year'].astype(str) + mf['Day'].astype(int).astype(str).str.zfill(3), format='%Y%j')
-        mf['Month'] = mf['Date'].dt.to_period('M').dt.to_timestamp()
-        mon_flow = mf.groupby(['Month', 'Arc'])['Value'].sum().reset_index()
-        mon_flow['Value'] /= 1000
-        fig_flow = px.line(mon_flow, x='Month', y='Value', color='Arc',
-                           title='Major Pipeline Flows (monthly, PJ)', template=tmpl,
-                           labels={'Value': 'PJ', 'Month': ''})
+        df_flow = all_flow[all_flow['Arc'].isin(major)].copy()
+        df_flow['Date'] = pd.to_datetime(df_flow['Year'].astype(str) + df_flow['Day'].astype(int).astype(str).str.zfill(3), format='%Y%j')
+        df_flow = df_flow.sort_values('Date')
+        fig_flow = px.line(df_flow, x='Date', y='Value', color='Arc',
+                           title='Major Pipeline Flows (daily, TJ/d)', template=tmpl,
+                           labels={'Value': 'TJ/d', 'Date': ''}, render_mode='webgl')
         fig_flow.update_yaxes(rangemode='tozero')
     else:
         fig_flow = b
