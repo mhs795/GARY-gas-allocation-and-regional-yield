@@ -1662,9 +1662,9 @@ def update_prices(key, end_year, active_tab, theme):
     frames = [pd.DataFrame(r['prices']).assign(Year=r['Year']) for r in filtered if r['prices']]
     if not frames:
         return b, b
-    demand_nodes = static_data['nodes'][static_data['nodes']['Type'] == 'Demand']['Name'].tolist()
+    price_nodes = static_data['nodes'][static_data['nodes']['Type'].isin(['Demand', 'LNG'])]['Name'].tolist()
     dpr = pd.concat(frames)
-    dpr = dpr[dpr['Node'].isin(demand_nodes)].copy()
+    dpr = dpr[dpr['Node'].isin(price_nodes)].copy()
     dpr['Date'] = pd.to_datetime(dpr['Year'].astype(str) + dpr['Day'].astype(int).astype(str).str.zfill(3),
                                  format='%Y%j')
     # Quarterly-average price (~4 points/year): smooths daily noise while keeping
@@ -1674,8 +1674,8 @@ def update_prices(key, end_year, active_tab, theme):
     # Split centres by the highest quarterly price they reach (cap-bound vs low)
     # so each chart auto-scales to its own group.
     ann    = q.groupby('Node')['Price'].max()
-    hit    = [n for n in demand_nodes if ann.get(n, 0) >= 150]
-    no_hit = [n for n in demand_nodes if n not in hit]
+    hit    = [n for n in price_nodes if ann.get(n, 0) >= 150]
+    no_hit = [n for n in price_nodes if n not in hit]
 
     def _price_fig(nodes, title):
         sub = q[q['Node'].isin(nodes)].sort_values('Quarter')
@@ -1688,8 +1688,8 @@ def update_prices(key, end_year, active_tab, theme):
         f.update_yaxes(rangemode='tozero')
         return f
 
-    fig_high = _price_fig(hit, 'Demand Centres reaching the $300 cap — quarterly avg ($/GJ)')
-    fig_low  = _price_fig(no_hit, 'Demand Centres staying below the cap — quarterly avg ($/GJ)')
+    fig_high = _price_fig(hit, 'Demand & LNG nodes reaching the $300 cap — quarterly avg ($/GJ)')
+    fig_low  = _price_fig(no_hit, 'Demand & LNG nodes staying below the cap — quarterly avg ($/GJ)')
     return fig_high, fig_low
 
 # ---------------------------------------------------------------------------
