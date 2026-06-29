@@ -47,7 +47,8 @@ class GasMarketModel:
         # until re-based. See build_gpg_demand_gsoo.py.
         self.gpg_demand = _load_year_profile("gpg_demand_profile_gsoo.csv",
                                              "gpg_demand_profile.csv")
-        self.ind_demand = _load_profile("industrial_demand_profile.csv")
+        self.ind_demand = _load_year_profile("industrial_demand_profile_gsoo.csv",
+                                             "industrial_demand_profile.csv")
         try:
             strikes = pd.read_csv(os.path.join(data_dir, "curtailment_params.csv")
                                   ).set_index('Tier')['StrikePrice'].to_dict()
