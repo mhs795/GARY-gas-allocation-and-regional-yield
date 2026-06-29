@@ -9,7 +9,7 @@ import time
 import subprocess
 from model import GasMarketModel
 from solve import solve_scenario, get_lng_mult
-from generate_data_2050 import generate_long_term_data
+from regenerate_data import regenerate_all
 
 st.set_page_config(page_title="Gas Market 2050 Explorer", layout="wide")
 
@@ -101,11 +101,12 @@ if mip_gap == 0.0: st.sidebar.warning("⚠️ 0.0 gap is VERY slow for full batc
 
 st.sidebar.markdown("---")
 st.sidebar.header("Data Management")
-if st.sidebar.button("Regenerate Demand Data"):
-    with st.spinner("Regenerating demand data..."):
-        generate_long_term_data()
+if st.sidebar.button("Regenerate All Data"):
+    regen_status = st.sidebar.empty()
+    with st.spinner("Rebuilding all data from source (GBB + GSOO)..."):
+        regenerate_all(progress=lambda label, frac: regen_status.text(f"{int(frac*100)}% — {label}"))
         st.cache_data.clear() # Clear cache
-        st.success("Data regenerated!")
+        st.success("All data regenerated from source!")
 
 if st.sidebar.button("🚀 Run Current Scenario"):
     status_text = st.sidebar.empty()

@@ -12,3 +12,22 @@ solver_log.txt
 *.log
 .DS_Store
 Thumbs.db
+
+# Generated model data — NOT committed; rebuild from source via the
+# "Regenerate All Data" GUI button (see src/regenerate_data.py).
+# Source inputs ARE tracked (GasBB*.CSV, GSOO *.xlsx, demand_profiles.csv, configs).
+src/data/demand_2050.csv
+src/data/gpg_demand_profile.csv
+src/data/industrial_demand_profile.csv
+src/data/gpg_facilities.csv
+src/data/industrial_facilities_bbg.csv
+src/data/curtailment_params.csv
+src/data/demand_decomposition_validation.csv
+src/data/gpg_demand_profile_gsoo.csv
+src/data/industrial_demand_profile_gsoo.csv
+src/data/gsoo/
+
+# Editor / browser download temp files
+*.crdownload
+*.xdp-Unconfirmed*
+.~lock.*#

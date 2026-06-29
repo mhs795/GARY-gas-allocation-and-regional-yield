@@ -58,8 +58,8 @@ def solve_scenario(winter, lng, adgsm_enabled=False, mip_gap=0.005, callback=Non
         demand_mod.loc[(demand_mod['Year'] == year) & (demand_mod['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])), 'Demand'] *= lng_mult
         
         # GPG + large-industrial demand is loaded inside GasMarketModel from the
-        # GBB-derived profiles, held flat across years (exogenous) and kept out of
-        # the winter/LNG multipliers above (which scale mass-market only).
+        # GSOO Step Change profiles (year-varying) and kept out of the winter/LNG
+        # multipliers above (which scale mass-market distribution only).
         # Filter demand to current year
         demand_yr = demand_mod[demand_mod['Year'] == year].copy()
         

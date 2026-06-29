@@ -11,7 +11,7 @@ import dash_bootstrap_components as dbc
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from solve import solve_scenario
-from generate_data_2050 import generate_long_term_data
+from regenerate_data import regenerate_all
 
 # ---------------------------------------------------------------------------
 # Background callback manager
@@ -1129,8 +1129,8 @@ def clear_results(n, refresh):
 def regen_demand(n):
     if not n:
         return no_update
-    generate_long_term_data()
-    return '✓  Demand data regenerated'
+    regenerate_all()
+    return '✓  All data regenerated from source'
 
 # ---------------------------------------------------------------------------
 # Result selector + horizon max

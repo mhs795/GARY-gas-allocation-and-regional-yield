@@ -1,6 +1,5 @@
 import pyomo.environ as pyo
 import pandas as pd
-import numpy as np
 import os
 
 class GasMarketModel:
@@ -19,10 +18,11 @@ class GasMarketModel:
         base_path = os.path.dirname(__file__)
 
         # --- Curtailable large-user demand (GPG + large industrial) ---------
-        # Exogenous, empirically-derived (GBB BBGPG / BBLARGE) daily demand added
-        # on top of the distribution-level node demand. Each tier is served
-        # unless the nodal gas price exceeds its strike price, above which it
-        # sheds load instead of being supplied. See build_curtailable_demand.py.
+        # Daily demand added on top of the distribution-level node demand. Each
+        # tier is served unless the nodal gas price exceeds its strike price,
+        # above which it sheds load instead of being supplied. Levels/trajectory
+        # are GSOO 2026 Step Change (year-varying); daily shapes are empirical
+        # (GBB). See build_gpg_demand_gsoo.py / build_industrial_demand_gsoo.py.
         data_dir = os.path.join(base_path, "data")
         def _load_profile(fname):
             try:
@@ -44,8 +44,8 @@ class GasMarketModel:
                 return _load_profile(flat_fname)
             return sub.set_index(['Node', 'Day'])['Demand'].to_dict()
 
-        # GPG re-based on GSOO 2026 Step Change (year-varying); industrial still GBB
-        # until re-based. See build_gpg_demand_gsoo.py.
+        # GPG and industrial both re-based on GSOO 2026 Step Change (year-varying),
+        # falling back to the flat GBB profile if the GSOO file is absent.
         self.gpg_demand = _load_year_profile("gpg_demand_profile_gsoo.csv",
                                              "gpg_demand_profile.csv")
         self.ind_demand = _load_year_profile("industrial_demand_profile_gsoo.csv",
