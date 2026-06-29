@@ -29,7 +29,24 @@ class GasMarketModel:
                 return df.set_index(['Node', 'Day'])['Demand'].to_dict()
             except FileNotFoundError:
                 return {}
-        self.gpg_demand = _load_profile("gpg_demand_profile.csv")
+
+        def _load_year_profile(year_fname, flat_fname, lo=2026, hi=2045):
+            """Year-specific GSOO Step Change profile (Year,Node,Day,Demand),
+            clamped to the available range; falls back to the flat GBB profile."""
+            try:
+                df = pd.read_csv(os.path.join(data_dir, year_fname))
+            except FileNotFoundError:
+                return _load_profile(flat_fname)
+            yr = min(max(int(self.year), lo), hi)
+            sub = df[df['Year'] == yr]
+            if sub.empty:
+                return _load_profile(flat_fname)
+            return sub.set_index(['Node', 'Day'])['Demand'].to_dict()
+
+        # GPG re-based on GSOO 2026 Step Change (year-varying); industrial still GBB
+        # until re-based. See build_gpg_demand_gsoo.py.
+        self.gpg_demand = _load_year_profile("gpg_demand_profile_gsoo.csv",
+                                             "gpg_demand_profile.csv")
         self.ind_demand = _load_profile("industrial_demand_profile.csv")
         try:
             strikes = pd.read_csv(os.path.join(data_dir, "curtailment_params.csv")
