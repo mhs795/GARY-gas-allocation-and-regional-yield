@@ -33,11 +33,19 @@ open_browser() {
     fi
 }
 
-# If the server is already running, just open/refresh the browser and exit
+# If a server is already running, stop it so we always relaunch the latest code.
 if lsof -ti :8050 >/dev/null 2>&1; then
-    echo "GARY already running at $URL — refreshing browser..."
-    open_browser
-    exit 0
+    echo "Stopping existing GARY server on :8050..."
+    lsof -ti :8050 | xargs -r kill 2>/dev/null
+    # Wait for the port to free (up to ~5s); force-kill if it won't let go.
+    for i in $(seq 1 20); do
+        lsof -ti :8050 >/dev/null 2>&1 || break
+        sleep 0.25
+    done
+    if lsof -ti :8050 >/dev/null 2>&1; then
+        lsof -ti :8050 | xargs -r kill -9 2>/dev/null
+        sleep 1
+    fi
 fi
 
 # Start the server in the background
