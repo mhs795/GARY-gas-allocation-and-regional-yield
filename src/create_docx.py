@@ -43,28 +43,39 @@ def create_docs():
         'The model is grounded in data from the Australian Energy Market Operator (AEMO) 2026 forecasting cycle.'
     )
 
-    doc.add_heading('3.1 Demand Traces (Step Change Scenario)', level=2)
+    doc.add_heading('3.1 Demand Traces (Step Change Central Case)', level=2)
     doc.add_paragraph(
-        'Annual demand profiles are based on the AEMO 2026 GSOO Step Change scenario. In 2026, Queensland LNG export '
-        'demand is calibrated to ~3,650 TJ/day (~1,250 PJ/year). Long-term annual decline rates applied include:'
+        'The model\'s central case is the AEMO 2026 GSOO Step Change scenario. Rather than applying arbitrary '
+        'per-node growth rates, each demand sector is re-based directly onto its GSOO Step Change annual trajectory '
+        'while the empirical daily profile shape from Gas Bulletin Board (GBB) actuals is preserved (shape correlation '
+        '1.0; only the annual level is scaled). GSOO indices are applied relative to 2026 and clamped to the 2026-2045 '
+        'GSOO horizon, then held flat to 2050. The Winter, LNG and ADGSM scenario levers layer multiplicatively on top '
+        'of this central case. Queensland LNG export demand is calibrated to ~3,650 TJ/day (~1,250 PJ/year) in 2026.'
     )
     table = doc.add_table(rows=1, cols=3)
     hdr_cells = table.rows[0].cells
-    hdr_cells[0].text = 'Node / Region'
-    hdr_cells[1].text = 'Growth/Decline Rate'
+    hdr_cells[0].text = 'Sector / Node'
+    hdr_cells[1].text = 'GSOO Step Change Driver'
     hdr_cells[2].text = 'Rationale'
-    
+
     data = [
-        ['Melbourne', '-4.0% p.a.', 'Victorian Gas Substitution Roadmap'],
-        ['Sydney', '-3.0% p.a.', 'NSW residential electrification'],
-        ['Brisbane', '-1.0% p.a.', 'Persistent industrial baseload'],
-        ['LNG Export Cluster', '3,650 TJ/day', 'AEMO 2026 GSOO Benchmark']
+        ['City nodes (Sydney, Melbourne, Adelaide, Brisbane)', 'GSOO ResComm trajectory (Fig. 17)', 'City-gate distribution demand; electrification-driven decline'],
+        ['Gas-powered generation (GPG)', 'GSOO NEM trajectory + regional peaks', 'Annual level anchored to NEM GPG; winter-peaking from regional summer/winter peaks'],
+        ['Large industrial', 'GSOO industrial trajectory (year index)', 'Indexed on empirical BBLARGE levels (a subset of whole-sector industrial); Yarwun reclassified GPG -> industrial'],
+        ['LNG cluster (APLNG, GLNG, QCLNG)', 'GSOO LNG trajectory (Fig. 19)', '~3,650 TJ/day in 2026; replaces previous flat assumption'],
     ]
     for region, rate, reason in data:
         row_cells = table.add_row().cells
         row_cells[0].text = region
         row_cells[1].text = rate
         row_cells[2].text = reason
+
+    doc.add_paragraph(
+        '\nDerived demand data is rebuilt from source by the "Regenerate All Data" button (src/regenerate_data.py), '
+        'which runs the build pipeline in dependency order: build_curtailable_demand -> build_gsoo_stepchange -> '
+        'build_gpg_demand_gsoo -> build_industrial_demand_gsoo -> build_demand_gsoo. Only source inputs (GBB actuals, '
+        'GSOO workbooks, configs) are committed; generated files are rebuilt locally.'
+    )
 
     doc.add_paragraph('\nRelevant Links:')
     doc.add_paragraph('AEMO 2026 GSOO Report Data:', style='List Bullet')
