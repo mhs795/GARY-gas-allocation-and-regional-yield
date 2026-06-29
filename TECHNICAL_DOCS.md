@@ -86,7 +86,7 @@ Nodal prices are extracted from the **Dual Variables** of the Nodal Balance cons
 ## 3. Directory Structure Summary
 
 *   `/src/data/`: The "Brain." Contains CSVs for nodes, supply, demand, expansion, and contracts. Source inputs (GBB actuals, GSOO workbooks, configs) are tracked; derived demand files are gitignored and rebuilt from source.
-*   `model.py`: The "Optimizer." Defines the variables, objective, and constraints (Pyomo + CBC).
+*   `model.py`: The "Optimizer." Defines the variables, objective, and constraints (Pyomo + HiGHS via `appsi_highs`). Build binaries are relaxed to continuous after the MIP step so HiGHS returns the duals used for nodal prices.
 *   `gui.py` / `dashboard.py`: The "Interface." Handle user inputs, multi-year loops, and Plotly charts. Both expose the **Regenerate All Data** and **Run All Scenarios** buttons.
 *   `regenerate_data.py`: The "Builder." `regenerate_all()` runs the full demand-build pipeline from source in dependency order — this is what the **Regenerate All Data** button calls.
 *   `build_gsoo_stepchange.py`, `build_gpg_demand_gsoo.py`, `build_industrial_demand_gsoo.py`, `build_demand_gsoo.py`, `build_curtailable_demand.py`: The "Forecasters." Extract the GSOO Step Change trajectories and re-base each demand sector onto them, preserving the empirical GBB daily shapes. (These replaced the deleted `generate_data_2050.py`.)

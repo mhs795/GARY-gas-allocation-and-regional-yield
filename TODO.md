@@ -8,3 +8,4 @@
 - [ ] Confirm data source/methodology for splitting daily demand between LNG facilities (added 2026-06-08).
 - [x] ~~Review SGM baseline decline logic and production-adjustment reporting in `model.py` to ensure long-term alignment with Net Zero 2050 trajectory (added 2026-06-13).~~
 - [ ] Calibrate LNG capacity and demand figures against the latest AEMO GSOO and facility-specific reports to ensure long-term accuracy (added 2026-06-14).
+- [ ] Revisit the CBC -> HiGHS (appsi_highs) solver switch: confirm it's the appropriate choice — check results parity vs CBC, solve times, and that the binary-relaxation-for-duals approach is sound (added 2026-06-29).

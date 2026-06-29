@@ -66,7 +66,7 @@ All Data** button), which runs the build pipeline in dependency order:
 
 ## Technical Details
 
-- **Optimisation:** Pyomo with the CBC solver
+- **Optimisation:** Pyomo with the HiGHS solver (`appsi_highs`)
 - **Network:** Nodal pipeline model covering eastern Australia
 - **Horizon:** 2025–2050 (annual dispatch, 365 days/year)
 - **Central case:** AEMO **2026 GSOO Step Change** (demand re-based on the GSOO; daily shapes from GBB actuals)

@@ -168,15 +168,29 @@ class GasMarketModel:
     def solve(self, mip_gap=0.005):
         m = self.model
 
-        cbc = pyo.SolverFactory('cbc')
-        cbc.options['threads'] = 4
+        def make_solver(rel_gap=None):
+            # Fresh appsi_highs instance per solve: the persistent interface
+            # caches the model between calls, so a new instance avoids stale
+            # state when we fix vars / change domains between solves.
+            opt = pyo.SolverFactory('appsi_highs')
+            opt.options['threads'] = 4
+            if rel_gap is not None:
+                opt.options['mip_rel_gap'] = rel_gap
+            return opt
+
+        # HiGHS only returns duals (nodal prices) for a pure LP — it refuses
+        # duals while any integer/binary var is present, even if fixed. So before
+        # any dual solve we relax the (already-decided) build binaries to Reals;
+        # they stay fixed at 0/1, but the problem is then a true LP.
 
         # If all expansion vars are already fixed there are no free binaries —
         # solve as pure LP (much faster, duals available immediately).
         all_fixed = all(m.build[e].is_fixed() for e in m.Expansion)
         if all_fixed:
+            for e in m.Expansion:
+                m.build[e].domain = pyo.Reals
             m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
-            res = cbc.solve(m, tee=False)
+            res = make_solver().solve(m, tee=False)
             if res.solver.termination_condition in [pyo.TerminationCondition.optimal,
                                                      pyo.TerminationCondition.feasible]:
                 self.solved = True
@@ -184,19 +198,20 @@ class GasMarketModel:
             self.solved = False
             return str(res.solver.termination_condition)
 
-        # MIP solve
-        cbc.options['ratioGap'] = mip_gap if mip_gap is not None else 0.005
-        res = cbc.solve(m, tee=False)
+        # MIP solve (free binaries)
+        res = make_solver(rel_gap=mip_gap if mip_gap is not None else 0.005).solve(m, tee=False)
         if res.solver.termination_condition not in [pyo.TerminationCondition.optimal,
                                                      pyo.TerminationCondition.feasible]:
             self.solved = False
             return str(res.solver.termination_condition)
 
-        # Fix binary decisions then re-solve as pure LP for dual values (prices)
+        # Fix binary decisions, relax their domain, then re-solve as a pure LP
+        # for dual values (prices)
         for e in m.Expansion:
             m.build[e].fix(pyo.value(m.build[e]))
+            m.build[e].domain = pyo.Reals
         m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
-        cbc.solve(m, tee=False)
+        make_solver().solve(m, tee=False)
         self.solved = True
         return "ok"
 
