@@ -53,6 +53,13 @@ ARC_MATCH = {
     'WGP_Pipe':   ('Surat', 'QCLNG',      lambda t: t.get('operator') == 'APA' and t.get('usage') == 'transmission'),
 }
 
+# Max gap (deg) between a stitched route end and its hub node. Model nodes are coarse
+# hubs, so a legitimate route can start a couple of degrees away (e.g. LNG lines begin
+# at the gas fields, SEA Gas at Port Campbell) — that draws a short, acceptable leader.
+# A much larger gap means OSM is missing a whole section (the EGP coastal trunk is
+# unmapped south of Wollongong, ~5 deg), so we reject it and keep the hand-traced route.
+MAX_SNAP_DEG = 4.0
+
 REGION = (-44, 135, -22, 154)          # eastern Australia (S, W, N, E)
 LNG_BBOX = (-25.5, 148.3, -23.3, 151.6)  # Surat Basin -> Gladstone corridor
 
@@ -176,6 +183,14 @@ def build():
         route = stitch(matched, COORDS[frm], COORDS[to])
         if not route or len(route) < 2:
             print(f"  {arc:12s} -> stitch failed (keeping fallback)")
+            continue
+        # Guard against incompletely-mapped routes: if a stitched end is far from its
+        # node, OSM is missing that stretch and snapping would draw a long straight
+        # leader (e.g. the EGP coastal trunk is unmapped south of Wollongong). Reject
+        # and fall back to the hand-traced route.
+        gap = max(_dist(route[0], COORDS[frm]), _dist(route[-1], COORDS[to]))
+        if gap > MAX_SNAP_DEG:
+            print(f"  {arc:12s} -> OSM route incomplete (gap {gap:.1f} deg > {MAX_SNAP_DEG}); keeping fallback")
             continue
         # snap the ends to the model node markers so lines meet the dots
         route[0], route[-1] = COORDS[frm], COORDS[to]
