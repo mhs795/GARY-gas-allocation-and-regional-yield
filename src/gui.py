@@ -234,6 +234,16 @@ ARC_WAYPOINTS = {
     'QGP': [[-27.15,149.07],[-26.55,149.30],[-26.13,149.96],[-25.40,150.05],[-24.95,150.08],[-24.57,149.98],[-24.41,150.50],[-24.00,150.90],[-23.87,151.10],[-23.84,151.26]],
     'Longford': [[-38.50,147.00],[-38.11,147.07],[-38.16,146.79],[-38.20,146.54],[-38.24,146.40],[-38.17,146.27],[-38.16,145.93],[-38.13,145.85],[-38.10,145.72],[-38.07,145.48],[-37.98,145.21],[-37.81,144.96]],
 }
+# Override hand-traced routes with real OpenStreetMap geometry where available
+# (built by build_pipeline_geometry.py). Arcs absent from the file keep their
+# hand-traced fallback. Loaded before the reverse loop so reverses use real geometry.
+try:
+    import json as _json
+    _geo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'pipeline_geometry.json')
+    with open(_geo_path) as _gf:
+        ARC_WAYPOINTS.update(_json.load(_gf))
+except (OSError, ValueError):
+    pass
 # Auto-generate reverse-direction waypoints for bidirectional arcs
 for _fwd, _rev in [('SWQP', 'SWQP_Rev'), ('MSP', 'MSP_Rev'), ('VNI', 'VNI_Rev'), ('PK2SYD', 'SYD2PK')]:
     if _rev not in ARC_WAYPOINTS and _fwd in ARC_WAYPOINTS:

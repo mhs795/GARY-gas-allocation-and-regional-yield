@@ -99,6 +99,16 @@ ARC_WAYPOINTS = {
     'Longford': [[-38.50,147.00],[-38.11,147.07],[-38.16,146.79],[-38.20,146.54],[-38.24,146.40],[-38.17,146.27],[-38.16,145.93],[-38.13,145.85],[-38.10,145.72],[-38.07,145.48],[-37.98,145.21],[-37.81,144.96]],
     'SS2Surat': [[-27.4,149.2],[-27.35,149.18],[-27.28,149.15],[-27.20,149.12],[-27.15,149.07]],
 }
+# Override hand-traced routes with real OpenStreetMap geometry where available
+# (built by build_pipeline_geometry.py). Arcs absent from the file keep their
+# hand-traced fallback. Loaded before the reverse loop so reverses use real geometry.
+try:
+    import json as _json
+    _geo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'pipeline_geometry.json')
+    with open(_geo_path) as _gf:
+        ARC_WAYPOINTS.update(_json.load(_gf))
+except (OSError, ValueError):
+    pass
 for _fwd, _rev in [('SWQP','SWQP_Rev'),('MSP','MSP_Rev'),('VNI','VNI_Rev'),('PK2SYD','SYD2PK'),('SS2Surat','Surat2SS')]:
     if _rev not in ARC_WAYPOINTS and _fwd in ARC_WAYPOINTS:
         ARC_WAYPOINTS[_rev] = list(reversed(ARC_WAYPOINTS[_fwd]))
