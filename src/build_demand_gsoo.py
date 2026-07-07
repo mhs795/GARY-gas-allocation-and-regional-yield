@@ -2,7 +2,7 @@
 Re-base the node distribution demand on an AEMO 2026 GSOO baseline scenario. The
 chosen baseline (Step Change / Accelerated Transition / Slower Growth) becomes the
 model's central case; the scenario levers (Winter, LNG, ADGSM in solve.py /
-batch_solve.py / gui.py) then layer multiplicatively on top of it.
+batch_solve.py / solve.py) then layer multiplicatively on top of it.
 
 Replaces the arbitrary per-node growth rates in generate_data_2050.py with
 empirically-grounded GSOO trajectories:

@@ -1,7 +1,7 @@
 """
 Regenerate ALL derived model data from the source inputs shipped in the repo.
 
-This is what the "Regenerate Demand Data" button in gui.py / dashboard.py calls,
+This is what the "Regenerate Demand Data" button in dashboard.py calls,
 so a fresh clone can rebuild every generated data file locally without any of
 them being committed to GitHub. Only source inputs are tracked:
   - data/GasBBActualFlowStorage.CSV            (AEMO Gas Bulletin Board actuals)

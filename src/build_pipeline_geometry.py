@@ -5,7 +5,7 @@ from the Overpass API, stitches the multi-segment OSM ways for each model arc in
 a single ordered polyline (oriented From-node -> To-node), simplifies it, and writes
 `data/pipeline_geometry.json` as {arc_name: [[lat, lon], ...]}.
 
-The GUIs (gui.py, dashboard.py) load this file and use the real geometry where it
+The dashboard (dashboard.py) loads this file and use the real geometry where it
 exists, falling back to the hand-traced ARC_WAYPOINTS for arcs OSM doesn't cover
 (e.g. RBP, QGP, VNI, SWP, VGP, PK2SYD).
 

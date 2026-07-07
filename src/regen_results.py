@@ -1,5 +1,5 @@
 """Regenerate precalculated_results.pkl using the live solve path, so results
-include the GPG/industrial curtailment streams. Matches the dashboard/gui key
+include the GPG/industrial curtailment streams. Matches the dashboard key
 format exactly: Base_<baseline>_ADGSM_<x>_Winter_<w>_LNG_<l>.
 
 By default this regenerates the 9 ADGSM=False Winter x LNG scenarios for the

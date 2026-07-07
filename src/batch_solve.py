@@ -50,7 +50,7 @@ def run_batch(baselines=("StepChange", "Accelerated", "SlowerGrowth"),
                     for year in range(start_year, end_year + 1):
                         demand_mod = data['demand'].copy()
 
-                        # Scenario Logic (Match gui.py)
+                        # Scenario Logic (match solve.py)
                         winter_mult = {"Low": 1.0, "Medium": 1.5, "High": 2.2}[winter]
                         demand_mod.loc[(demand_mod['Year'] == year) & (demand_mod['Node'].isin(['Melbourne', 'Adelaide', 'Sydney'])) &
                                        (demand_mod['Day'] >= 150) & (demand_mod['Day'] <= 250), 'Demand'] *= winter_mult

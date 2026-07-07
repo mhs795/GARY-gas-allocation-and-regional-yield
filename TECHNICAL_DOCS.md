@@ -79,8 +79,8 @@ else:
     return m.inventory[sn, t] == m.inventory[sn, m.T.prev(t)] + m.injection[sn, t] - m.withdrawal[sn, t]
 ```
 
-### 2.3 sequential Multi-Year Logic (`gui.py`)
-The GUI runs the simulation year-by-year, passing the "memory" of built infrastructure forward.
+### 2.3 sequential Multi-Year Logic (`solve.py`)
+`solve_scenario` runs the simulation year-by-year, passing the "memory" of built infrastructure forward.
 
 ### 2.4 Price Discovery (Shadow Prices)
 Nodal prices are extracted from the **Dual Variables** of the Nodal Balance constraints.
@@ -91,6 +91,6 @@ Nodal prices are extracted from the **Dual Variables** of the Nodal Balance cons
 
 *   `/src/data/`: The "Brain." Contains CSVs for nodes, supply, demand, expansion, and contracts. Source inputs (GBB actuals, GSOO workbooks, configs) are tracked; derived demand files are gitignored and rebuilt from source.
 *   `model.py`: The "Optimizer." Defines the variables, objective, and constraints (Pyomo + HiGHS via `appsi_highs`). Build binaries are relaxed to continuous after the MIP step so HiGHS returns the duals used for nodal prices.
-*   `gui.py` / `dashboard.py`: The "Interface." Handle user inputs, multi-year loops, and Plotly charts. Both expose the **Regenerate All Data** and **Run All Scenarios** buttons.
+*   `dashboard.py`: The "Interface." A Dash/Plotly app that handles user inputs, multi-year loops, and charts, and exposes the **Regenerate All Data** and **Run All Scenarios** buttons.
 *   `regenerate_data.py`: The "Builder." `regenerate_all()` runs the full demand-build pipeline from source in dependency order — this is what the **Regenerate All Data** button calls.
 *   `build_gsoo_scenarios.py`, `build_gpg_demand_gsoo.py`, `build_industrial_demand_gsoo.py`, `build_demand_gsoo.py`, `build_curtailable_demand.py`: The "Forecasters." `build_gsoo_scenarios.py` extracts all three GSOO baseline trajectories (Step Change / Accelerated Transition / Slower Growth); the others re-base each demand sector onto each baseline (`build()` for one baseline, `build_all()` for all three), preserving the empirical GBB daily shapes. (These replaced the deleted `generate_data_2050.py`.)
