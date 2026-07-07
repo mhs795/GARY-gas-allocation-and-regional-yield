@@ -1411,20 +1411,24 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
         p_v = float(price_map.get(node, 0))
         s_v = float(prod_map.get(node, 0))
         tt  = f"<b>{node} ({n_t})</b><br>Price: ${p_v:.2f}/GJ<br>"
-        def _fac_block(df, label, icon, shed):
+        def _fac_block(df, label, icon, served, shed):
             if df is None or df.empty:
                 return ''
             rows = df[df['Node'] == node].sort_values('MeanDemand', ascending=False)
-            tot = (rows['MeanDemand'] * 365 / 1000).sum() if not rows.empty else 0
-            if tot < 0.01:
+            static_tot = (rows['MeanDemand'] * 365 / 1000).sum() if not rows.empty else 0
+            demand_pj = served + shed          # actual scenario-year gas call at this node
+            if static_tot < 0.01 or demand_pj < 0.01:
                 return ''
-            # headline = exact sum of the facility components below it
-            s = f"{icon} {label}: {tot:.1f} PJ/yr" + (f" <i>({shed:.1f} shed)</i>" if shed > 0.01 else "") + "<br>"
+            # Headline = this scenario-year's served (+shed) gas at the node; the
+            # static per-facility split (GBB shares) is scaled to that total, so the
+            # facility stickers move with the scenario/year (incl. the dunkelflaute).
+            scale = demand_pj / static_tot
+            s = f"{icon} {label}: {demand_pj:.1f} PJ/yr" + (f" <i>({shed:.1f} shed)</i>" if shed > 0.01 else "") + "<br>"
             for _, fr in rows.iterrows():
-                s += f"&nbsp;&nbsp;· {fr['FacilityName']}: {fr['MeanDemand'] * 365 / 1000:.1f} PJ/yr<br>"
+                s += f"&nbsp;&nbsp;· {fr['FacilityName']}: {fr['MeanDemand'] * 365 / 1000 * scale:.1f} PJ/yr<br>"
             return s
-        tt += _fac_block(static_data.get('gpg_facs'), 'GPG', '⚡', gpg_cur.get(node, 0))
-        tt += _fac_block(static_data.get('ind_bbg'), 'Large industrial', '🏭', ind_cur.get(node, 0))
+        tt += _fac_block(static_data.get('gpg_facs'), 'GPG', '⚡', gpg_serv.get(node, 0), gpg_cur.get(node, 0))
+        tt += _fac_block(static_data.get('ind_bbg'), 'Large industrial', '🏭', ind_serv.get(node, 0), ind_cur.get(node, 0))
         map_nodes.append({'Node': node, 'Lat': c[0], 'Lon': c[1],
                           'Type': n_t, 'Price': p_v, 'Supply': s_v, 'Tooltip': tt})
 
