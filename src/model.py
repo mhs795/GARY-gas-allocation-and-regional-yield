@@ -4,15 +4,17 @@ import os
 
 # --- SA "dunkelflaute" event -------------------------------------------------
 # A wind/solar drought like the sustained low-renewables spell South Australia saw
-# in June 2025: SA gas generation runs near its maximum for ~a fortnight to cover
-# the renewable shortfall. We replicate it by lifting the Adelaide (SA) GPG gas
-# demand over a mid-June window in a single year. Adelaide's normal early-June GPG
-# is ~73 TJ/d (winter peak ~131); x2.75 -> ~200 TJ/d sustained, between the node
-# winter peak and the ~309 TJ/d SA regional GPG peak — a severe but plausible call
-# on SA gas that stresses Moomba->Adelaide and the SEA Gas import from Victoria.
+# in June 2025: SA gas generation runs near its maximum to cover the renewable
+# shortfall. We replicate it by lifting the Adelaide (SA) GPG gas demand over a
+# June window in a single year. Adelaide's normal early-June GPG is ~73 TJ/d
+# (winter peak ~131); x2.75 -> ~200 TJ/d sustained, between the node winter peak
+# and the ~309 TJ/d SA regional GPG peak — a severe but plausible call on SA gas
+# that stresses Moomba->Adelaide and the SEA Gas import from Victoria. The window
+# is a full month (deliberately longer than any historical event) to stress-test
+# a prolonged drought.
 DUNKELFLAUTE_YEAR = 2027
 DUNKELFLAUTE_NODE = "Adelaide"
-DUNKELFLAUTE_DAYS = range(152, 166)   # ~1-14 June (gas day-of-year)
+DUNKELFLAUTE_DAYS = range(152, 182)   # 1-30 June (gas day-of-year)
 DUNKELFLAUTE_MULT = 2.75
 
 
