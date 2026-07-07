@@ -1148,21 +1148,25 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, refresh)
     prevent_initial_call=True,
 )
 def run_batch(set_progress, n_clicks, gap, baseline, refresh):
-    # Runs every combination: all GSOO baselines x Winter x LNG (ADGSM off).
-    combos = [(b['value'], w, l) for b in BASELINES for w in LEVELS for l in LEVELS]
-    data   = load_results()
-    for i, (b, w, l) in enumerate(combos):
-        key = f'Base_{b}_ADGSM_False_Winter_{w}_LNG_{l}'
+    # Every combination: all GSOO baselines x Winter x LNG (ADGSM off, dunkelflaute
+    # off) -> 27 runs, plus one Step Change + SA Dunkelflaute (2027) case at the
+    # central Winter/LNG so it sits alongside its plain Step Change counterpart.
+    jobs = [(b['value'], w, l, False) for b in BASELINES for w in LEVELS for l in LEVELS]
+    jobs.append(('StepChange', 'Medium', 'Medium', True))
+    data = load_results()
+    for i, (b, w, l, dunkel) in enumerate(jobs):
+        key = f'Base_{b}_ADGSM_False_Winter_{w}_LNG_{l}' + ('_Dunkelflaute' if dunkel else '')
         if key not in data['all_scenarios']:
-            def _cb(yr, p, _i=i, _n=len(combos), _b=b, _w=w, _l=l):
+            def _cb(yr, p, _i=i, _n=len(jobs), _b=b, _w=w, _l=l, _d=dunkel):
                 overall = int((_i + p) / _n * 100)
-                set_progress((overall, f'{BASELINE_LABEL.get(_b, _b)} · Winter {_w} · LNG {_l} · Year {yr} — {overall}%'))
-            data['all_scenarios'][key] = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap, callback=_cb, baseline=b)
+                tag = ' · SA Dunkelflaute 2027' if _d else ''
+                set_progress((overall, f'{BASELINE_LABEL.get(_b, _b)} · Winter {_w} · LNG {_l}{tag} · Year {yr} — {overall}%'))
+            data['all_scenarios'][key] = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap, callback=_cb, baseline=b, dunkelflaute=dunkel)
             data['current_key'] = key
             save_results(data)
-        pct = int((i + 1) / len(combos) * 100)
-        set_progress((pct, f'Scenario {i+1}/{len(combos)} complete — {pct}%'))
-    return (refresh or 0) + 1, f'✓  Batch complete — {len(combos)} scenarios (all baselines)'
+        pct = int((i + 1) / len(jobs) * 100)
+        set_progress((pct, f'Scenario {i+1}/{len(jobs)} complete — {pct}%'))
+    return (refresh or 0) + 1, f'✓  Batch complete — {len(jobs)} scenarios (all baselines + SA dunkelflaute)'
 
 # ---------------------------------------------------------------------------
 # Clear
