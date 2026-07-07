@@ -2,8 +2,22 @@ import pyomo.environ as pyo
 import pandas as pd
 import os
 
+# --- SA "dunkelflaute" event -------------------------------------------------
+# A wind/solar drought like the sustained low-renewables spell South Australia saw
+# in June 2025: SA gas generation runs near its maximum for ~a fortnight to cover
+# the renewable shortfall. We replicate it by lifting the Adelaide (SA) GPG gas
+# demand over a mid-June window in a single year. Adelaide's normal early-June GPG
+# is ~73 TJ/d (winter peak ~131); x2.75 -> ~200 TJ/d sustained, between the node
+# winter peak and the ~309 TJ/d SA regional GPG peak — a severe but plausible call
+# on SA gas that stresses Moomba->Adelaide and the SEA Gas import from Victoria.
+DUNKELFLAUTE_YEAR = 2027
+DUNKELFLAUTE_NODE = "Adelaide"
+DUNKELFLAUTE_DAYS = range(152, 166)   # ~1-14 June (gas day-of-year)
+DUNKELFLAUTE_MULT = 2.75
+
+
 class GasMarketModel:
-    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, adgsm_enabled=False, baseline="StepChange"):
+    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, adgsm_enabled=False, baseline="StepChange", dunkelflaute=False):
         self.nodes = nodes_df
         self.arcs = arcs_df
         self.supply = supply_df
@@ -16,6 +30,8 @@ class GasMarketModel:
         # AEMO 2026 GSOO baseline scenario: StepChange / Accelerated / SlowerGrowth.
         # Selects which per-baseline GPG & industrial demand profiles to load.
         self.baseline = baseline
+        # SA dunkelflaute event lever (applied to Adelaide GPG in DUNKELFLAUTE_YEAR).
+        self.dunkelflaute = dunkelflaute
         self.solved = False
 
         base_path = os.path.dirname(__file__)
@@ -62,6 +78,13 @@ class GasMarketModel:
         self.ind_demand = _baseline_profile("industrial_demand_profile",
                                             "industrial_demand_profile_gsoo.csv",
                                             "industrial_demand_profile.csv")
+        # SA dunkelflaute: surge Adelaide GPG gas call over the mid-June window in
+        # the event year, on top of whichever GSOO baseline is loaded.
+        if self.dunkelflaute and int(self.year) == DUNKELFLAUTE_YEAR:
+            for d in DUNKELFLAUTE_DAYS:
+                key = (DUNKELFLAUTE_NODE, d)
+                if key in self.gpg_demand:
+                    self.gpg_demand[key] *= DUNKELFLAUTE_MULT
         try:
             strikes = pd.read_csv(os.path.join(data_dir, "curtailment_params.csv")
                                   ).set_index('Tier')['StrikePrice'].to_dict()

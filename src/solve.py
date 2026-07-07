@@ -34,7 +34,7 @@ def get_lng_mult(scenario, year):
         else: return 1.1
     return 1.0
 
-def solve_scenario(winter, lng, adgsm_enabled=False, mip_gap=0.005, callback=None, baseline="StepChange"):
+def solve_scenario(winter, lng, adgsm_enabled=False, mip_gap=0.005, callback=None, baseline="StepChange", dunkelflaute=False):
     data = load_data(baseline)
     built_projects = []
     scenario_results = []
@@ -74,7 +74,8 @@ def solve_scenario(winter, lng, adgsm_enabled=False, mip_gap=0.005, callback=Non
             year=year,
             already_built=built_projects,
             adgsm_enabled=adgsm_enabled,
-            baseline=baseline
+            baseline=baseline,
+            dunkelflaute=dunkelflaute
         )
         model.build_model()
         

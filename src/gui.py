@@ -112,7 +112,8 @@ BASELINE_OPTIONS = {
 
 def pretty_key(k):
     return (k.replace("Base_", "").replace("_ADGSM_False", "").replace("_ADGSM_True", " (ADGSM)")
-             .replace("_Winter_", " | Winter ").replace("_LNG_", " | LNG "))
+             .replace("_Winter_", " | Winter ").replace("_LNG_", " | LNG ")
+             .replace("_Dunkelflaute", " | SA Dunkelflaute 2027"))
 
 st.sidebar.header("Baseline")
 baseline_label = st.sidebar.selectbox("GSOO Baseline Scenario", options=list(BASELINE_OPTIONS.keys()), index=0)
@@ -121,6 +122,11 @@ baseline = BASELINE_OPTIONS[baseline_label]
 st.sidebar.header("Scenario Levers")
 winter_level = st.sidebar.select_slider("Southern Winter Stress", options=["Low", "Medium", "High"], value="Medium")
 lng_level = st.sidebar.select_slider("Global LNG Demand", options=["Low", "Medium", "High"], value="Medium")
+dunkelflaute = st.sidebar.toggle(
+    "SA Dunkelflaute (2027)", value=False,
+    help="A wind/solar drought like South Australia's June 2025 event: Adelaide gas "
+         "generation runs near its maximum (~2.75x normal, ~200 TJ/d) for a fortnight "
+         "in June 2027, on top of the selected baseline.")
 # adgsm_enabled = st.sidebar.toggle("ADGSM Domestic Reservation", value=False)
 adgsm_enabled = False
 
@@ -147,8 +153,8 @@ if st.sidebar.button("🚀 Run Current Scenario"):
         progress_bar.progress(progress)
 
     try:
-        res = solve_scenario(winter_level, lng_level, adgsm_enabled=adgsm_enabled, mip_gap=mip_gap, callback=annual_callback, baseline=baseline)
-        key = f"Base_{baseline}_ADGSM_{adgsm_enabled}_Winter_{winter_level}_LNG_{lng_level}"
+        res = solve_scenario(winter_level, lng_level, adgsm_enabled=adgsm_enabled, mip_gap=mip_gap, callback=annual_callback, baseline=baseline, dunkelflaute=dunkelflaute)
+        key = f"Base_{baseline}_ADGSM_{adgsm_enabled}_Winter_{winter_level}_LNG_{lng_level}" + ("_Dunkelflaute" if dunkelflaute else "")
         st.session_state['all_scenarios'][key] = res
         st.session_state['current_key'] = key
         save_results(); st.rerun()
