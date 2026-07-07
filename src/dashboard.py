@@ -768,7 +768,8 @@ def pretty_key(k):
     base = k.split('Base_', 1)[-1].split('_ADGSM', 1)[0] if 'Base_' in k else None
     rest = k.split('_ADGSM_', 1)[-1] if '_ADGSM_' in k else k
     rest = (rest.replace('False', '').replace('True', '(ADGSM)')
-                .replace('_Winter_', 'Winter ').replace('_LNG_', '  ·  LNG ').strip('_ '))
+                .replace('_Winter_', 'Winter ').replace('_LNG_', '  ·  LNG ')
+                .replace('_Dunkelflaute', '  ·  SA Dunkelflaute 2027').strip('_ '))
     return f'{BASELINE_LABEL.get(base, base)}  ·  {rest}' if base else rest
 
 # ---------------------------------------------------------------------------
@@ -884,6 +885,11 @@ sidebar = html.Div(className='md-sidebar', children=[
         slider_group('Global LNG Demand',
             dcc.Slider(id='lng-slider', min=0, max=2, step=1,
                        marks={i: l for i, l in enumerate(LEVELS)}, value=1)),
+
+        dbc.Checklist(id='dunkelflaute-toggle',
+                      options=[{'label': ' SA Dunkelflaute (2027)', 'value': 'on'}],
+                      value=[], switch=True,
+                      style={'marginBottom': '20px', 'fontSize': '12px'}),
 
         slider_group('Optimality Gap',
             dcc.Slider(id='gap-slider', min=0, max=0.05, step=0.001, value=0.01,
@@ -1091,6 +1097,7 @@ def show_tab(active):
     State('lng-slider',    'value'),
     State('gap-slider',    'value'),
     State('baseline-selector', 'value'),
+    State('dunkelflaute-toggle', 'value'),
     State('refresh-counter', 'data'),
     background=True,
     running=[
@@ -1103,14 +1110,16 @@ def show_tab(active):
     progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
     prevent_initial_call=True,
 )
-def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, refresh):
+def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, refresh):
     w, l = LEVELS[wi], LEVELS[li]
     baseline = baseline or 'StepChange'
+    dunkelflaute = bool(dunkel) and 'on' in dunkel
     def _cb(yr, p):
         pct = int(p * 100)
         set_progress((pct, f'Solving {yr}… {pct}%'))
-    result = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap, callback=_cb, baseline=baseline)
-    key = f'Base_{baseline}_ADGSM_False_Winter_{w}_LNG_{l}'
+    result = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap, callback=_cb,
+                            baseline=baseline, dunkelflaute=dunkelflaute)
+    key = f'Base_{baseline}_ADGSM_False_Winter_{w}_LNG_{l}' + ('_Dunkelflaute' if dunkelflaute else '')
     data = load_results()
     data['all_scenarios'][key] = result
     data['current_key'] = key
