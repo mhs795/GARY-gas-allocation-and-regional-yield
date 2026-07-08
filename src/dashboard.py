@@ -1029,8 +1029,6 @@ main = html.Div(className='md-main', children=[
                                   ],
                                   value=['labels', 'capacity'],
                                   inline=True),
-                    dbc.Button('⬇ Download PNG', id='map-png-btn', size='sm',
-                               color='secondary', outline=True, className='chart-dl-btn'),
                 ]),
                 html.Div(id='map-kpi-row', className='md-map-kpi-row'),
                 dcc.Loading(type='circle', color='#1976D2', children=
@@ -1088,7 +1086,6 @@ app.layout = html.Div(
         dcc.Store(id='refresh-counter', data=0),
         dcc.Store(id='theme-store', storage_type='local', data='light'),
         dcc.Download(id='chart-dl'),          # per-chart Excel download target
-        dcc.Download(id='map-dl'),            # map PNG download target
         sidebar,
         main,
     ],
@@ -1340,9 +1337,7 @@ def update_header_kpis(key, end_year):
 # ---------------------------------------------------------------------------
 # Network Map
 # ---------------------------------------------------------------------------
-_MAP_CONFIG = {'scrollZoom': True, 'displayModeBar': True, 'displaylogo': False,
-               'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
-               'toImageButtonOptions': {'format': 'png', 'filename': 'gary_network_map', 'scale': 2}}
+_MAP_CONFIG = {'scrollZoom': True, 'displayModeBar': True, 'modeBarButtonsToRemove': ['lasso2d', 'select2d']}
 
 @app.callback(
     Output('map-kpi-row',    'children'),
@@ -1664,102 +1659,6 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
         paper_bgcolor='#1E1E2E' if dark else 'white',
     )
     return map_kpis, fig
-
-
-def _map_png_figure(key, end_year, map_year, options, dark=False):
-    """A kaleido-renderable Scattergeo version of the network map, for PNG export.
-
-    The interactive map uses a MapLibre tile basemap, which neither the browser nor
-    kaleido can reliably rasterise (100+ map traces -> 'Map error'). This rebuilds
-    the same network — real pipeline routes, flows coloured by utilisation, and
-    price-coloured nodes — on Plotly's native geo projection, which exports cleanly.
-    """
-    show_labels   = 'labels'   in (options or [])
-    show_capacity = 'capacity' in (options or [])
-    land  = '#20222e' if dark else '#EFEFE9'
-    ocean = '#12131c' if dark else '#AAD3DF'
-    paper = '#1E1E2E' if dark else 'white'
-    fig = go.Figure()
-    filtered = get_filtered(key, end_year) if key else None
-    if filtered:
-        res = next((r for r in filtered if r['Year'] == map_year), filtered[-1])
-        prices = pd.DataFrame(res['prices']); prod = pd.DataFrame(res['production'])
-        flow = pd.DataFrame(res['flow'])
-        _, _, builds_df, _ = build_summary(filtered)
-        price_map = prices.groupby('Node')['Price'].mean() if not prices.empty else pd.Series(dtype=float)
-        prod_map  = (prod.groupby('Node')['Value'].sum() / 1000) if not prod.empty else pd.Series(dtype=float)
-        flow_map  = (flow.groupby(['From', 'To', 'Arc'])['Value'].sum().reset_index()
-                     if not flow.empty else pd.DataFrame(columns=['From', 'To', 'Arc', 'Value']))
-        if not flow_map.empty:
-            flow_map['Value'] /= 1000
-        arc_caps  = static_data['arcs'].set_index('Name')['Capacity'].to_dict()
-        exp_info  = static_data['expansion']
-        built_now = (builds_df[builds_df['Year'] <= map_year]['Project'].tolist()
-                     if not builds_df.empty else [])
-
-        def _cap(arc):
-            extra = exp_info[(exp_info['Target'] == arc) & (exp_info['Name'].isin(built_now))]['NewCapacity'].sum()
-            return (arc_caps.get(arc, 0) + extra) * 365 / 1000
-
-        # pipelines: one consolidated trace (None-separated segments)
-        if show_capacity:
-            plat, plon = [], []
-            for _, ar in static_data['arcs'].iterrows():
-                path = ARC_WAYPOINTS.get(ar['Name'], [COORDS[ar['From']], COORDS[ar['To']]])
-                plat += [p[0] for p in path] + [None]
-                plon += [p[1] for p in path] + [None]
-            fig.add_trace(go.Scattergeo(lat=plat, lon=plon, mode='lines',
-                line=dict(width=1.5, color='#B8860B'), opacity=0.45, hoverinfo='skip', showlegend=False))
-
-        # flows: bucket segments by utilisation colour -> 3 traces
-        buckets = {'#22c55e': ([], []), '#f97316': ([], []), '#ef4444': ([], [])}
-        for _, row in flow_map.iterrows():
-            if row['Value'] <= 0.01:
-                continue
-            cap = _cap(row['Arc'])
-            util = (row['Value'] / cap) if cap > 0 else 0
-            c = '#ef4444' if util > 0.9 else ('#f97316' if util > 0.7 else '#22c55e')
-            path = ARC_WAYPOINTS.get(row['Arc'], [COORDS[row['From']], COORDS[row['To']]])
-            la, lo = buckets[c]
-            la += [p[0] for p in path] + [None]
-            lo += [p[1] for p in path] + [None]
-        for c, (la, lo) in buckets.items():
-            if la:
-                fig.add_trace(go.Scattergeo(lat=la, lon=lo, mode='lines',
-                    line=dict(width=3, color=c), opacity=0.9, hoverinfo='skip', showlegend=False))
-
-        # nodes: price-coloured markers, grouped by type (symbol), sized by production
-        node_types = static_data['nodes'].set_index('Name')['Type'].to_dict()
-        geo_sym = {'Supply': 'circle', 'Demand': 'square', 'Storage': 'diamond',
-                   'LNG': 'triangle-up', 'Hub': 'circle-open'}
-        first = True
-        for nt, sym in geo_sym.items():
-            nodes = [n for n in COORDS if node_types.get(n, 'Hub') == nt]
-            if not nodes:
-                continue
-            lat = [COORDS[n][0] for n in nodes]; lon = [COORDS[n][1] for n in nodes]
-            col = [float(price_map.get(n, 0)) for n in nodes]
-            siz = [min(40, 13 + np.sqrt(float(prod_map.get(n, 0))) * 2.2) if nt == 'Supply' else 14 for n in nodes]
-            fig.add_trace(go.Scattergeo(
-                lat=lat, lon=lon, mode='markers+text' if show_labels else 'markers',
-                text=nodes if show_labels else None, textposition='top center',
-                textfont=dict(size=11, color='#eee' if dark else '#111'),
-                marker=dict(size=siz, symbol=sym, color=col, colorscale='Plasma', cmin=0, cmax=300,
-                            line=dict(width=0.6, color='#222'), showscale=first,
-                            colorbar=dict(title='Price ($/GJ)', thickness=14, len=0.5) if first else None),
-                hoverinfo='skip', showlegend=False))
-            first = False
-
-    fig.update_layout(
-        geo=dict(scope='world', showland=True, landcolor=land, showocean=True, oceancolor=ocean,
-                 showcountries=True, countrycolor='#999', showsubunits=True, subunitcolor='#bbb',
-                 showcoastlines=True, coastlinecolor='#999',
-                 lataxis_range=[-44, -10], lonaxis_range=[112, 155], bgcolor=paper),
-        paper_bgcolor=paper, margin=dict(l=0, r=0, t=34, b=0),
-        title=dict(text=f'{pretty_key(key)}  |  Year {map_year}' if key else 'GARY network',
-                   x=0.01, y=0.98, font=dict(size=14, color='#90CAF9' if dark else '#1976D2')),
-    )
-    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -2098,7 +1997,7 @@ def toggle_theme(n, current):
     return 'dark' if current != 'dark' else 'light'
 
 # ---------------------------------------------------------------------------
-# Downloads: per-chart data as Excel, and the network map as PNG
+# Downloads: per-chart data as Excel
 # ---------------------------------------------------------------------------
 @app.callback(
     Output('chart-dl', 'data'),
@@ -2119,24 +2018,6 @@ def download_chart_data(*args):
     return dcc.send_data_frame(df.to_excel, f'{CHART_DL[idx][2]}.xlsx',
                                sheet_name='data', index=False)
 
-
-# Map -> PNG: the interactive tiled map can't be rasterised (browser taints the
-# WebGL canvas; kaleido errors on 100+ MapLibre traces), so export a native-geo
-# rebuild of the same network, which kaleido renders cleanly.
-@app.callback(
-    Output('map-dl', 'data'),
-    Input('map-png-btn', 'n_clicks'),
-    State('result-selector', 'value'),
-    State('horizon-slider',  'value'),
-    State('map-year',        'value'),
-    State('map-options',     'value'),
-    State('theme-store',     'data'),
-    prevent_initial_call=True,
-)
-def download_map_png(n, key, end_year, map_year, options, theme):
-    fig = _map_png_figure(key, end_year, map_year, options, dark=(theme == 'dark'))
-    png = fig.to_image(format='png', width=1500, height=950, scale=2)
-    return dcc.send_bytes(lambda buf: buf.write(png), f'gary_network_map_{map_year}.png')
 
 # ---------------------------------------------------------------------------
 # Entry point
