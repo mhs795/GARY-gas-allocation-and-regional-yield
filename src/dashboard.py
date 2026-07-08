@@ -6,12 +6,72 @@ import plotly.graph_objects as go
 import plotly.io as pio
 import diskcache
 import dash
-from dash import dcc, html, Input, Output, State, DiskcacheManager, no_update
+from dash import dcc, html, Input, Output, State, DiskcacheManager, no_update, ctx
 import dash_bootstrap_components as dbc
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from solve import solve_scenario
 from regenerate_data import regenerate_all
+
+# ---------------------------------------------------------------------------
+# Chart-data download (Excel)
+# ---------------------------------------------------------------------------
+# Charts whose figure can be downloaded as an .xlsx: (button id, graph id, filename).
+CHART_DL = [
+    ('dl-prod-annual',   'prod-annual-graph',      'production_annual'),
+    ('dl-prod-dispatch', 'prod-dispatch-graph',    'production_dispatch'),
+    ('dl-flow',          'flow-graph',             'pipeline_flows'),
+    ('dl-storage',       'storage-inventory-graph', 'storage_inventory'),
+    ('dl-price-high',    'price-high-graph',       'prices_high_demand'),
+    ('dl-price-low',     'price-low-graph',        'prices_low_demand'),
+    ('dl-ind',           'ind-graph',              'gpg_large_users'),
+]
+
+
+def _fig_dict_to_df(fig):
+    """Pull a Plotly figure dict's plotted series into a tidy wide table.
+
+    A shared x (usually the date/year) becomes the first column and each trace's y
+    becomes a column named after the trace; long traces are sampled down.
+    """
+    if not fig or not fig.get('data'):
+        return pd.DataFrame()
+    series, xref, seen = [], None, {}
+    for i, tr in enumerate(fig['data']):
+        y = tr.get('y')
+        if y is None or len(y) == 0:
+            continue
+        y = list(y)
+        if all(v is None for v in y):
+            continue
+        x = tr.get('x')
+        if x is not None and len(x) == len(y) and xref is None:
+            xref = list(x)
+        if len(y) > 5000:
+            step = int(np.ceil(len(y) / 5000))
+            y = y[::step]
+        name = str(tr.get('name') or f'series_{i + 1}').strip()
+        if name in seen:
+            seen[name] += 1
+            name = f'{name} ({seen[name]})'
+        else:
+            seen[name] = 0
+        series.append((name, pd.Series(y)))
+    if not series:
+        return pd.DataFrame()
+    df = pd.concat({n: s for n, s in series}, axis=1)
+    if xref is not None and len(xref) == len(df):
+        df.insert(0, 'x', xref)
+    return df
+
+
+def _dl_btn(btn_id):
+    """Small right-aligned 'download chart data as Excel' button for a chart."""
+    return html.Div(
+        dbc.Button('⬇ Data (Excel)', id=btn_id, size='sm', color='secondary',
+                   outline=True, className='chart-dl-btn'),
+        style={'textAlign': 'right', 'margin': '2px 4px 12px'})
+
 
 # ---------------------------------------------------------------------------
 # Background callback manager
@@ -969,6 +1029,8 @@ main = html.Div(className='md-main', children=[
                                   ],
                                   value=['labels', 'capacity'],
                                   inline=True),
+                    dbc.Button('⬇ Download PNG', id='map-png-btn', size='sm',
+                               color='secondary', outline=True, className='chart-dl-btn'),
                 ]),
                 html.Div(id='map-kpi-row', className='md-map-kpi-row'),
                 dcc.Loading(type='circle', color='#1976D2', children=
@@ -979,21 +1041,27 @@ main = html.Div(className='md-main', children=[
             # Production & Dispatch
             html.Div(id='tab-prod-content', style={'display': 'none'}, children=[
                 dcc.Graph(id='prod-annual-graph',   style={'marginBottom': '4px'}),
+                _dl_btn('dl-prod-annual'),
                 dcc.Graph(id='prod-dispatch-graph', style={'marginBottom': '4px'}),
+                _dl_btn('dl-prod-dispatch'),
                 dcc.Graph(id='flow-graph',          style={'marginBottom': '4px'}),
+                _dl_btn('dl-flow'),
                 html.Div(id='shortage-content'),
             ]),
 
             # Storage
             html.Div(id='tab-storage-content', style={'display': 'none'}, children=[
                 dcc.Graph(id='storage-inventory-graph', style={'marginBottom': '4px'}),
+                _dl_btn('dl-storage'),
                 html.Div(id='storage-activity-content'),
             ]),
 
             # Prices
             html.Div(id='tab-price-content', style={'display': 'none'}, children=[
                 dcc.Graph(id='price-high-graph',  style={'marginBottom': '4px'}),
+                _dl_btn('dl-price-high'),
                 dcc.Graph(id='price-low-graph'),
+                _dl_btn('dl-price-low'),
             ]),
 
             # Expansions
@@ -1004,6 +1072,7 @@ main = html.Div(className='md-main', children=[
             # Industrial
             html.Div(id='tab-ind-content', style={'display': 'none'}, children=[
                 dcc.Graph(id='ind-graph'),
+                _dl_btn('dl-ind'),
             ]),
 
         ]),
@@ -1018,6 +1087,8 @@ app.layout = html.Div(
     children=[
         dcc.Store(id='refresh-counter', data=0),
         dcc.Store(id='theme-store', storage_type='local', data='light'),
+        dcc.Download(id='chart-dl'),          # per-chart Excel download target
+        dcc.Store(id='map-png-dummy'),        # clientside map-PNG callback sink
         sidebar,
         main,
     ],
@@ -1269,7 +1340,9 @@ def update_header_kpis(key, end_year):
 # ---------------------------------------------------------------------------
 # Network Map
 # ---------------------------------------------------------------------------
-_MAP_CONFIG = {'scrollZoom': True, 'displayModeBar': True, 'modeBarButtonsToRemove': ['lasso2d','select2d']}
+_MAP_CONFIG = {'scrollZoom': True, 'displayModeBar': True, 'displaylogo': False,
+               'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
+               'toImageButtonOptions': {'format': 'png', 'filename': 'gary_network_map', 'scale': 2}}
 
 @app.callback(
     Output('map-kpi-row',    'children'),
@@ -1926,6 +1999,46 @@ app.clientside_callback(
 )
 def toggle_theme(n, current):
     return 'dark' if current != 'dark' else 'light'
+
+# ---------------------------------------------------------------------------
+# Downloads: per-chart data as Excel, and the network map as PNG
+# ---------------------------------------------------------------------------
+@app.callback(
+    Output('chart-dl', 'data'),
+    [Input(b, 'n_clicks') for b, _, _ in CHART_DL],
+    [State(g, 'figure') for _, g, _ in CHART_DL],
+    prevent_initial_call=True,
+)
+def download_chart_data(*args):
+    """Send the clicked chart's plotted data as an .xlsx (built from its figure)."""
+    n = len(CHART_DL)
+    figs = args[n:]
+    idx = next((i for i, (b, _, _) in enumerate(CHART_DL) if b == ctx.triggered_id), None)
+    if idx is None:
+        return no_update
+    df = _fig_dict_to_df(figs[idx])
+    if df.empty:
+        return no_update
+    return dcc.send_data_frame(df.to_excel, f'{CHART_DL[idx][2]}.xlsx',
+                               sheet_name='data', index=False)
+
+
+# Map -> PNG: run Plotly's own image export on the (dynamically-id'd) map canvas.
+app.clientside_callback(
+    """
+    function(n){
+        if(!n){ return window.dash_clientside.no_update; }
+        var gd = document.querySelector('#map-graph-wrap .js-plotly-plot');
+        if(gd && window.Plotly){
+            window.Plotly.downloadImage(gd, {format: 'png', filename: 'gary_network_map', scale: 2});
+        }
+        return '';
+    }
+    """,
+    Output('map-png-dummy', 'data'),
+    Input('map-png-btn', 'n_clicks'),
+    prevent_initial_call=True,
+)
 
 # ---------------------------------------------------------------------------
 # Entry point
