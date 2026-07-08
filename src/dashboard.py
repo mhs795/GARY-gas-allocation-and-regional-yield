@@ -829,7 +829,11 @@ def pretty_key(k):
     rest = k.split('_ADGSM_', 1)[-1] if '_ADGSM_' in k else k
     rest = (rest.replace('False', '').replace('True', '(ADGSM)')
                 .replace('_Winter_', 'Winter ').replace('_LNG_', '  ·  LNG ')
-                .replace('_Dunkelflaute', '  ·  SA Dunkelflaute 2027').strip('_ '))
+                .replace('_Dunkelflaute', '  ·  SA Dunkelflaute 2027'))
+    if '_DR' in rest:
+        head, dr = rest.rsplit('_DR', 1)
+        rest = f'{head}  ·  Discount {dr}%'
+    rest = rest.strip('_ ')
     return f'{BASELINE_LABEL.get(base, base)}  ·  {rest}' if base else rest
 
 # ---------------------------------------------------------------------------
@@ -950,6 +954,11 @@ sidebar = html.Div(className='md-sidebar', children=[
                       options=[{'label': ' SA Dunkelflaute (2027)', 'value': 'on'}],
                       value=[], switch=True,
                       style={'marginBottom': '20px', 'fontSize': '12px'}),
+
+        slider_group('Discount Rate (capacity NPV)',
+            dcc.Slider(id='discount-slider', min=0, max=0.12, step=0.01, value=0.07,
+                       marks={0: '0%', 0.05: '5%', 0.07: '7%', 0.1: '10%'},
+                       tooltip={'placement': 'bottom', 'always_visible': True})),
 
         slider_group('Optimality Gap',
             dcc.Slider(id='gap-slider', min=0, max=0.05, step=0.001, value=0.01,
@@ -1166,6 +1175,7 @@ def show_tab(active):
     State('gap-slider',    'value'),
     State('baseline-selector', 'value'),
     State('dunkelflaute-toggle', 'value'),
+    State('discount-slider', 'value'),
     State('refresh-counter', 'data'),
     background=True,
     running=[
@@ -1178,16 +1188,19 @@ def show_tab(active):
     progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
     prevent_initial_call=True,
 )
-def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, refresh):
+def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, discount, refresh):
     w, l = LEVELS[wi], LEVELS[li]
     baseline = baseline or 'StepChange'
     dunkelflaute = bool(dunkel) and 'on' in dunkel
+    dr = 0.07 if discount is None else float(discount)
     def _cb(yr, p):
         pct = int(p * 100)
         set_progress((pct, f'Solving {yr}… {pct}%'))
     result = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap, callback=_cb,
-                            baseline=baseline, dunkelflaute=dunkelflaute)
-    key = f'Base_{baseline}_ADGSM_False_Winter_{w}_LNG_{l}' + ('_Dunkelflaute' if dunkelflaute else '')
+                            baseline=baseline, dunkelflaute=dunkelflaute, discount_rate=dr)
+    key = (f'Base_{baseline}_ADGSM_False_Winter_{w}_LNG_{l}'
+           + ('_Dunkelflaute' if dunkelflaute else '')
+           + (f'_DR{round(dr*100)}' if abs(dr - 0.07) > 1e-9 else ''))
     data = load_results()
     data['all_scenarios'][key] = result
     data['current_key'] = key
@@ -1203,6 +1216,7 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, refresh)
     Input('batch-btn', 'n_clicks'),
     State('gap-slider', 'value'),
     State('baseline-selector', 'value'),
+    State('discount-slider', 'value'),
     State('refresh-counter', 'data'),
     background=True,
     running=[
@@ -1215,15 +1229,17 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, refresh)
     progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
     prevent_initial_call=True,
 )
-def run_batch(set_progress, n_clicks, gap, baseline, refresh):
+def run_batch(set_progress, n_clicks, gap, baseline, discount, refresh):
     # Every combination: all GSOO baselines x Winter x LNG (ADGSM off, dunkelflaute
     # off) -> 27 runs, plus one Step Change + SA Dunkelflaute (2027) case at the
     # central Winter/LNG so it sits alongside its plain Step Change counterpart.
+    dr = 0.07 if discount is None else float(discount)
+    dr_tag = f'_DR{round(dr * 100)}' if abs(dr - 0.07) > 1e-9 else ''
     jobs = [(b['value'], w, l, False) for b in BASELINES for w in LEVELS for l in LEVELS]
     jobs.append(('StepChange', 'Medium', 'Medium', True))
     data = load_results()
     for i, (b, w, l, dunkel) in enumerate(jobs):
-        key = f'Base_{b}_ADGSM_False_Winter_{w}_LNG_{l}' + ('_Dunkelflaute' if dunkel else '')
+        key = f'Base_{b}_ADGSM_False_Winter_{w}_LNG_{l}' + ('_Dunkelflaute' if dunkel else '') + dr_tag
         # Skip already-computed base combos, but always recompute the dunkelflaute
         # case so edits to the event flow through on a re-run.
         if dunkel or key not in data['all_scenarios']:
@@ -1231,7 +1247,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, refresh):
                 overall = int((_i + p) / _n * 100)
                 tag = ' · SA Dunkelflaute 2027' if _d else ''
                 set_progress((overall, f'{BASELINE_LABEL.get(_b, _b)} · Winter {_w} · LNG {_l}{tag} · Year {yr} — {overall}%'))
-            data['all_scenarios'][key] = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap, callback=_cb, baseline=b, dunkelflaute=dunkel)
+            data['all_scenarios'][key] = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap, callback=_cb, baseline=b, dunkelflaute=dunkel, discount_rate=dr)
             data['current_key'] = key
             save_results(data)
         pct = int((i + 1) / len(jobs) * 100)
