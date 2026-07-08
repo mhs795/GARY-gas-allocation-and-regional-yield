@@ -46,20 +46,60 @@ def _year_demand(data, year, winter, lng):
 
 
 def solve_scenario(winter, lng, adgsm_enabled=False, mip_gap=0.005, callback=None,
-                   baseline="StepChange", dunkelflaute=False, discount_rate=0.07):
-    """Two-stage full-horizon solve.
+                   baseline="StepChange", dunkelflaute=False, discount_rate=0.07,
+                   foresight=True):
+    """Solve a scenario over 2025-2050.
 
-    1. Capacity layer (perfect foresight): co-optimise what to build and when
-       across 2025-2050 on a reduced monthly+peak temporal grid, with NPV
-       discounting (capacity_model.CapacityExpansionModel).
-    2. Dispatch layer: solve each year at full 365-day resolution with the build
-       schedule fixed, producing the reported operations and nodal prices.
+    ``foresight=True`` (default) uses the two-stage full-horizon method: a
+    perfect-foresight capacity model chooses builds across the whole horizon, then
+    each year is dispatched at full 365-day resolution with those builds fixed.
+
+    ``foresight=False`` uses the myopic year-by-year method: each year decides its
+    own builds reactively (no knowledge of future years), carrying built projects
+    forward. Preferred for *unanticipated* shocks (e.g. a price-shock or dunkelflaute
+    scenario) where perfect foresight would unrealistically pre-build ahead of it.
     """
-    from capacity_model import CapacityExpansionModel, build_representative_days
     data = load_data(baseline)
+    years = list(range(2025, 2051))
+    if foresight:
+        return _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline,
+                                dunkelflaute, mip_gap, discount_rate, callback)
+    return _solve_myopic(data, years, winter, lng, adgsm_enabled, baseline,
+                         dunkelflaute, mip_gap, callback)
+
+
+def _solve_myopic(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaute, mip_gap, callback):
+    """Reactive year-by-year solve: each year decides builds with no foresight."""
     contracts_all = data['contracts']
-    start_year, end_year = 2025, 2050
-    years = list(range(start_year, end_year + 1))
+    built_projects, results = [], []
+    for i, year in enumerate(years):
+        if callback:
+            callback(year, i / len(years))
+        demand_yr = _year_demand(data, year, winter, lng)
+        gm = GasMarketModel(
+            data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
+            contracts_df=contracts_all if year <= 2040 else None, year=year,
+            already_built=built_projects, adgsm_enabled=adgsm_enabled,
+            baseline=baseline, dunkelflaute=dunkelflaute)
+        gm.build_model()
+        status = gm.solve(mip_gap=mip_gap)
+        if status != "ok":
+            raise RuntimeError(f"Solver failed in {year}: {status}")
+        yr_res = gm.get_results()
+        yr_res['Year'] = year
+        results.append(yr_res)
+        built_projects.extend([b for b in yr_res['builds'] if b not in built_projects])
+        print(f"Year {year} complete (myopic)")
+    if callback:
+        callback(years[-1], 1.0)
+    return results
+
+
+def _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaute, mip_gap, discount_rate, callback):
+    """Two-stage full-horizon solve: perfect-foresight capacity + 365-day dispatch."""
+    from capacity_model import CapacityExpansionModel, build_representative_days
+    contracts_all = data['contracts']
+    start_year, end_year = years[0], years[-1]
 
     # --- Pass 1: assemble every year's demand + GPG/industrial (events applied) ---
     dispatch_models, demand_all, gpg_all, ind_all = {}, {}, {}, {}
