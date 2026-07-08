@@ -1156,7 +1156,9 @@ def run_batch(set_progress, n_clicks, gap, baseline, refresh):
     data = load_results()
     for i, (b, w, l, dunkel) in enumerate(jobs):
         key = f'Base_{b}_ADGSM_False_Winter_{w}_LNG_{l}' + ('_Dunkelflaute' if dunkel else '')
-        if key not in data['all_scenarios']:
+        # Skip already-computed base combos, but always recompute the dunkelflaute
+        # case so edits to the event flow through on a re-run.
+        if dunkel or key not in data['all_scenarios']:
             def _cb(yr, p, _i=i, _n=len(jobs), _b=b, _w=w, _l=l, _d=dunkel):
                 overall = int((_i + p) / _n * 100)
                 tag = ' · SA Dunkelflaute 2027' if _d else ''
