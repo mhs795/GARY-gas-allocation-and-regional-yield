@@ -19,7 +19,7 @@ DUNKELFLAUTE_MULT = 2.75
 
 
 class GasMarketModel:
-    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, adgsm_enabled=False, baseline="StepChange", dunkelflaute=False):
+    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, adgsm_enabled=False, baseline="StepChange", dunkelflaute=False, builds_fixed=None):
         self.nodes = nodes_df
         self.arcs = arcs_df
         self.supply = supply_df
@@ -34,6 +34,10 @@ class GasMarketModel:
         self.baseline = baseline
         # SA dunkelflaute event lever (applied to Adelaide GPG in DUNKELFLAUTE_YEAR).
         self.dunkelflaute = dunkelflaute
+        # When set (a set of active project names), ALL build decisions are fixed:
+        # projects in the set -> 1, all others -> 0. Used by the two-stage solve so
+        # dispatch honours the capacity model's schedule and runs as a pure LP.
+        self.builds_fixed = builds_fixed
         self.solved = False
 
         base_path = os.path.dirname(__file__)
@@ -197,10 +201,15 @@ class GasMarketModel:
         #         return lng_flow <= sum(m.production[s[0], s[1], t] for s in supply_at['Surat']) * 0.85
         #     m.reservation = pyo.Constraint(m.T, rule=reservation_rule)
 
-        for e in self.already_built: m.build[e].fix(1)
-        if self.year < 2028:
+        if self.builds_fixed is not None:
+            # Two-stage mode: honour the capacity model's schedule exactly.
             for e in m.Expansion:
-                if 'Terminal' in e: m.build[e].fix(0)
+                m.build[e].fix(1 if e in self.builds_fixed else 0)
+        else:
+            for e in self.already_built: m.build[e].fix(1)
+            if self.year < 2028:
+                for e in m.Expansion:
+                    if 'Terminal' in e: m.build[e].fix(0)
 
     def solve(self, mip_gap=0.005):
         m = self.model

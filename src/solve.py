@@ -34,65 +34,83 @@ def get_lng_mult(scenario, year):
         else: return 1.1
     return 1.0
 
-def solve_scenario(winter, lng, adgsm_enabled=False, mip_gap=0.005, callback=None, baseline="StepChange", dunkelflaute=False):
+def _year_demand(data, year, winter, lng):
+    """Mass-market demand for one year with the Winter and LNG levers applied."""
+    dm = data['demand'].copy()
+    winter_mult = {"Low": 1.0, "Medium": 1.5, "High": 2.2}[winter]
+    dm.loc[(dm['Year'] == year) & (dm['Node'].isin(['Melbourne', 'Adelaide', 'Sydney'])) &
+           (dm['Day'] >= 150) & (dm['Day'] <= 250), 'Demand'] *= winter_mult
+    lng_mult = get_lng_mult(lng, year)
+    dm.loc[(dm['Year'] == year) & (dm['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])), 'Demand'] *= lng_mult
+    return dm[dm['Year'] == year].copy()
+
+
+def solve_scenario(winter, lng, adgsm_enabled=False, mip_gap=0.005, callback=None,
+                   baseline="StepChange", dunkelflaute=False, discount_rate=0.07):
+    """Two-stage full-horizon solve.
+
+    1. Capacity layer (perfect foresight): co-optimise what to build and when
+       across 2025-2050 on a reduced monthly+peak temporal grid, with NPV
+       discounting (capacity_model.CapacityExpansionModel).
+    2. Dispatch layer: solve each year at full 365-day resolution with the build
+       schedule fixed, producing the reported operations and nodal prices.
+    """
+    from capacity_model import CapacityExpansionModel, build_representative_days
     data = load_data(baseline)
-    built_projects = []
-    scenario_results = []
-    
-    # Load contracts once
     contracts_all = data['contracts']
-    
     start_year, end_year = 2025, 2050
-    total_years = end_year - start_year + 1
+    years = list(range(start_year, end_year + 1))
 
-    for year in range(start_year, end_year + 1):
-        if callback:
-            progress = (year - start_year) / total_years
-            callback(year, progress)
-
-        demand_mod = data['demand'].copy()
-        
-        # Winter Logic
-        winter_mult = {"Low": 1.0, "Medium": 1.5, "High": 2.2}[winter]
-        demand_mod.loc[(demand_mod['Year'] == year) & 
-                       (demand_mod['Node'].isin(['Melbourne', 'Adelaide', 'Sydney'])) & 
-                       (demand_mod['Day'] >= 150) & (demand_mod['Day'] <= 250), 'Demand'] *= winter_mult
-        
-        # LNG Logic
-        lng_mult = get_lng_mult(lng, year)
-        demand_mod.loc[(demand_mod['Year'] == year) & (demand_mod['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])), 'Demand'] *= lng_mult
-        
-        # GPG + large-industrial demand is loaded inside GasMarketModel from the
-        # GSOO Step Change profiles (year-varying) and kept out of the winter/LNG
-        # multipliers above (which scale mass-market distribution only).
-        # Filter demand to current year
-        demand_yr = demand_mod[demand_mod['Year'] == year].copy()
-        
-        model = GasMarketModel(
+    # --- Pass 1: assemble every year's demand + GPG/industrial (events applied) ---
+    dispatch_models, demand_all, gpg_all, ind_all = {}, {}, {}, {}
+    for year in years:
+        demand_yr = _year_demand(data, year, winter, lng)
+        gm = GasMarketModel(
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
-            contracts_df=contracts_all if year <= 2040 else None,
-            year=year,
-            already_built=built_projects,
-            adgsm_enabled=adgsm_enabled,
-            baseline=baseline,
-            dunkelflaute=dunkelflaute
-        )
-        model.build_model()
-        
-        status = model.solve(mip_gap=mip_gap)
+            contracts_df=contracts_all if year <= 2040 else None, year=year,
+            adgsm_enabled=adgsm_enabled, baseline=baseline, dunkelflaute=dunkelflaute)
+        dispatch_models[year] = gm
+        for (n, d), v in demand_yr.set_index(['Node', 'Day'])['Demand'].to_dict().items():
+            demand_all[(n, year, d)] = v
+        for (n, d), v in gm.gpg_demand.items():
+            gpg_all[(n, year, d)] = v
+        for (n, d), v in gm.ind_demand.items():
+            ind_all[(n, year, d)] = v
+
+    # --- Pass 2: capacity expansion, perfect foresight over the horizon ----------
+    if callback:
+        callback(start_year, 0.0)
+    print("Capacity layer: optimising builds across 2025-2050 …")
+    rep = build_representative_days(years, demand_all, gpg_all, ind_all, data['nodes'])
+    cap = CapacityExpansionModel(
+        data['nodes'], data['arcs'], data['supply'], data['expansion'], years, rep,
+        discount_rate=discount_rate,
+        strike_gpg=dispatch_models[start_year].strike_gpg,
+        strike_ind=dispatch_models[start_year].strike_ind)
+    cap.build_model()
+    status = cap.solve(mip_gap=mip_gap)
+    if status != "ok":
+        raise RuntimeError(f"Capacity model failed: {status}")
+    build_year = cap.get_build_schedule()
+    active_by_year = {y: {e for e, by in build_year.items() if by is not None and by <= y} for y in years}
+    print("Build schedule:", {e: by for e, by in build_year.items() if by is not None} or "none")
+
+    # --- Pass 3: full 365-day dispatch each year with builds fixed ----------------
+    scenario_results = []
+    for i, year in enumerate(years):
+        if callback:
+            callback(year, (i + 1) / len(years))
+        gm = dispatch_models[year]
+        gm.builds_fixed = active_by_year[year]
+        gm.build_model()
+        status = gm.solve(mip_gap=mip_gap)
         if status != "ok":
-            raise RuntimeError(f"Solver failed in {year} with condition: {status}")
-        
-        yr_res = model.get_results()
+            raise RuntimeError(f"Dispatch failed in {year}: {status}")
+        yr_res = gm.get_results()
         yr_res['Year'] = year
         scenario_results.append(yr_res)
-        
-        # Update memory for next year
-        built_projects.extend([b for b in yr_res['builds'] if b not in built_projects])
-        
-        print(f"Year {year} complete (Gap: {mip_gap})")
-    
+        print(f"Year {year} complete")
+
     if callback:
-        callback(2050, 1.0)
-        
+        callback(end_year, 1.0)
     return scenario_results
