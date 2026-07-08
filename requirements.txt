@@ -9,4 +9,3 @@ diskcache
 multiprocess
 psutil
 python-docx
-kaleido

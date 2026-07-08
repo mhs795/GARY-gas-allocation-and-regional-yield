@@ -1088,7 +1088,7 @@ app.layout = html.Div(
         dcc.Store(id='refresh-counter', data=0),
         dcc.Store(id='theme-store', storage_type='local', data='light'),
         dcc.Download(id='chart-dl'),          # per-chart Excel download target
-        dcc.Download(id='map-dl'),            # map PNG download target
+        dcc.Store(id='map-png-dummy'),        # clientside map-PNG callback sink
         sidebar,
         main,
     ],
@@ -2023,23 +2023,32 @@ def download_chart_data(*args):
                                sheet_name='data', index=False)
 
 
-# Map -> PNG: rendered server-side with kaleido. Client-side export of a tile
-# basemap is unreliable (tainted WebGL canvas), so we rebuild the map figure for
-# the current scenario/year and export it to a PNG on the server.
-@app.callback(
-    Output('map-dl', 'data'),
+# Map -> PNG: export the LIVE map canvas client-side (captures the current pan/
+# zoom and tiles). Uses Plotly's own image export where the global is exposed,
+# and otherwise falls back to triggering the map's built-in camera (toImage)
+# modebar button — both go through Plotly's map-aware exporter.
+app.clientside_callback(
+    """
+    function(n){
+        if(!n){ return window.dash_clientside.no_update; }
+        var wrap = document.getElementById('map-graph-wrap');
+        if(!wrap){ return ''; }
+        var gd = wrap.querySelector('.js-plotly-plot');
+        var opts = {format: 'png', filename: 'gary_network_map', scale: 2};
+        if(gd && window.Plotly && window.Plotly.downloadImage){
+            window.Plotly.downloadImage(gd, opts);
+            return '';
+        }
+        // Fallback: click the modebar "Download plot as png" (camera) button.
+        var cam = wrap.querySelector('a.modebar-btn[data-title*="png" i]');
+        if(cam){ cam.click(); }
+        return '';
+    }
+    """,
+    Output('map-png-dummy', 'data'),
     Input('map-png-btn', 'n_clicks'),
-    State('result-selector', 'value'),
-    State('horizon-slider',  'value'),
-    State('map-year',        'value'),
-    State('map-options',     'value'),
-    State('theme-store',     'data'),
     prevent_initial_call=True,
 )
-def download_map_png(n, key, end_year, map_year, options, theme):
-    _kpis, fig = _update_map_inner(key, end_year, map_year, options, dark=(theme == 'dark'))
-    png = fig.to_image(format='png', width=1600, height=760, scale=2)
-    return dcc.send_bytes(lambda buf: buf.write(png), f'gary_network_map_{map_year}.png')
 
 # ---------------------------------------------------------------------------
 # Entry point
