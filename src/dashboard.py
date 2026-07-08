@@ -1088,7 +1088,7 @@ app.layout = html.Div(
         dcc.Store(id='refresh-counter', data=0),
         dcc.Store(id='theme-store', storage_type='local', data='light'),
         dcc.Download(id='chart-dl'),          # per-chart Excel download target
-        dcc.Store(id='map-png-dummy'),        # clientside map-PNG callback sink
+        dcc.Download(id='map-dl'),            # map PNG download target
         sidebar,
         main,
     ],
@@ -2023,22 +2023,23 @@ def download_chart_data(*args):
                                sheet_name='data', index=False)
 
 
-# Map -> PNG: run Plotly's own image export on the (dynamically-id'd) map canvas.
-app.clientside_callback(
-    """
-    function(n){
-        if(!n){ return window.dash_clientside.no_update; }
-        var gd = document.querySelector('#map-graph-wrap .js-plotly-plot');
-        if(gd && window.Plotly){
-            window.Plotly.downloadImage(gd, {format: 'png', filename: 'gary_network_map', scale: 2});
-        }
-        return '';
-    }
-    """,
-    Output('map-png-dummy', 'data'),
+# Map -> PNG: rendered server-side with kaleido. Client-side export of a tile
+# basemap is unreliable (tainted WebGL canvas), so we rebuild the map figure for
+# the current scenario/year and export it to a PNG on the server.
+@app.callback(
+    Output('map-dl', 'data'),
     Input('map-png-btn', 'n_clicks'),
+    State('result-selector', 'value'),
+    State('horizon-slider',  'value'),
+    State('map-year',        'value'),
+    State('map-options',     'value'),
+    State('theme-store',     'data'),
     prevent_initial_call=True,
 )
+def download_map_png(n, key, end_year, map_year, options, theme):
+    _kpis, fig = _update_map_inner(key, end_year, map_year, options, dark=(theme == 'dark'))
+    png = fig.to_image(format='png', width=1600, height=760, scale=2)
+    return dcc.send_bytes(lambda buf: buf.write(png), f'gary_network_map_{map_year}.png')
 
 # ---------------------------------------------------------------------------
 # Entry point
