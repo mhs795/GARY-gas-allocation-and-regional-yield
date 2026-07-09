@@ -823,6 +823,28 @@ BASELINES = [
 ]
 BASELINE_LABEL = {b['value']: b['label'] for b in BASELINES}
 
+# Compact labels for the scenario dropdown.
+_BASE_SHORT = {'StepChange': 'SC', 'Accelerated': 'Acc', 'SlowerGrowth': 'SG'}
+_LVL_SHORT = {'Low': 'L', 'Medium': 'M', 'High': 'H'}
+
+
+def short_key(k):
+    """Shorthand scenario label, e.g. 'SC · W-M L-M · Dunk27 · Myopic'."""
+    base = k.split('Base_', 1)[-1].split('_ADGSM', 1)[0] if 'Base_' in k else ''
+    winter = k.split('_Winter_', 1)[1].split('_', 1)[0] if '_Winter_' in k else ''
+    lng = k.split('_LNG_', 1)[1].split('_', 1)[0] if '_LNG_' in k else ''
+    parts = [_BASE_SHORT.get(base, base)]
+    if winter or lng:
+        parts.append(f"W-{_LVL_SHORT.get(winter, winter[:1])} L-{_LVL_SHORT.get(lng, lng[:1])}")
+    if '_Dunkelflaute' in k:
+        parts.append('Dunk27')
+    if '_Myopic' in k:
+        parts.append('Myopic')
+    if '_DR' in k:
+        parts.append('DR' + k.rsplit('_DR', 1)[1].split('_', 1)[0] + '%')
+    return '  ·  '.join(p for p in parts if p)
+
+
 def pretty_key(k):
     """Human-readable label for a scenario key Base_<base>_ADGSM_<x>_Winter_<w>_LNG_<l>."""
     base = k.split('Base_', 1)[-1].split('_ADGSM', 1)[0] if 'Base_' in k else None
@@ -1334,7 +1356,7 @@ def update_selector(refresh, current):
         selected = data.get('current_key') or keys[0]
     results  = data['all_scenarios'].get(selected, [])
     max_year = max((r['Year'] for r in results), default=2050)
-    return [{'label': pretty_key(k), 'value': k} for k in keys], selected, max_year
+    return [{'label': short_key(k), 'value': k} for k in keys], selected, max_year
 
 # ---------------------------------------------------------------------------
 # Header chip + KPI row
