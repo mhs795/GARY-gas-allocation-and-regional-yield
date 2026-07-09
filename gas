@@ -1,9 +1,21 @@
 #!/bin/bash
 # GAS - Run the Nodal Gas Market Optimization Dashboard
+#
+#   ./gas                keeps the machine awake while GARY runs (default), so a
+#                        long batch survives closing the lid (uses systemd-inhibit)
+#   ./gas --allow-sleep  run without the suspend inhibitor (normal power behaviour)
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
 
 URL="http://127.0.0.1:8050"
+
+# --- options --------------------------------------------------------------
+KEEP_AWAKE=1                      # keep the laptop awake while GARY runs (default)
+for arg in "$@"; do
+    case "$arg" in
+        --allow-sleep|--no-keep-awake) KEEP_AWAKE=0 ;;
+    esac
+done
 
 # Make sure the browser is already running before we ever hand it a URL.
 # If Brave is cold-started together with a URL argument, it both restores
@@ -48,10 +60,20 @@ if lsof -ti :8050 >/dev/null 2>&1; then
     fi
 fi
 
-# Start the server in the background
+# Start the server in the background, wrapped in a suspend inhibitor by default so
+# closing the lid doesn't pause a long-running solve/batch.
 source venv/bin/activate
 export PYTHONPATH=$PYTHONPATH:$(pwd)/src
-python src/dashboard.py &
+INHIBIT=""
+if [ "$KEEP_AWAKE" = "1" ]; then
+    if command -v systemd-inhibit >/dev/null 2>&1; then
+        INHIBIT="systemd-inhibit --what=handle-lid-switch:sleep:idle --who=GARY --why=Gas-market-model-running --mode=block"
+        echo "Keep-awake ON: suspend inhibited while GARY runs (safe to close the lid). Use --allow-sleep to disable."
+    else
+        echo "Keep-awake requested but systemd-inhibit not found; running with normal power behaviour."
+    fi
+fi
+$INHIBIT python src/dashboard.py &
 SERVER_PID=$!
 
 # Wait for it to be ready (up to 15 seconds)
