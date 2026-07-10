@@ -101,7 +101,7 @@ def _solve_myopic(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaut
         yr_res['Year'] = year
         results.append(yr_res)
         built_projects.extend([b for b in yr_res['builds'] if b not in built_projects])
-        print(f"Year {year} complete (myopic)")
+        print(f"Year {year} complete")
     if callback:
         callback(years[-1], 1.0)
     return results
@@ -133,7 +133,6 @@ def _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline, dunkelfl
     # --- Pass 2: capacity expansion, perfect foresight over the horizon ----------
     if callback:
         callback(start_year, 0.0)
-    print("Capacity layer: optimising builds across 2025-2050 …")
     rep = build_representative_days(years, demand_all, gpg_all, ind_all, data['nodes'])
     cap = CapacityExpansionModel(
         data['nodes'], data['arcs'], data['supply'], data['expansion'], years, rep,
@@ -146,7 +145,6 @@ def _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline, dunkelfl
         raise RuntimeError(f"Capacity model failed: {status}")
     build_year = cap.get_build_schedule()
     active_by_year = {y: {e for e, by in build_year.items() if by is not None and by <= y} for y in years}
-    print("Build schedule:", {e: by for e, by in build_year.items() if by is not None} or "none")
 
     # --- Pass 3: full 365-day dispatch each year with builds fixed ----------------
     scenario_results = []
