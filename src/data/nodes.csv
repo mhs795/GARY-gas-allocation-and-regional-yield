@@ -17,12 +17,3 @@ Amadeus,Supply,NT Amadeus Basin (Mereenie/Palm Valley/Dingo),0,0,0
 Beetaloo,Supply,NT Beetaloo shale gas (potential),0,0,0
 Darwin,Demand,NT demand centre (Darwin power & industry),0,0,0
 Tennant_Creek,Hub,NT pipeline junction (Amadeus GP / NGP),0,0,0
-Perth,Demand,WA domestic demand (Perth & South-West),0,0,0
-Pilbara,Demand,Pilbara mining & industry,0,0,0
-Kalgoorlie,Demand,Goldfields mining demand,0,0,0
-Karratha,Hub,NW Shelf gas hub (Carnarvon Basin onshore),0,0,0
-Perth_Basin,Supply,Onshore Perth Basin (Waitsia),0,0,0
-NWS_LNG,LNG,North West Shelf LNG,0,0,0
-Gorgon_LNG,LNG,Gorgon LNG (Barrow Island),0,0,0
-Wheatstone_LNG,LNG,Wheatstone LNG (Onslow),0,0,0
-Pluto_LNG,LNG,Pluto LNG (Burrup),0,0,0

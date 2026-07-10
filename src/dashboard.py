@@ -140,14 +140,8 @@ COORDS = {
     'QCLNG':          [-23.84, 151.30], 'Port_Kembla':   [-34.45, 150.9],
     'Iona':           [-38.55, 142.9],  'Silver_Springs':[-27.4,  149.2],
     # Northern Territory
-    'Amadeus':        [-23.70, 133.20], 'Beetaloo':      [-16.30, 133.40],
+    'Amadeus':        [-23.85, 132.30], 'Beetaloo':      [-16.30, 133.40],
     'Darwin':         [-12.46, 130.84], 'Tennant_Creek': [-19.65, 134.19],
-    # Western Australia (separate market)
-    'Perth':          [-31.95, 115.86], 'Pilbara':       [-20.31, 118.61],
-    'Kalgoorlie':     [-30.75, 121.47], 'Karratha':      [-20.74, 116.85],
-    'Perth_Basin':    [-29.27, 115.05],
-    'NWS_LNG':        [-20.58, 116.77], 'Gorgon_LNG':    [-20.86, 115.46],
-    'Wheatstone_LNG': [-21.66, 115.10], 'Pluto_LNG':     [-20.50, 116.63],
 }
 
 ARC_WAYPOINTS = {
@@ -167,20 +161,16 @@ ARC_WAYPOINTS = {
     'QGP':      [[-27.15,149.07],[-26.55,149.30],[-26.13,149.96],[-25.40,150.05],[-24.95,150.08],[-24.57,149.98],[-24.41,150.50],[-24.00,150.90],[-23.87,151.10],[-23.84,151.26]],
     'Longford': [[-38.50,147.00],[-38.11,147.07],[-38.16,146.79],[-38.20,146.54],[-38.24,146.40],[-38.17,146.27],[-38.16,145.93],[-38.13,145.85],[-38.10,145.72],[-38.07,145.48],[-37.98,145.21],[-37.81,144.96]],
     'SS2Surat': [[-27.4,149.2],[-27.35,149.18],[-27.28,149.15],[-27.20,149.12],[-27.15,149.07]],
-    # --- Northern Territory ---
-    'AGP_S':  [[-23.70,133.20],[-23.70,133.87],[-22.60,134.00],[-21.50,133.95],[-19.65,134.19]],
+    # --- Northern Territory (Amadeus Basin to Darwin Pipeline + NGP; AEMO gas map v2021) ---
+    # AGP: Mereenie (Amadeus Basin) -> Alice Springs -> N along the Stuart Hwy corridor
+    # -> Tennant Creek -> Katherine -> Darwin.
+    'AGP_S':  [[-23.85,132.30],[-23.70,133.88],[-22.30,134.05],[-20.80,134.15],[-19.65,134.19]],
     'AGP_N':  [[-19.65,134.19],[-18.00,133.55],[-16.30,133.37],[-14.47,132.26],[-13.20,131.10],[-12.46,130.84]],
     'Beetaloo_Pipe': [[-16.30,133.40],[-17.10,133.60],[-18.00,133.90],[-19.65,134.19]],
-    'NGP':    [[-19.65,134.19],[-19.90,135.60],[-20.30,137.60],[-20.73,139.49],[-22.50,139.90],[-25.00,140.20],[-28.10,140.20]],
-    # --- Western Australia ---
-    'DBNGP':  [[-20.74,116.85],[-22.50,115.00],[-24.90,113.70],[-26.60,114.60],[-28.80,114.60],[-30.70,115.05],[-31.95,115.86]],
-    'GGP':    [[-20.74,116.85],[-21.40,117.60],[-22.60,119.00],[-24.00,119.90],[-26.00,120.50],[-28.50,121.30],[-30.75,121.47]],
-    'Pilbara_Lat': [[-20.74,116.85],[-20.40,117.70],[-20.31,118.61]],
-    'NWS_Feed': [[-20.74,116.85],[-20.58,116.77]],
-    'Pluto_Feed': [[-20.74,116.85],[-20.50,116.63]],
-    'PerthBasin_Pipe': [[-29.27,115.05],[-30.50,115.30],[-31.95,115.86]],
-    'Gorgon_DomGas': [[-20.86,115.46],[-20.74,116.85]],
-    'Wheatstone_DomGas': [[-21.66,115.10],[-20.74,116.85]],
+    # NGP (Tennant Creek -> Mt Isa) then, as on the AEMO map, gas reaches Moomba via the
+    # Carpentaria Pipeline (Mt Isa -> Ballera) and the Ballera -> Moomba line — not a
+    # straight run south. Single model arc, traced along the real corridor.
+    'NGP':    [[-19.65,134.19],[-19.55,135.80],[-19.90,137.60],[-20.40,138.80],[-20.73,139.49],[-22.50,140.60],[-24.30,142.10],[-25.60,143.10],[-26.40,143.90],[-27.30,142.30],[-27.90,141.00],[-28.10,140.20]],
 }
 # Override hand-traced routes with real OpenStreetMap geometry where available
 # (built by build_pipeline_geometry.py). Arcs absent from the file keep their
@@ -192,7 +182,7 @@ try:
         ARC_WAYPOINTS.update(_json.load(_gf))
 except (OSError, ValueError):
     pass
-for _fwd, _rev in [('SWQP','SWQP_Rev'),('MSP','MSP_Rev'),('VNI','VNI_Rev'),('PK2SYD','SYD2PK'),('SS2Surat','Surat2SS')]:
+for _fwd, _rev in [('SWQP','SWQP_Rev'),('MSP','MSP_Rev'),('VNI','VNI_Rev'),('PK2SYD','SYD2PK'),('SS2Surat','Surat2SS'),('NGP','NGP_Rev')]:
     if _rev not in ARC_WAYPOINTS and _fwd in ARC_WAYPOINTS:
         ARC_WAYPOINTS[_rev] = list(reversed(ARC_WAYPOINTS[_fwd]))
 
@@ -1434,7 +1424,7 @@ def update_map(key, end_year, map_year, options, theme):
         import traceback
         traceback.print_exc()
         fig = go.Figure()
-        fig.update_layout(map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-25, lon=134), zoom=3.15),
+        fig.update_layout(map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-24,lon=140), zoom=3.6),
                           margin=dict(l=0,r=0,t=0,b=0), height=720, paper_bgcolor='#1E1E2E' if dark else 'white')
         return [html.Span(f'Map error: {e}', style={'color':'red'})], dcc.Graph(
             id='map-graph-err', figure=fig, style={'height':'720px'}, config=_MAP_CONFIG)
@@ -1453,7 +1443,7 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
     def empty():
         fig = go.Figure()
         fig.update_layout(
-            map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-25, lon=134), zoom=3.15),
+            map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-24, lon=140), zoom=3.6),
             margin=dict(l=0, r=0, t=0, b=0), height=720,
             paper_bgcolor='#1E1E2E' if dark else 'white',
         )
@@ -1548,7 +1538,6 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
         return (df.groupby('Node')[col].sum() / 1000).to_dict() if not df.empty else {}
     gpg_serv, gpg_cur = _node_sum('gpg', 'Served'), _node_sum('gpg', 'Curtailed')
     ind_serv, ind_cur = _node_sum('industrial', 'Served'), _node_sum('industrial', 'Curtailed')
-    lng_exp = _node_sum('lng_export', 'Value')   # WA LNG export, PJ/yr by facility
     map_nodes = []
     for node, c in COORDS.items():
         n_t = node_types.get(node, 'Hub')
@@ -1573,8 +1562,6 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
             return s
         tt += _fac_block(static_data.get('gpg_facs'), 'GPG', '⚡', gpg_serv.get(node, 0), gpg_cur.get(node, 0))
         tt += _fac_block(static_data.get('ind_bbg'), 'Large industrial', '🏭', ind_serv.get(node, 0), ind_cur.get(node, 0))
-        if lng_exp.get(node, 0) > 0.01:
-            tt += f"🚢 LNG export: {lng_exp[node]:.1f} PJ/yr<br>"
         map_nodes.append({'Node': node, 'Lat': c[0], 'Lon': c[1],
                           'Type': n_t, 'Price': p_v, 'Supply': s_v, 'Tooltip': tt})
 
@@ -1724,7 +1711,7 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
 
     scenario_label = pretty_key(key)
     fig.update_layout(
-        map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-25, lon=134), zoom=3.15),
+        map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-24, lon=140), zoom=3.6),
         margin=dict(l=0, r=0, t=40, b=0), height=720,
         title=dict(text=f'<b>{scenario_label}</b>  |  Year {map_year}',
                    x=0.5, xanchor='center',

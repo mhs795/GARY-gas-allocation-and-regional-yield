@@ -1,9 +1,0 @@
-Parameter,Value
-lng_cap_NWS_LNG,2500
-lng_cap_Gorgon_LNG,2200
-lng_cap_Wheatstone_LNG,1250
-lng_cap_Pluto_LNG,700
-netback_Low,7
-netback_Medium,11
-netback_High,18
-domgas_reservation,0.15

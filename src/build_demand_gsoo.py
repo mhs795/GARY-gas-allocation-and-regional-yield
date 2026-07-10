@@ -37,14 +37,6 @@ YEARS = np.arange(2025, 2051)
 # Beetaloo (or east-coast gas via the NGP) fills later. Grown on the ResComm index.
 NT_DARWIN_TJD = 50.0
 
-# WA domestic demand (TJ/day), the isolated South-West Interconnected & Pilbara/
-# Goldfields systems. Perth & South-West is dominantly industry + gas-power and,
-# unlike the eastern cities, is roughly flat year-round (no southern winter spike);
-# Pilbara (mining/minerals processing) and Goldfields (Kalgoorlie) are flat
-# industrial loads. Levels approximate AEMO GBBWA / WA GSOO. Perth follows the
-# ResComm decline index; the resource loads are held flat (mining-driven).
-WA_DEMAND_TJD = {"Perth": 700.0, "Pilbara": 250.0, "Kalgoorlie": 150.0}
-
 # Baseline scenarios -> output filename slug. Mirrors build_gsoo_scenarios.SCENARIOS.
 SCENARIOS = ["StepChange", "Accelerated", "SlowerGrowth"]
 
@@ -99,14 +91,6 @@ def build(scenario="StepChange"):
         for day in range(1, 366):
             rows.append({"Year": int(year), "Day": day, "Node": "Darwin",
                          "Demand": round(NT_DARWIN_TJD * ci, 4)})
-
-        # WA domestic — flat year-round loads; Perth on the ResComm index, the
-        # Pilbara/Goldfields resource loads held flat (mining-driven, not weather).
-        for node, base in WA_DEMAND_TJD.items():
-            factor = ci if node == "Perth" else 1.0
-            for day in range(1, 366):
-                rows.append({"Year": int(year), "Day": day, "Node": node,
-                             "Demand": round(base * factor, 4)})
 
     df = pd.DataFrame(rows)
     out_name = f"demand_{scenario}.csv"

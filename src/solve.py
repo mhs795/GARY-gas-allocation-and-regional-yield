@@ -20,18 +20,6 @@ def load_data(baseline="StepChange"):
         'contracts': pd.read_csv(os.path.join(data_dir, "contracts.csv"))
     }
 
-# WA international LNG netback ($/GJ) by Global-LNG scenario. The Global-LNG slider
-# sets both the eastern LNG demand multiplier (get_lng_mult) AND the WA export
-# netback: a strong global market (High) both pulls more eastern LNG and lifts the
-# price at which WA trains export. Levels bracket a low/soft, central, and tight
-# international market. See model.py WA LNG export tiers.
-LNG_NETBACK = {"Low": 7.0, "Medium": 11.0, "High": 18.0}
-
-
-def get_netback(lng):
-    return LNG_NETBACK.get(lng, 11.0)
-
-
 def get_lng_mult(scenario, year):
     # Constants
     HIGH_LNG_START = 2026
@@ -92,7 +80,7 @@ def _solve_myopic(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaut
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
             contracts_df=contracts_all if year <= 2040 else None, year=year,
             already_built=built_projects, adgsm_enabled=adgsm_enabled,
-            baseline=baseline, dunkelflaute=dunkelflaute, lng_netback=get_netback(lng))
+            baseline=baseline, dunkelflaute=dunkelflaute)
         gm.build_model()
         status = gm.solve(mip_gap=mip_gap)
         if status != "ok":
@@ -120,8 +108,7 @@ def _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline, dunkelfl
         gm = GasMarketModel(
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
             contracts_df=contracts_all if year <= 2040 else None, year=year,
-            adgsm_enabled=adgsm_enabled, baseline=baseline, dunkelflaute=dunkelflaute,
-            lng_netback=get_netback(lng))
+            adgsm_enabled=adgsm_enabled, baseline=baseline, dunkelflaute=dunkelflaute)
         dispatch_models[year] = gm
         for (n, d), v in demand_yr.set_index(['Node', 'Day'])['Demand'].to_dict().items():
             demand_all[(n, year, d)] = v

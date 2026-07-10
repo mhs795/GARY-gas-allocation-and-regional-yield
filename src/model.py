@@ -17,22 +17,9 @@ DUNKELFLAUTE_NODE = "Adelaide"
 DUNKELFLAUTE_DAYS = range(152, 182)   # 1-30 June (gas day-of-year)
 DUNKELFLAUTE_MULT = 2.75
 
-# --- Western Australia (separate market) -------------------------------------
-# WA is a physically isolated gas island (no east-west pipeline). Its four LNG
-# trains are modelled as PRICE-ELASTIC export tiers: each exports up to its
-# nameplate whenever the delivered gas cost (production + transport) is below the
-# international LNG netback, which the Global-LNG slider sets (Low/Med/High).
-# WA_SUPPLY_NODES are the WA producing nodes used to size the domestic-gas
-# reservation (below); WA_LNG_FACILITIES are the export trains (caps come from
-# data/wa_parameters.csv). The 15% DomGas reservation (WA policy since 2006) is
-# the CENTRAL case: at least 15% of WA gas production must be held for the
-# domestic market rather than exported.
-WA_SUPPLY_NODES = ["Karratha", "Perth_Basin", "Gorgon_LNG", "Wheatstone_LNG"]
-WA_LNG_FACILITIES = ["NWS_LNG", "Gorgon_LNG", "Wheatstone_LNG", "Pluto_LNG"]
-
 
 class GasMarketModel:
-    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, adgsm_enabled=False, baseline="StepChange", dunkelflaute=False, builds_fixed=None, lng_netback=11.0):
+    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, adgsm_enabled=False, baseline="StepChange", dunkelflaute=False, builds_fixed=None):
         self.nodes = nodes_df
         self.arcs = arcs_df
         self.supply = supply_df
@@ -114,23 +101,6 @@ class GasMarketModel:
         self.gpg_nodes = sorted({n for (n, _) in self.gpg_demand})
         self.ind_nodes = sorted({n for (n, _) in self.ind_demand})
 
-        # --- WA LNG export tiers + DomGas reservation ----------------------
-        # International LNG netback ($/GJ), set by the Global-LNG slider; WA trains
-        # export whenever their delivered cost is below it (price-elastic exports).
-        self.lng_netback = float(lng_netback)
-        try:
-            wap = pd.read_csv(os.path.join(data_dir, "wa_parameters.csv")
-                              ).set_index('Parameter')['Value'].to_dict()
-        except FileNotFoundError:
-            wap = {}
-        node_names = set(self.nodes['Name'].tolist())
-        self.lng_caps = {f: float(wap.get(f"lng_cap_{f}", 0.0))
-                         for f in WA_LNG_FACILITIES if f in node_names}
-        # DomGas policy: 15% of WA gas production reserved for the domestic market
-        # (central case). 0 disables the explicit reservation.
-        self.domgas_res = float(wap.get('domgas_reservation', 0.15))
-        self.wa_supply_nodes = [n for n in WA_SUPPLY_NODES if n in node_names]
-
     def build_model(self):
         m = pyo.ConcreteModel()
         self.model = m
@@ -156,11 +126,6 @@ class GasMarketModel:
         m.gpg_curtail = pyo.Var(m.GPGNodes, m.T, domain=pyo.NonNegativeReals)
         m.ind_curtail = pyo.Var(m.INDNodes, m.T, domain=pyo.NonNegativeReals)
 
-        # WA LNG export tiers: price-elastic export (revenue at the netback price),
-        # capped per train at its nameplate.
-        m.LNGFac = pyo.Set(initialize=[f for f in self.lng_caps if f in self.nodes['Name'].tolist()])
-        m.lng_export = pyo.Var(m.LNGFac, m.T, domain=pyo.NonNegativeReals)
-
         node_demand = self.demand.set_index(['Node', 'Day'])['Demand'].to_dict()
         gpg_dem = self.gpg_demand
         ind_dem = self.ind_demand
@@ -181,10 +146,7 @@ class GasMarketModel:
             # $120 < mass-market value-of-lost-load $300/GJ).
             gpg_pen = sum(m.gpg_curtail[n, t] * self.strike_gpg * 1000 for n in m.GPGNodes for t in m.T)
             ind_pen = sum(m.ind_curtail[n, t] * self.strike_ind * 1000 for n in m.INDNodes for t in m.T)
-            # WA LNG export revenue (netback $/GJ x 1000 GJ/TJ), entered as a
-            # negative cost so the model exports whenever delivered cost < netback.
-            lng_rev = sum(m.lng_export[f, t] * self.lng_netback * 1000 for f in m.LNGFac for t in m.T)
-            return prod_cost + trans_cost + shortage_penalty + storage_cost + exp_capex + gpg_pen + ind_pen - lng_rev
+            return prod_cost + trans_cost + shortage_penalty + storage_cost + exp_capex + gpg_pen + ind_pen
         m.obj = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
 
         arcs_to = {n: [a for a in m.Arcs if arc_data[a]['To'] == n] for n in m.Nodes}
@@ -201,24 +163,8 @@ class GasMarketModel:
                     (m.gpg_curtail[n, t] if n in m.GPGNodes else 0) +
                     (m.ind_curtail[n, t] if n in m.INDNodes else 0) ==
                     node_demand.get((n, t), 0) + gpg_dem.get((n, t), 0) + ind_dem.get((n, t), 0) +
-                    (m.lng_export[n, t] if n in m.LNGFac else 0) +
                     sum(m.flow[a, t] for a in arcs_from[n]))
         m.balance = pyo.Constraint(m.Nodes, m.T, rule=balance_rule)
-
-        # WA LNG export capped per train at nameplate.
-        m.lng_export_cap = pyo.Constraint(m.LNGFac, m.T,
-            rule=lambda m, f, t: m.lng_export[f, t] <= self.lng_caps[f])
-
-        # WA DomGas reservation (central-case policy): total WA LNG export in any
-        # period may not exceed (1 - reservation) x total WA gas production, i.e.
-        # at least `domgas_res` (15%) of WA production is held for the domestic
-        # market rather than exported.
-        wa_supply = [s for s in m.Supply if s[0] in self.wa_supply_nodes]
-        if self.domgas_res > 0 and m.LNGFac and wa_supply:
-            def domgas_rule(m, t):
-                return (sum(m.lng_export[f, t] for f in m.LNGFac) <=
-                        (1 - self.domgas_res) * sum(m.production[s[0], s[1], t] for s in wa_supply))
-            m.domgas_reservation = pyo.Constraint(m.T, rule=domgas_rule)
 
         # A tier can shed at most its own demand.
         m.gpg_curtail_cap = pyo.Constraint(m.GPGNodes, m.T,
@@ -317,7 +263,7 @@ class GasMarketModel:
 
     def get_results(self):
         m = self.model
-        res = {k: [] for k in ['prices', 'production', 'flow', 'storage', 'shortage', 'builds', 'gpg', 'industrial', 'lng_export']}
+        res = {k: [] for k in ['prices', 'production', 'flow', 'storage', 'shortage', 'builds', 'gpg', 'industrial']}
         demand_dict = self.demand.set_index(['Node', 'Day'])['Demand'].to_dict()
         supply_at = {n: [s for s in m.Supply if s[0] == n] for n in m.Nodes}
 
@@ -329,8 +275,7 @@ class GasMarketModel:
         wd_v = m.withdrawal.get_values()
         gpg_cv = m.gpg_curtail.get_values()
         ind_cv = m.ind_curtail.get_values()
-        lng_v = m.lng_export.get_values()
-
+        
         for t in m.T:
             for n in m.Nodes:
                 p = (m.dual[m.balance[n, t]]/1000 ) if hasattr(m, 'dual') and m.balance[n, t] in m.dual else 0.0
@@ -355,12 +300,6 @@ class GasMarketModel:
                 cur = float(ind_cv[n, t] or 0)
                 if dem > 0.001:
                     res['industrial'].append({'Day': t, 'Node': n, 'Demand': float(dem), 'Served': float(dem - cur), 'Curtailed': cur})
-
-            # WA LNG exports (price-elastic, capped by reservation)
-            for f in m.LNGFac:
-                ex = float(lng_v[f, t] or 0)
-                if ex > 0.01:
-                    res['lng_export'].append({'Day': t, 'Node': f, 'Value': ex})
 
         for e in m.Expansion:
             if pyo.value(m.build[e]) > 0.5: res['builds'].append(e)

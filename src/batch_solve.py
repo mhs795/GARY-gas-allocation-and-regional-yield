@@ -61,12 +61,10 @@ def run_batch(baselines=("StepChange", "Accelerated", "SlowerGrowth"),
 
                         active_contracts = data['contracts'] if year <= 2040 else None
 
-                        # WA LNG export netback tracks the Global-LNG lever.
-                        netback = {"Low": 7.0, "Medium": 11.0, "High": 18.0}.get(lng, 11.0)
                         model = GasMarketModel(
                             data['nodes'], data['arcs'], data['supply'], demand_mod, data['expansion'],
                             contracts_df=active_contracts, year=year, already_built=built_projects,
-                            adgsm_enabled=adgsm, baseline=baseline, lng_netback=netback
+                            adgsm_enabled=adgsm, baseline=baseline
                         )
                         model.build_model()
                         solve_status = model.solve()
