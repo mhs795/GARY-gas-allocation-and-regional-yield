@@ -10,3 +10,5 @@
 - [x] ~~Review SGM baseline decline logic and production-adjustment reporting in `model.py` to ensure long-term alignment with Net Zero 2050 trajectory (added 2026-06-13).~~
 - [ ] Calibrate LNG capacity and demand figures against the latest AEMO GSOO and facility-specific reports to ensure long-term accuracy (added 2026-06-14).
 - [ ] Revisit the CBC -> HiGHS (appsi_highs) solver switch: confirm it's the appropriate choice — check results parity vs CBC, solve times, and that the binary-relaxation-for-duals approach is sound (added 2026-06-29).
+- [x] ~~Extend the network to the Northern Territory (Amadeus/Beetaloo → Darwin, Northern Gas Pipeline interconnector to the east coast); NT map geometry checked against the AEMO gas map v2021 (added & done 2026-07-10).~~
+- [x] ~~Prototype a Western Australia module (isolated island, broken-out LNG trains, price-elastic exports at a slider-set netback, 15% DomGas reservation) — built, then **removed**: Perth showed negative nodal prices from the export-revenue term coupling through the reservation. If revisited, price exports via a fixed sink rather than an objective revenue term (added & reverted 2026-07-10).~~

@@ -39,6 +39,14 @@ Basin capacities and decline rates are modeled to match the projected depletion 
 *   **Surat (Queensland CSG):** Modeled with a **-1% annual decline**, reflecting more stable long-term CSG reserves. Currently calibrated to a **4,000 TJ/day** total production benchmark.
 *   **Source Link:** [AEMO 2026 GSOO Supply Data](https://www.aemo.com.au/-/media/files/gas/national_planning_and_forecasting/gsoo/2026/2026-gas-statement-of-opportunities-supply-data.xlsx)
 
+### 1.2b Northern Territory Extension (2026-07-10)
+The network was extended beyond the east coast to include the **Northern Territory**. WA was evaluated but **not** included — it is a physically isolated gas island (no east–west pipeline) and connects to the world only via LNG, so it adds little to an east-coast dispatch/price model.
+
+*   **Nodes:** `Amadeus` (supply — Mereenie / Palm Valley / Dingo, Amadeus Basin), `Beetaloo` (potential shale supply, gated by a Terminal-type expansion option so it only produces once developed), `Darwin` (demand — power generation & industry, roughly flat year-round), and `Tennant_Creek` (a pipeline-junction hub).
+*   **Pipelines (`arcs.csv`):** the **Amadeus Gas Pipeline** is split at the junction as `AGP_S` (Amadeus → Tennant Creek) and `AGP_N` (Tennant Creek → Darwin, via Katherine); `Beetaloo_Pipe` ties the Beetaloo Basin into the corridor at Tennant Creek; and the **Northern Gas Pipeline** (`NGP`, with reverse `NGP_Rev`) is the NT↔east-coast interconnector, modelled as a single Tennant Creek ↔ Moomba arc.
+*   **Demand:** representative flat Darwin demand grown on the GSOO ResComm index (`NT_DARWIN_TJD` in `build_demand_gsoo.py`).
+*   **Map geometry:** node coordinates and pipeline routes in `dashboard.py` were validated against the **AEMO gas infrastructure map v2021** (`gas-map-v2021-v16.pdf`). The NGP line is traced along the real corridor — Tennant Creek → **Mt Isa** (NGP) → **Ballera** (Carpentaria Pipeline) → Moomba — rather than a straight run south, even though the model collapses it to one arc.
+
 ### 1.3 Market Mechanisms
 The model includes realistic constraints to reflect bilateral agreements and regulatory triggers.
 
