@@ -1462,18 +1462,30 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
     _prod   = pd.DataFrame(res['production'])
     _flow   = pd.DataFrame(res['flow'])
 
+    price_map = _prices.groupby('Node')['Price'].mean()
+    prod_map  = _prod.groupby('Node')['Value'].sum() / 1000
+    flow_map  = _flow.groupby(['From','To','Arc'])['Value'].sum().reset_index()
+    flow_map['Value'] /= 1000
+
+    # Per-node throughput (production + inflow, TJ/yr). Used to (a) volume-weight the
+    # system average price and (b) mask "phantom" nodes: an undeveloped/disconnected
+    # potential node (e.g. Beetaloo before it is built) carries no gas, so its nodal
+    # balance dual sits at the value-of-lost-load ($300) — a real shadow price, but
+    # meaningless as a market price. It must not drag the average or paint the node hot.
+    PRICE_MIN_TP = 1.0   # TJ/yr; below this a node is treated as unpriced
+    _infl   = _flow.groupby('To')['Value'].sum() if not _flow.empty else pd.Series(dtype=float)
+    _prod_n = _prod.groupby('Node')['Value'].sum() if not _prod.empty else pd.Series(dtype=float)
+    throughput = _prod_n.add(_infl, fill_value=0.0)
+    _pw = throughput.reindex(price_map.index).fillna(0.0).clip(lower=0)
+    avg_price = float((price_map * _pw).sum() / _pw.sum()) if _pw.sum() > 0 else float(price_map.mean())
+
     map_kpis = [
-        map_kpi(f'Avg Price ({map_year})', f"${_prices['Price'].mean():.2f}/GJ"),
+        map_kpi(f'Avg Price ({map_year})', f"${avg_price:.2f}/GJ"),
         map_kpi('Total Production',        f"{_prod['Value'].sum()/1000:.1f} PJ"),
         map_kpi('Total Shortage',
                 f"{sum(s['Value'] for s in res['shortage']):.1f} TJ" if res['shortage'] else '0 TJ'),
         map_kpi('Active Pipelines',        str(_flow[_flow['Value'] > 10]['Arc'].nunique())),
     ]
-
-    price_map = _prices.groupby('Node')['Price'].mean()
-    prod_map  = _prod.groupby('Node')['Value'].sum() / 1000
-    flow_map  = _flow.groupby(['From','To','Arc'])['Value'].sum().reset_index()
-    flow_map['Value'] /= 1000
 
     arc_caps   = static_data['arcs'].set_index('Name')['Capacity'].to_dict()
     exp_info   = static_data['expansion']
@@ -1541,9 +1553,18 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
     map_nodes = []
     for node, c in COORDS.items():
         n_t = node_types.get(node, 'Hub')
-        p_v = float(price_map.get(node, 0))
+        # A node is "unpriced" only if nothing flows there AND its dual is a phantom
+        # near-VoLL price — i.e. an undeveloped/disconnected potential node (Beetaloo
+        # before it is built). A real scarcity price ($300 with actual demand/flow)
+        # keeps its colour as a genuine signal; an idle but connected node keeps its
+        # normal arbitrage price.
+        _tp, _pr = float(throughput.get(node, 0.0)), float(price_map.get(node, 0.0))
+        priced = not (_tp < PRICE_MIN_TP and _pr >= 250.0)
+        p_v = _pr if priced else float('nan')
         s_v = float(prod_map.get(node, 0))
-        tt  = f"<b>{node} ({n_t})</b><br>Price: ${p_v:.2f}/GJ<br>"
+        price_line = (f"Price: ${p_v:.2f}/GJ<br>" if priced
+                      else "Price: n/a — undeveloped, no gas flow<br>")
+        tt  = f"<b>{node} ({n_t})</b><br>" + price_line
         def _fac_block(df, label, icon, served, shed):
             if df is None or df.empty:
                 return ''
@@ -1563,7 +1584,8 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
         tt += _fac_block(static_data.get('gpg_facs'), 'GPG', '⚡', gpg_serv.get(node, 0), gpg_cur.get(node, 0))
         tt += _fac_block(static_data.get('ind_bbg'), 'Large industrial', '🏭', ind_serv.get(node, 0), ind_cur.get(node, 0))
         map_nodes.append({'Node': node, 'Lat': c[0], 'Lon': c[1],
-                          'Type': n_t, 'Price': p_v, 'Supply': s_v, 'Tooltip': tt})
+                          'Type': n_t, 'Price': p_v, 'Supply': s_v, 'Tooltip': tt,
+                          'Priced': priced})
 
     n_df  = pd.DataFrame(map_nodes)
     max_p = 300
@@ -1584,7 +1606,7 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
     }
     show_colorbar = True
     for nt, (sym, _, sm) in styling.items():
-        df_t = n_df[n_df['Type'] == nt]
+        df_t = n_df[(n_df['Type'] == nt) & (n_df['Priced'])]
         if df_t.empty:
             continue
         size = df_t['Supply'].apply(lambda x: 14 + np.sqrt(x) * sm) if sm > 0 else 16
@@ -1610,6 +1632,23 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
             name=nt,
         ))
         show_colorbar = False  # only show colourbar once
+
+    # Undeveloped / zero-flow nodes (excl. Import, handled below): neutral grey, off
+    # the price colour scale, so a phantom VoLL dual never paints a node hot.
+    df_unpriced = n_df[(~n_df['Priced']) & (n_df['Type'] != 'Import')]
+    if not df_unpriced.empty:
+        fig.add_trace(go.Scattermap(
+            lat=df_unpriced['Lat'], lon=df_unpriced['Lon'],
+            mode='markers+text' if show_labels else 'markers',
+            marker=dict(size=13, symbol='circle', color='#9E9E9E'),
+            opacity=0.6,
+            text=df_unpriced['Node'] if show_labels else None,
+            textposition='top center',
+            textfont=dict(size=10, color='#9E9E9E', family='Arial'),
+            hovertemplate='%{customdata}<extra></extra>',
+            customdata=df_unpriced['Tooltip'],
+            name='Undeveloped (no flow)',
+        ))
 
     # Import terminal nodes — split into proposed (not yet built) and active (built)
     df_import = n_df[n_df['Type'] == 'Import']
