@@ -25,3 +25,11 @@ AGP_N,Tennant_Creek,Darwin,120,0.4
 Beetaloo_Pipe,Beetaloo,Tennant_Creek,400,0.2
 NGP,Tennant_Creek,Moomba,90,0.7
 NGP_Rev,Moomba,Tennant_Creek,90,0.7
+DBNGP,Karratha,Perth,900,0.8
+GGP,Karratha,Kalgoorlie,200,0.7
+Pilbara_Lat,Karratha,Pilbara,350,0.2
+NWS_Feed,Karratha,NWS_LNG,2600,0.1
+Pluto_Feed,Karratha,Pluto_LNG,750,0.1
+PerthBasin_Pipe,Perth_Basin,Perth,220,0.2
+Gorgon_DomGas,Gorgon_LNG,Karratha,400,0.3
+Wheatstone_DomGas,Wheatstone_LNG,Karratha,250,0.3
