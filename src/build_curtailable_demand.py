@@ -101,6 +101,20 @@ EXCLUDE = {
 #                          they curtail only in extreme scarcity (still < VoLL).
 STRIKES = {"GPG": 22.0, "Industrial": 120.0}
 
+# Northern Territory gas-power stations. NT is not on the (NEM) Gas Bulletin Board,
+# so its facilities are added explicitly. NT domestic gas demand is principally power
+# generation (AER Amadeus Gas Pipeline demand review): the Darwin-Katherine
+# Interconnected System (Channel Island, Weddell, Katherine, Pine Creek) at the Darwin
+# node, plus Owen Springs (Alice Springs) off the Amadeus Basin. MeanDemand is a
+# representative TJ/day; the map scales these shares to each scenario-year's served gas.
+NT_GPG_FACILITIES = [
+    ("Channel Island Power Station", "Darwin",  "NT", 26.0),
+    ("Weddell Power Station",        "Darwin",  "NT",  9.0),
+    ("Katherine Power Station",      "Darwin",  "NT",  4.0),
+    ("Pine Creek Power Station",     "Darwin",  "NT",  3.0),
+    ("Owen Springs Power Station",   "Amadeus", "NT",  6.0),
+]
+
 
 def _load_type(df, ftype):
     g = df[df.FacilityType == ftype].copy()
@@ -156,6 +170,12 @@ def main():
 
     gpg_fac = _facility_table(gpg, "GPG")
     ind_fac = _facility_table(ind, "Industrial")
+    # Add the NT gas-power stations (not on the NEM GBB) to the GPG facility table.
+    nt = pd.DataFrame(NT_GPG_FACILITIES, columns=["FacilityName", "Node", "State", "MeanDemand"])
+    nt["Tier"] = "GPG"
+    nt["Strike"] = STRIKES["GPG"]
+    gpg_fac = pd.concat([gpg_fac, nt], ignore_index=True).sort_values(
+        ["Node", "MeanDemand"], ascending=[True, False])
     gpg_fac.to_csv(os.path.join(DATA, "gpg_facilities.csv"), index=False)
     ind_fac.to_csv(os.path.join(DATA, "industrial_facilities_bbg.csv"), index=False)
 

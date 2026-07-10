@@ -48,6 +48,15 @@ REGION_NODES = {
 MODEL_REGIONS = list(REGION_NODES)
 DROP_NODES = {"Gladstone"}  # Yarwun -> industrial
 
+# --- Northern Territory GPG (not in the NEM, so absent from the GSOO NEM data) ---
+# NT domestic gas is principally power generation (AER Amadeus Gas Pipeline demand
+# review): the Darwin-Katherine Interconnected System stations at the Darwin node, plus
+# Owen Springs (Alice Springs) at the Amadeus Basin node. Tropical -> roughly flat
+# across the year (no southern winter peak); gently declining (~0.8%/yr) as rooftop
+# solar displaces gas. Scenario-independent. Per-station split: gpg_facilities.csv.
+NT_GPG_BASE_TJD = {"Darwin": 42.0, "Amadeus": 6.0}   # node totals in 2026
+NT_GPG_DECLINE = 0.008
+
 # Gas winter (Jun-Aug) and summer (Dec-Feb) day-of-year windows.
 WINTER_DAYS = set(range(152, 244))
 SUMMER_DAYS = set(range(335, 366)) | set(range(1, 60))
@@ -142,6 +151,15 @@ def build(scenario="StepChange"):
                 daily = _seasonalise(shapes[n], ratio) * node_target_mean
                 for d in range(1, 366):
                     rows.append((y, n, d, round(float(daily[d - 1]), 4)))
+
+    # Northern Territory GPG — flat daily load per node, gentle solar-driven decline.
+    # Scenario-independent (NT is outside the NEM/GSOO scenario framework).
+    for y in years:
+        f = (1 - NT_GPG_DECLINE) ** (y - 2026)
+        for node, base in NT_GPG_BASE_TJD.items():
+            val = round(base * f, 4)
+            for d in range(1, 366):
+                rows.append((y, node, d, val))
 
     out = pd.DataFrame(rows, columns=["Year", "Node", "Day", "Demand"])
     out_name = f"gpg_demand_profile_{scenario}.csv"
