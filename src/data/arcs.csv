@@ -20,3 +20,8 @@ PK2SYD,Port_Kembla,Sydney,500,0.1
 SYD2PK,Sydney,Port_Kembla,100,0.1
 SS2Surat,Silver_Springs,Surat,150,0.15
 Surat2SS,Surat,Silver_Springs,150,0.15
+AGP_S,Amadeus,Tennant_Creek,120,0.4
+AGP_N,Tennant_Creek,Darwin,120,0.4
+Beetaloo_Pipe,Beetaloo,Tennant_Creek,400,0.2
+NGP,Tennant_Creek,Moomba,90,0.7
+NGP_Rev,Moomba,Tennant_Creek,90,0.7

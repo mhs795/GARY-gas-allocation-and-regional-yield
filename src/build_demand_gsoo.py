@@ -31,6 +31,12 @@ GSOO = os.path.join(DATA, "gsoo")
 CITY_NODES = {"Sydney", "Melbourne", "Adelaide", "Brisbane"}
 YEARS = np.arange(2025, 2051)
 
+# Representative NT (Darwin) domestic demand: mostly power generation + industry,
+# roughly flat through the year (tropical, no southern winter peak). Sized so the
+# Amadeus Basin covers it near-term while its decline plus growth opens a gap that
+# Beetaloo (or east-coast gas via the NGP) fills later. Grown on the ResComm index.
+NT_DARWIN_TJD = 50.0
+
 # Baseline scenarios -> output filename slug. Mirrors build_gsoo_scenarios.SCENARIOS.
 SCENARIOS = ["StepChange", "Accelerated", "SlowerGrowth"]
 
@@ -80,6 +86,11 @@ def build(scenario="StepChange"):
             factor = ci if node in CITY_NODES else 1.0
             rows.append({"Year": int(year), "Day": int(r["Day"]), "Node": node,
                          "Demand": round(max(0.0, r["Demand"] * factor), 4)})
+
+        # NT (Darwin) — representative flat domestic demand grown on the ResComm index
+        for day in range(1, 366):
+            rows.append({"Year": int(year), "Day": day, "Node": "Darwin",
+                         "Demand": round(NT_DARWIN_TJD * ci, 4)})
 
     df = pd.DataFrame(rows)
     out_name = f"demand_{scenario}.csv"

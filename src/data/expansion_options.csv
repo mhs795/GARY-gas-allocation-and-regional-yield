@@ -4,3 +4,4 @@ VNI_Expansion,Pipeline,VNI,200,80000000
 EGP_Expansion,Pipeline,EGP,200,100000000
 MSP_Expansion,Pipeline,MSP,200,120000000
 SWQP_Expansion,Pipeline,SWQP,200,60000000
+Beetaloo_Dev,Terminal,Beetaloo,450,900000000

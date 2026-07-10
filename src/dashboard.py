@@ -139,6 +139,9 @@ COORDS = {
     'APLNG':          [-23.76, 151.20], 'GLNG':          [-23.80, 151.25],
     'QCLNG':          [-23.84, 151.30], 'Port_Kembla':   [-34.45, 150.9],
     'Iona':           [-38.55, 142.9],  'Silver_Springs':[-27.4,  149.2],
+    # Northern Territory
+    'Amadeus':        [-23.70, 133.20], 'Beetaloo':      [-16.30, 133.40],
+    'Darwin':         [-12.46, 130.84], 'Tennant_Creek': [-19.65, 134.19],
 }
 
 ARC_WAYPOINTS = {
@@ -158,6 +161,11 @@ ARC_WAYPOINTS = {
     'QGP':      [[-27.15,149.07],[-26.55,149.30],[-26.13,149.96],[-25.40,150.05],[-24.95,150.08],[-24.57,149.98],[-24.41,150.50],[-24.00,150.90],[-23.87,151.10],[-23.84,151.26]],
     'Longford': [[-38.50,147.00],[-38.11,147.07],[-38.16,146.79],[-38.20,146.54],[-38.24,146.40],[-38.17,146.27],[-38.16,145.93],[-38.13,145.85],[-38.10,145.72],[-38.07,145.48],[-37.98,145.21],[-37.81,144.96]],
     'SS2Surat': [[-27.4,149.2],[-27.35,149.18],[-27.28,149.15],[-27.20,149.12],[-27.15,149.07]],
+    # --- Northern Territory ---
+    'AGP_S':  [[-23.70,133.20],[-23.70,133.87],[-22.60,134.00],[-21.50,133.95],[-19.65,134.19]],
+    'AGP_N':  [[-19.65,134.19],[-18.00,133.55],[-16.30,133.37],[-14.47,132.26],[-13.20,131.10],[-12.46,130.84]],
+    'Beetaloo_Pipe': [[-16.30,133.40],[-17.10,133.60],[-18.00,133.90],[-19.65,134.19]],
+    'NGP':    [[-19.65,134.19],[-19.90,135.60],[-20.30,137.60],[-20.73,139.49],[-22.50,139.90],[-25.00,140.20],[-28.10,140.20]],
 }
 # Override hand-traced routes with real OpenStreetMap geometry where available
 # (built by build_pipeline_geometry.py). Arcs absent from the file keep their
@@ -1411,7 +1419,7 @@ def update_map(key, end_year, map_year, options, theme):
         import traceback
         traceback.print_exc()
         fig = go.Figure()
-        fig.update_layout(map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-31,lon=146), zoom=4.2),
+        fig.update_layout(map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-24,lon=140), zoom=3.6),
                           margin=dict(l=0,r=0,t=0,b=0), height=720, paper_bgcolor='#1E1E2E' if dark else 'white')
         return [html.Span(f'Map error: {e}', style={'color':'red'})], dcc.Graph(
             id='map-graph-err', figure=fig, style={'height':'720px'}, config=_MAP_CONFIG)
@@ -1430,7 +1438,7 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
     def empty():
         fig = go.Figure()
         fig.update_layout(
-            map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-31, lon=146), zoom=4.2),
+            map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-24, lon=140), zoom=3.6),
             margin=dict(l=0, r=0, t=0, b=0), height=720,
             paper_bgcolor='#1E1E2E' if dark else 'white',
         )
@@ -1698,7 +1706,7 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
 
     scenario_label = pretty_key(key)
     fig.update_layout(
-        map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-31, lon=146), zoom=4.2),
+        map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-24, lon=140), zoom=3.6),
         margin=dict(l=0, r=0, t=40, b=0), height=720,
         title=dict(text=f'<b>{scenario_label}</b>  |  Year {map_year}',
                    x=0.5, xanchor='center',

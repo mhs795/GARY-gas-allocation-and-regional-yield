@@ -13,3 +13,7 @@ QCLNG,LNG,QCLNG export terminal,0,0,0
 Port_Kembla,Import,Potential LNG import terminal,0,0,0
 Iona,Storage,Gas storage facility,25000,155,570
 Silver_Springs,Storage,Queensland storage,35000,150,30
+Amadeus,Supply,NT Amadeus Basin (Mereenie/Palm Valley/Dingo),0,0,0
+Beetaloo,Supply,NT Beetaloo shale gas (potential),0,0,0
+Darwin,Demand,NT demand centre (Darwin power & industry),0,0,0
+Tennant_Creek,Hub,NT pipeline junction (Amadeus GP / NGP),0,0,0
