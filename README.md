@@ -72,6 +72,7 @@ baseline (e.g. `demand_StepChange.csv`, `demand_Accelerated.csv`, `demand_Slower
 - **Optimisation:** Pyomo with the HiGHS solver (`appsi_highs`)
 - **Network:** Nodal pipeline model covering eastern Australia **plus the Northern Territory** — the Amadeus and Beetaloo basins feed Darwin, and the NT links to the east-coast grid via the Northern Gas Pipeline (Tennant Creek → Mt Isa → Ballera → Moomba). Western Australia is a separate, physically isolated gas market and is **not** included.
 - **Horizon:** 2025–2050 (annual dispatch, 365 days/year)
+- **Solve method:** two-stage full-horizon — a perfect-foresight capacity-expansion layer (NPV over representative days) sets the build schedule, then each year is dispatched at 365-day resolution as a pure LP for nodal prices; a myopic year-by-year mode is also available as a toggle
 - **Baselines:** selectable AEMO **2026 GSOO** scenario — **Step Change** (central), **Accelerated Transition**, or **Slower Growth** (demand re-based on the GSOO; daily shapes from GBB actuals)
 - **Scenario levers:** Winter stress × LNG demand (9 combinations) layered on the chosen baseline; the batch runs all 3 baselines × 9 = 27 scenarios
 - **Market mechanisms:** ADGSM domestic reservation, LNG netback pricing, long-term contracts

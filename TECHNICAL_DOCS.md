@@ -69,13 +69,16 @@ The model minimizes total system costs over a 365-day horizon.
 
 ```python
 m.obj = pyo.Objective(expr=
-    prod_cost +          # Cost of gas production at basins
-    trans_cost +         # Transport/pipeline tariffs
-    expansion_cost +     # Amortized CapEx for new builds
-    penalty_cost +       # Cost of unserved demand (shortages)
-    storage_cost         # Small penalty for storage cycling
+    prod_cost +          # gas production at each basin
+    trans_cost +         # pipeline transport tariffs
+    exp_capex +          # amortised CapEx for new builds
+    shortage_penalty +   # unserved core (mass-market) demand @ VoLL $300/GJ
+    gpg_pen + ind_pen +  # curtailable GPG ($22) & industrial ($120) demand-response tiers
+    storage_cost         # small storage-cycling penalty
 )
 ```
+
+Large gas-powered-generation (GPG) and large-industrial loads are modelled as **curtailable demand-response tiers**: each is served unless the nodal price exceeds its strike price, forming a merit order — GPG ($22/GJ) sheds before industrial ($120/GJ), which sheds before core mass-market demand (value-of-lost-load $300/GJ).
 
 ### 2.2 Storage Continuity Logic
 To model storage, we link every day to the previous day so the "inventory" is tracked accurately.
@@ -87,8 +90,13 @@ else:
     return m.inventory[sn, t] == m.inventory[sn, m.T.prev(t)] + m.injection[sn, t] - m.withdrawal[sn, t]
 ```
 
-### 2.3 sequential Multi-Year Logic (`solve.py`)
-`solve_scenario` runs the simulation year-by-year, passing the "memory" of built infrastructure forward.
+### 2.3 Multi-Year Solve — Two-Stage Full-Horizon (`solve.py`, `capacity_model.py`)
+`solve_scenario(..., foresight=True)` (the default) runs a **two-stage, full-horizon** optimisation:
+
+1.  **Capacity layer (perfect foresight)** — `CapacityExpansionModel` co-optimises *what to build and when* across the whole 2025–2050 horizon on a reduced temporal grid (12 monthly representative days + 1 annual peak day per year), minimising a proper **NPV** objective: each year's operating cost is discounted, and each project's CapEx is charged once at its build year (discount rate default 7%, adjustable in the dashboard). Output: a `build[project, year]` schedule.
+2.  **Dispatch layer** — each year is then dispatched at full **365-day** resolution with the builds fixed to that schedule (`GasMarketModel(builds_fixed=…)`). With no free binaries this is a pure LP, so HiGHS returns the duals used for nodal prices.
+
+A **myopic** alternative (`foresight=False`, exposed as a dashboard toggle) is also available: each year decides its own builds reactively with no knowledge of future years, carrying built projects forward. It is preferred for *unanticipated* shocks (e.g. the SA dunkelflaute) where perfect foresight would unrealistically pre-build ahead of the event.
 
 ### 2.4 Price Discovery (Shadow Prices)
 Nodal prices are extracted from the **Dual Variables** of the Nodal Balance constraints.
