@@ -189,14 +189,14 @@ for _fwd, _rev in [('SWQP','SWQP_Rev'),('MSP','MSP_Rev'),('VNI','VNI_Rev'),('PK2
 # ---------------------------------------------------------------------------
 # Custom Plotly template – Material Dark
 # ---------------------------------------------------------------------------
-MD_PRIMARY   = '#1976D2'
-MD_BG        = '#F0F4F8'
+MD_PRIMARY   = '#1F7AE0'
+MD_BG        = '#F5F6F8'
 MD_SURFACE   = '#FFFFFF'
-MD_SURFACE2  = '#EEF2F8'
-MD_TEXT      = 'rgba(0,0,0,0.87)'
-MD_TEXT_MED  = 'rgba(0,0,0,0.60)'
-MD_GRID      = 'rgba(0,0,0,0.06)'
-MD_LINE      = 'rgba(0,0,0,0.12)'
+MD_SURFACE2  = '#F5F6F8'
+MD_TEXT      = '#1A1D21'
+MD_TEXT_MED  = '#6B7280'
+MD_GRID      = '#E3E6EA'
+MD_LINE      = '#E3E6EA'
 MD_COLORWAY  = ['#1976D2','#00897B','#F57C00','#E53935','#8E24AA',
                 '#039BE5','#F9A825','#E64A19','#43A047','#6D4C41']
 
@@ -204,7 +204,7 @@ pio.templates['material_dark'] = go.layout.Template(
     layout=dict(
         paper_bgcolor=MD_SURFACE,
         plot_bgcolor=MD_SURFACE,
-        font=dict(family='Roboto, sans-serif', color=MD_TEXT, size=13),
+        font=dict(family="Inter, 'Segoe UI', sans-serif", color=MD_TEXT, size=13),
         title=dict(font=dict(size=15, weight=500, color=MD_TEXT),
                    x=0.0, xanchor='left', pad=dict(l=4, t=4)),
         colorway=MD_COLORWAY,
@@ -215,32 +215,32 @@ pio.templates['material_dark'] = go.layout.Template(
         legend=dict(bgcolor='rgba(255,255,255,0.95)', bordercolor=MD_LINE,
                     borderwidth=1, font=dict(size=12, color=MD_TEXT)),
         hoverlabel=dict(bgcolor=MD_SURFACE, bordercolor=MD_LINE,
-                        font=dict(family='Roboto, sans-serif', size=13, color=MD_TEXT)),
+                        font=dict(family="Inter, 'Segoe UI', sans-serif", size=13, color=MD_TEXT)),
         margin=dict(l=48, r=24, t=48, b=40),
     )
 )
 
 CHART_TEMPLATE = 'material_dark'
 
-# Dark version of the template
+# Dark version of the template — NELLY's dark palette
 pio.templates['gary_dark'] = go.layout.Template(
     layout=dict(
-        paper_bgcolor='#1E1E2E',
-        plot_bgcolor='#1E1E2E',
-        font=dict(family='Roboto, sans-serif', color='rgba(255,255,255,0.87)', size=13),
-        title=dict(font=dict(size=15, weight=500, color='rgba(255,255,255,0.87)'),
+        paper_bgcolor='#1D2126',
+        plot_bgcolor='#1D2126',
+        font=dict(family="Inter, 'Segoe UI', sans-serif", color='#ECEFF3', size=13),
+        title=dict(font=dict(size=15, weight=500, color='#ECEFF3'),
                    x=0.0, xanchor='left', pad=dict(l=4, t=4)),
         colorway=MD_COLORWAY,
-        xaxis=dict(gridcolor='rgba(255,255,255,0.08)', linecolor='rgba(255,255,255,0.15)',
-                   zerolinecolor='rgba(255,255,255,0.08)',
-                   tickfont=dict(color='rgba(255,255,255,0.55)', size=11)),
-        yaxis=dict(gridcolor='rgba(255,255,255,0.08)', linecolor='rgba(255,255,255,0.15)',
-                   zerolinecolor='rgba(255,255,255,0.08)',
-                   tickfont=dict(color='rgba(255,255,255,0.55)', size=11)),
-        legend=dict(bgcolor='rgba(30,30,46,0.95)', bordercolor='rgba(255,255,255,0.15)',
-                    borderwidth=1, font=dict(size=12, color='rgba(255,255,255,0.87)')),
-        hoverlabel=dict(bgcolor='#2A2A3E', bordercolor='rgba(255,255,255,0.15)',
-                        font=dict(family='Roboto, sans-serif', size=13, color='rgba(255,255,255,0.87)')),
+        xaxis=dict(gridcolor='#2C3239', linecolor='#2C3239',
+                   zerolinecolor='#2C3239',
+                   tickfont=dict(color='#9AA5B1', size=11)),
+        yaxis=dict(gridcolor='#2C3239', linecolor='#2C3239',
+                   zerolinecolor='#2C3239',
+                   tickfont=dict(color='#9AA5B1', size=11)),
+        legend=dict(bgcolor='rgba(29,33,38,0.95)', bordercolor='#2C3239',
+                    borderwidth=1, font=dict(size=12, color='#ECEFF3')),
+        hoverlabel=dict(bgcolor='#14171A', bordercolor='#2C3239',
+                        font=dict(family="Inter, 'Segoe UI', sans-serif", size=13, color='#ECEFF3')),
         margin=dict(l=48, r=24, t=48, b=40),
     )
 )
@@ -261,40 +261,43 @@ server = app.server
 # Material Design CSS injected into the page head
 # ---------------------------------------------------------------------------
 MATERIAL_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
-
-/* ── Variables ──────────────────────────────────────────────────────────── */
+/* ── Variables — NELLY's flat, minimal light/dark theme ───────────────────
+   Same variable NAMES the rest of this file already references (so no
+   Python changes needed), NELLY's actual values: flat surfaces, thin
+   borders instead of drop-shadow elevation, no gradients. ── */
 :root {
-  --md-bg:          #F0F4F8;
+  --md-bg:          #F5F6F8;
   --md-surface:     #FFFFFF;
-  --md-surface-2:   #EEF2F8;
-  --md-surface-3:   #E1EAF5;
-  --md-primary:     #1976D2;
-  --md-primary-dim: rgba(25,118,210,0.08);
-  --md-secondary:   #42A5F5;
-  --md-error:       #C62828;
-  --md-success:     #2E7D32;
-  --md-warning:     #E65100;
-  --md-text:        rgba(0,0,0,0.87);
-  --md-text-med:    rgba(0,0,0,0.60);
-  --md-text-low:    rgba(0,0,0,0.40);
-  --md-divider:     rgba(0,0,0,0.10);
-  --md-hover:       rgba(0,0,0,0.04);
-  --md-e1: 0 1px 3px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.07);
-  --md-e4: 0 2px 8px rgba(0,0,0,0.10), 0 3px 6px rgba(0,0,0,0.07);
-  --md-e8: 0 5px 14px rgba(0,0,0,0.12), 0 8px 10px rgba(0,0,0,0.08);
+  --md-surface-2:   #F5F6F8;
+  --md-surface-3:   #E3E6EA;
+  --md-primary:     #1F7AE0;
+  --md-primary-dim: rgba(31,122,224,0.08);
+  --md-secondary:   #6FA8F5;
+  --md-error:       #D64545;
+  --md-success:     #2E9E5B;
+  --md-warning:     #B5762A;
+  --md-text:        #1A1D21;
+  --md-text-med:    #6B7280;
+  --md-text-low:    #9AA5B1;
+  --md-divider:     #E3E6EA;
+  --md-hover:       rgba(31,122,224,0.05);
+  --md-e1: none;
+  --md-e4: none;
+  --md-e8: none;
   --md-r:    12px;
   --md-r-sm:  8px;
-  --md-r-btn: 20px;
-  --font: 'Roboto', -apple-system, sans-serif;
+  --md-r-btn: 8px;
+  --font: 'Inter', 'Segoe UI', Roboto, system-ui, sans-serif;
 
-  /* Sidebar (dark-blue drawer on light main content) */
-  --sb-bg-top:   #0D47A1;
-  --sb-bg-bot:   #1565C0;
-  --sb-text:     rgba(255,255,255,0.95);
-  --sb-text-med: rgba(255,255,255,0.65);
-  --sb-text-low: rgba(255,255,255,0.42);
-  --sb-divider:  rgba(255,255,255,0.12);
+  /* Sidebar — flat panel, not a blue drawer; these just alias the main
+     text/surface variables so the sidebar reads as part of the same flat
+     design instead of a separately-themed component. */
+  --sb-bg-top:   var(--md-surface);
+  --sb-bg-bot:   var(--md-surface);
+  --sb-text:     var(--md-text);
+  --sb-text-med: var(--md-text-med);
+  --sb-text-low: var(--md-text-low);
+  --sb-divider:  var(--md-divider);
 }
 
 /* ── Base ───────────────────────────────────────────────────────────────── */
@@ -315,24 +318,23 @@ body, html {
 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.18); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.28); }
 
-/* ── Sidebar – blue drawer ──────────────────────────────────────────────── */
+/* ── Sidebar — flat panel with a right border, not a blue drawer ─────────── */
 .md-sidebar {
-  width: 264px;
+  width: 280px;
   flex-shrink: 0;
-  background: linear-gradient(175deg, var(--sb-bg-top) 0%, var(--sb-bg-bot) 100%);
+  background: var(--md-surface);
   min-height: 100vh;
   position: sticky;
   top: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  border-right: none;
-  box-shadow: 3px 0 10px rgba(0,0,0,0.18);
+  border-right: 1px solid var(--md-divider);
   display: flex;
   flex-direction: column;
 }
 
 .md-sidebar-brand {
-  padding: 20px 20px 16px;
+  padding: 18px 20px 16px;
   border-bottom: 1px solid var(--sb-divider);
   display: flex;
   align-items: center;
@@ -340,36 +342,37 @@ body, html {
 }
 
 .md-sidebar-brand-icon {
-  width: 36px; height: 36px;
-  background: rgba(255,255,255,0.15);
-  border: 1px solid rgba(255,255,255,0.28);
-  border-radius: 10px;
+  width: 34px; height: 34px;
+  background: var(--md-primary-dim);
+  border: 1px solid var(--md-divider);
+  border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 18px;
+  font-size: 16px;
   flex-shrink: 0;
+  color: var(--md-primary);
 }
 
 .md-sidebar-brand-text {
-  font-size: 15px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--sb-text);
-  letter-spacing: 0.2px;
+  letter-spacing: -0.3px;
   line-height: 1.2;
 }
 
 .md-sidebar-brand-sub {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--sb-text-med);
   font-weight: 400;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.1px;
 }
 
 .md-sidebar-body { padding: 16px 20px; flex: 1; }
 
 .md-section-label {
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 1.5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
   color: var(--sb-text-low);
   margin: 0 0 10px;
@@ -383,82 +386,77 @@ body, html {
 }
 
 .md-input-label {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 600;
   color: var(--sb-text-med);
-  margin-bottom: 4px;
+  margin-bottom: 5px;
   display: block;
 }
 
-/* ── Sliders – white on blue sidebar ───────────────────────────────────── */
-.rc-slider-track               { background-color: rgba(255,255,255,0.9) !important; }
-.rc-slider-handle              { border-color: #fff !important;
+/* ── Sliders — accent-coloured on the flat panel ──────────────────────── */
+.rc-slider-track               { background-color: var(--md-primary) !important; }
+.rc-slider-handle              { border-color: var(--md-primary) !important;
                                  background-color: #fff !important;
-                                 box-shadow: 0 0 0 4px rgba(255,255,255,0.18) !important; }
+                                 box-shadow: 0 0 0 3px var(--md-primary-dim) !important; }
 .rc-slider-handle:hover,
-.rc-slider-handle-dragging     { border-color: #fff !important;
-                                 box-shadow: 0 0 0 7px rgba(255,255,255,0.22) !important; }
-.rc-slider-dot-active          { border-color: rgba(255,255,255,0.8) !important; }
-.rc-slider-rail                { background-color: rgba(255,255,255,0.20) !important; }
+.rc-slider-handle-dragging     { border-color: var(--md-primary) !important;
+                                 box-shadow: 0 0 0 5px var(--md-primary-dim) !important; }
+.rc-slider-dot-active          { border-color: var(--md-primary) !important; }
+.rc-slider-rail                { background-color: var(--md-surface-3) !important; }
 .rc-slider-mark-text           { color: var(--sb-text-low) !important; font-size: 11px !important; }
 .rc-slider-mark-text-active    { color: var(--sb-text) !important; }
 
-/* ── Buttons – on blue sidebar ──────────────────────────────────────────── */
+/* ── Buttons — flat, normal case, no shadow ───────────────────────────── */
 .md-btn {
   display: block;
   width: 100%;
   padding: 9px 16px;
   border-radius: var(--md-r-btn);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   border: none;
-  transition: background 0.18s, box-shadow 0.18s, transform 0.12s;
+  transition: background 0.15s, border-color 0.15s;
   text-align: center;
   margin-bottom: 8px;
   outline: none;
 }
-.md-btn:active    { transform: scale(0.97); }
-.md-btn:disabled  { opacity: 0.35 !important; cursor: not-allowed !important; transform: none !important; }
+.md-btn:active    { opacity: 0.85; }
+.md-btn:disabled  { opacity: 0.5 !important; cursor: not-allowed !important; }
 
 .md-btn-filled {
-  background-color: #fff;
-  color: var(--md-primary);
-  font-weight: 700;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.22);
+  background-color: var(--md-primary);
+  color: #fff;
 }
-.md-btn-filled:hover:not(:disabled) {
-  background-color: rgba(255,255,255,0.90);
-  box-shadow: 0 4px 10px rgba(0,0,0,0.28);
-}
+.md-btn-filled:hover:not(:disabled) { background-color: var(--md-primary); opacity: 0.9; }
 
 .md-btn-tonal {
-  background-color: rgba(255,255,255,0.12);
-  color: #fff;
-  border: 1px solid rgba(255,255,255,0.22);
+  background-color: transparent;
+  color: var(--md-text);
+  border: 1px solid var(--md-divider);
 }
-.md-btn-tonal:hover:not(:disabled) { background-color: rgba(255,255,255,0.20); }
+.md-btn-tonal:hover:not(:disabled) { background-color: var(--md-hover); }
 
 .md-btn-text {
   background-color: transparent;
   color: var(--sb-text-med);
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid var(--md-divider);
 }
 .md-btn-text:hover:not(:disabled) {
-  background-color: rgba(255,255,255,0.08);
+  background-color: var(--md-hover);
   color: var(--sb-text);
 }
 
 .md-btn-danger {
   background-color: transparent;
-  color: #FFCDD2;
-  border: 1px solid rgba(255,205,210,0.35);
+  color: var(--md-error);
+  border: 1px solid var(--md-divider);
 }
 .md-btn-danger:hover:not(:disabled) {
-  background-color: rgba(239,83,80,0.15);
-  border-color: #FFCDD2;
+  background-color: rgba(214,69,69,0.08);
+  border-color: var(--md-error);
 }
 
 /* ── Status ─────────────────────────────────────────────────────────────── */
@@ -472,43 +470,31 @@ body, html {
   gap: 6px;
 }
 
-/* ── Progress bar ───────────────────────────────────────────────────────── */
+/* ── Progress bar — flat, no shimmer animation ────────────────────────── */
 .md-progress-wrap { margin: 8px 0 12px; }
 .md-progress-wrap .progress {
-  height: 22px !important;
-  border-radius: 11px !important;
-  background-color: rgba(255,255,255,0.15) !important;
+  height: 6px !important;
+  border-radius: 3px !important;
+  background-color: var(--md-surface-3) !important;
   overflow: hidden;
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
 }
 .md-progress-wrap .progress-bar {
-  background: linear-gradient(90deg, #64B5F6, #1976D2, #64B5F6) !important;
-  background-size: 200% 100% !important;
-  animation: progress-shimmer 1.5s linear infinite !important;
-  transition: width 0.4s ease !important;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  letter-spacing: 0.5px !important;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.4) !important;
-  line-height: 22px !important;
-}
-@keyframes progress-shimmer {
-  0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  background: var(--md-primary) !important;
+  transition: width 0.3s ease !important;
+  font-size: 0 !important;
 }
 
-/* ── Dropdown – in light content area ──────────────────────────────────── */
+/* ── Dropdown ──────────────────────────────────────────────────────────── */
 .Select-control {
-  background-color: var(--md-surface-2) !important;
-  border: 1px solid rgba(0,0,0,0.14) !important;
+  background-color: var(--md-surface) !important;
+  border: 1px solid var(--md-divider) !important;
   border-radius: var(--md-r-sm) !important;
   color: var(--md-text) !important;
 }
 .Select-menu-outer {
   background-color: var(--md-surface) !important;
-  border: 1px solid rgba(0,0,0,0.12) !important;
+  border: 1px solid var(--md-divider) !important;
   border-radius: var(--md-r-sm) !important;
-  box-shadow: var(--md-e4) !important;
 }
 .Select-option                 { background-color: var(--md-surface) !important;
                                  color: var(--md-text) !important; }
@@ -519,11 +505,11 @@ body, html {
 .Select-placeholder            { color: var(--md-text-low) !important; }
 .Select-arrow                  { border-top-color: var(--md-text-med) !important; }
 
-/* ── Checklist – in blue sidebar ────────────────────────────────────────── */
+/* ── Checklist ─────────────────────────────────────────────────────────── */
 .form-check-input              { background-color: transparent !important;
-                                 border-color: rgba(255,255,255,0.40) !important; }
-.form-check-input:checked      { background-color: #fff !important;
-                                 border-color: #fff !important; }
+                                 border-color: var(--md-text-low) !important; }
+.form-check-input:checked      { background-color: var(--md-primary) !important;
+                                 border-color: var(--md-primary) !important; }
 .form-check-label              { color: var(--sb-text-med) !important; font-size: 13px !important; }
 
 /* ── Main layout ────────────────────────────────────────────────────────── */
@@ -531,69 +517,63 @@ body, html {
 
 .md-header {
   background: var(--md-surface);
-  padding: 14px 28px;
+  padding: 14px 22px;
   border-bottom: 1px solid var(--md-divider);
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
 
 .md-header-title {
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--md-primary);
-  letter-spacing: 0.1px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--md-text);
+  letter-spacing: -0.2px;
 }
 
 .md-scenario-chip {
   font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.4px;
+  font-weight: 600;
   padding: 5px 14px;
-  border-radius: 16px;
+  border-radius: 14px;
   background-color: var(--md-primary-dim);
   color: var(--md-primary);
-  border: 1px solid rgba(25,118,210,0.22);
+  border: 1px solid var(--md-divider);
   max-width: 340px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.md-content { padding: 20px 28px; flex: 1; }
+.md-content { padding: 18px 22px; flex: 1; }
 
-/* ── KPI cards ──────────────────────────────────────────────────────────── */
-.md-kpi-row { display: flex; gap: 16px; margin-bottom: 20px; }
+/* ── KPI cards — flat bordered card, no accent bar, no hover shadow ──────── */
+.md-kpi-row { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 
 .md-kpi-card {
   flex: 1;
   background-color: var(--md-surface);
-  border-radius: var(--md-r);
-  box-shadow: var(--md-e4);
-  padding: 18px 20px;
-  border-left: 3px solid var(--md-primary);
-  min-width: 0;
-  transition: box-shadow 0.2s;
+  border: 1px solid var(--md-divider);
+  border-radius: 10px;
+  padding: 12px 16px;
+  min-width: 140px;
 }
-.md-kpi-card:hover { box-shadow: var(--md-e8); }
 
 .md-kpi-label {
   font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 1.2px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
   color: var(--md-text-low);
-  margin-bottom: 8px;
+  margin-bottom: 3px;
 }
 
 .md-kpi-value {
-  font-size: 26px;
-  font-weight: 300;
-  color: var(--md-primary);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--md-text);
   line-height: 1.1;
-  letter-spacing: -0.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -601,15 +581,13 @@ body, html {
 
 /* ── Tabs ───────────────────────────────────────────────────────────────── */
 .md-tabs-wrap {
-  background: var(--md-surface);
-  border-radius: var(--md-r) var(--md-r) 0 0;
-  box-shadow: var(--md-e1);
+  background: transparent;
 }
 
 .md-tabs-wrap .nav-tabs {
   border-bottom: 1px solid var(--md-divider) !important;
   background: transparent !important;
-  padding: 0 8px;
+  padding: 0;
   flex-wrap: nowrap;
   overflow-x: auto;
 }
@@ -619,11 +597,9 @@ body, html {
   border: none !important;
   border-bottom: 2px solid transparent !important;
   border-radius: 0 !important;
-  padding: 14px 16px !important;
-  font-size: 12px !important;
-  font-weight: 500 !important;
-  letter-spacing: 0.6px !important;
-  text-transform: uppercase !important;
+  padding: 10px 14px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
   background: transparent !important;
   margin-bottom: -1px !important;
   white-space: nowrap;
@@ -632,7 +608,6 @@ body, html {
 
 .md-tabs-wrap .nav-link:hover {
   color: var(--md-primary) !important;
-  border-bottom-color: rgba(25,118,210,0.3) !important;
 }
 
 .md-tabs-wrap .nav-link.active {
@@ -641,12 +616,13 @@ body, html {
   background: transparent !important;
 }
 
-/* ── Tab panel ──────────────────────────────────────────────────────────── */
+/* ── Tab panel — flat card ─────────────────────────────────────────────── */
 .md-tab-panel {
   background-color: var(--md-surface);
-  border-radius: 0 0 var(--md-r) var(--md-r);
-  box-shadow: var(--md-e4);
-  padding: 20px;
+  border: 1px solid var(--md-divider);
+  border-radius: var(--md-r);
+  padding: 16px;
+  margin-top: 14px;
 }
 
 /* ── Map controls ───────────────────────────────────────────────────────── */
@@ -654,33 +630,33 @@ body, html {
   display: flex;
   align-items: center;
   gap: 24px;
-  padding: 12px 4px 16px;
+  padding: 4px 4px 14px;
 }
 
 /* ── Map KPI strip ──────────────────────────────────────────────────────── */
-.md-map-kpi-row { display: flex; gap: 12px; margin-bottom: 14px; }
+.md-map-kpi-row { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 
 .md-map-kpi {
   flex: 1;
   background-color: var(--md-surface-2);
+  border: 1px solid var(--md-divider);
   border-radius: var(--md-r-sm);
-  padding: 12px 14px;
-  border-left: 2px solid rgba(25,118,210,0.4);
+  padding: 10px 14px;
   min-width: 0;
 }
 
 .md-map-kpi-label {
   font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 1px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--md-text-low);
   margin-bottom: 4px;
 }
 
 .md-map-kpi-value {
-  font-size: 18px;
-  font-weight: 400;
+  font-size: 17px;
+  font-weight: 700;
   color: var(--md-text);
   white-space: nowrap;
   overflow: hidden;
@@ -693,66 +669,69 @@ body, html {
   background-color: var(--md-surface-2);
   color: var(--md-text-low);
   font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.8px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--md-divider);
 }
 .md-table tbody tr             { transition: background 0.12s; }
 .md-table tbody tr:hover       { background-color: var(--md-hover) !important; }
 .md-table tbody td {
-  padding: 11px 16px;
-  border-bottom: 1px solid rgba(0,0,0,0.05);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--md-divider);
   color: var(--md-text);
   font-size: 13px;
 }
 
-/* ── Alerts ─────────────────────────────────────────────────────────────── */
+/* ── Alerts — same flat-card language as NELLY's amber banner ────────────── */
 .md-alert {
   border-radius: var(--md-r-sm);
-  padding: 14px 18px;
-  font-size: 13px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
   border: 1px solid;
 }
-.md-alert-success { background-color: rgba(46,125,50,0.06);
-                    border-color: rgba(46,125,50,0.22);
-                    color: #2E7D32; }
-.md-alert-info    { background-color: rgba(25,118,210,0.06);
-                    border-color: rgba(25,118,210,0.20);
-                    color: #1565C0; }
-.md-alert-warn    { background-color: rgba(230,81,0,0.06);
-                    border-color: rgba(230,81,0,0.20);
-                    color: #E65100; }
+.md-alert-success { background-color: rgba(46,158,91,0.08);
+                    border-color: rgba(46,158,91,0.3);
+                    color: #1E7A45; }
+.md-alert-info    { background-color: var(--md-primary-dim);
+                    border-color: rgba(31,122,224,0.3);
+                    color: var(--md-primary); }
+.md-alert-warn    { background-color: #FDF3E3;
+                    border-color: #E8B96B;
+                    color: #7A4A00; }
 
 /* ── Tooltip ────────────────────────────────────────────────────────────── */
 .dash-tooltip { font-family: var(--font) !important; }
 
-/* ── Dark mode overrides ────────────────────────────────────────────────── */
+/* ── Dark mode overrides — NELLY's dark palette ───────────────────────────
+   Toggled on <html> by the existing theme-store clientside callback below;
+   unchanged mechanism, new values. ── */
 .dark {
-  --md-bg:          #0F0F1A;
-  --md-surface:     #1E1E2E;
-  --md-surface-2:   #252535;
-  --md-surface-3:   #2E2E42;
-  --md-primary:     #90CAF9;
-  --md-primary-dim: rgba(144,202,249,0.12);
-  --md-text:        rgba(255,255,255,0.87);
-  --md-text-med:    rgba(255,255,255,0.60);
-  --md-text-low:    rgba(255,255,255,0.38);
-  --md-divider:     rgba(255,255,255,0.10);
-  --md-hover:       rgba(255,255,255,0.06);
-  --md-e1: 0 1px 3px rgba(0,0,0,0.40), 0 1px 2px rgba(0,0,0,0.30);
-  --md-e4: 0 2px 8px rgba(0,0,0,0.50), 0 3px 6px rgba(0,0,0,0.35);
-  --md-e8: 0 5px 14px rgba(0,0,0,0.55), 0 8px 10px rgba(0,0,0,0.40);
+  --md-bg:          #14171A;
+  --md-surface:     #1D2126;
+  --md-surface-2:   #14171A;
+  --md-surface-3:   #2C3239;
+  --md-primary:     #6FA8F5;
+  --md-primary-dim: rgba(111,168,245,0.12);
+  --md-text:        #ECEFF3;
+  --md-text-med:    #9AA5B1;
+  --md-text-low:    #6B7280;
+  --md-divider:     #2C3239;
+  --md-hover:       rgba(111,168,245,0.08);
+  --md-e1: none;
+  --md-e4: none;
+  --md-e8: none;
 }
 .dark .Select-control {
   background-color: var(--md-surface-2) !important;
-  border-color: rgba(255,255,255,0.12) !important;
+  border-color: var(--md-divider) !important;
   color: var(--md-text) !important;
 }
 .dark .Select-menu-outer {
   background-color: var(--md-surface) !important;
-  border-color: rgba(255,255,255,0.12) !important;
+  border-color: var(--md-divider) !important;
 }
 .dark .Select-option { background-color: var(--md-surface) !important; color: var(--md-text) !important; }
 .dark .Select-option.is-focused { background-color: var(--md-surface-2) !important; }
@@ -762,10 +741,10 @@ body, html {
 .dark .Select-arrow { border-top-color: var(--md-text-med) !important; }
 .dark .md-table table { background: var(--md-surface) !important; }
 .dark .md-table thead th { background-color: var(--md-surface-2) !important; color: var(--md-text-low) !important; border-color: var(--md-divider) !important; }
-.dark .md-table tbody td { color: var(--md-text) !important; border-color: rgba(255,255,255,0.05) !important; }
-.dark .md-alert-success { background-color: rgba(46,125,50,0.15) !important; color: #81C784 !important; }
-.dark .md-alert-info    { background-color: rgba(25,118,210,0.15) !important; color: #90CAF9 !important; }
-.dark .md-alert-warn    { background-color: rgba(230,81,0,0.15)  !important; color: #FFCC80 !important; }
+.dark .md-table tbody td { color: var(--md-text) !important; border-color: var(--md-divider) !important; }
+.dark .md-alert-success { background-color: rgba(46,158,91,0.15) !important; color: #6FCB94 !important; }
+.dark .md-alert-info    { background-color: rgba(111,168,245,0.15) !important; color: #6FA8F5 !important; }
+.dark .md-alert-warn    { background-color: #3A2E17 !important; border-color: #8A6A2B !important; color: #F0D9A8 !important; }
 /* Dark mode – Bootstrap table (expansions tab): flat dark, no stripes */
 .dark table { border-color: var(--md-divider) !important; }
 .dark table > :not(caption) > * > *,
@@ -787,23 +766,23 @@ body, html {
   color: var(--md-text) !important;
 }
 /* Dark mode – all sliders */
-.dark .rc-slider-mark-text        { color: rgba(255,255,255,0.55) !important; }
-.dark .rc-slider-mark-text-active { color: rgba(255,255,255,0.90) !important; }
-.dark .md-map-controls .rc-slider-rail   { background-color: rgba(255,255,255,0.18) !important; }
-.dark .md-map-controls .rc-slider-track  { background-color: rgba(144,202,249,0.85) !important; }
-.dark .md-map-controls .rc-slider-handle { border-color: #90CAF9 !important; background-color: #90CAF9 !important; }
+.dark .rc-slider-mark-text        { color: var(--md-text-low) !important; }
+.dark .rc-slider-mark-text-active { color: var(--md-text) !important; }
+.dark .md-map-controls .rc-slider-rail   { background-color: var(--md-surface-3) !important; }
+.dark .md-map-controls .rc-slider-track  { background-color: var(--md-primary) !important; }
+.dark .md-map-controls .rc-slider-handle { border-color: var(--md-primary) !important; background-color: var(--md-surface) !important; }
 .dark .md-input-label                        { color: var(--md-text-med) !important; }
 .theme-toggle {
   display: flex; align-items: center; justify-content: center;
   gap: 8px; margin: 12px 0 4px; padding: 8px 12px;
   border-radius: var(--md-r-btn);
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.15);
-  color: var(--sb-text-med); font-size: 12px; font-weight: 500;
-  letter-spacing: 0.4px; cursor: pointer; width: 100%;
-  transition: background 0.18s;
+  background: transparent;
+  border: 1px solid var(--md-divider);
+  color: var(--sb-text-med); font-size: 12.5px; font-weight: 600;
+  cursor: pointer; width: 100%;
+  transition: background 0.15s;
 }
-.theme-toggle:hover { background: rgba(255,255,255,0.15); color: var(--sb-text); }
+.theme-toggle:hover { background: var(--md-hover); color: var(--sb-text); }
 """
 
 app.index_string = f"""<!DOCTYPE html>
@@ -1424,7 +1403,7 @@ def update_map(key, end_year, map_year, options, theme):
         import traceback
         traceback.print_exc()
         fig = go.Figure()
-        fig.update_layout(map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-24,lon=140), zoom=3.6),
+        fig.update_layout(map=dict(style='carto-darkmatter' if dark else 'carto-positron', center=dict(lat=-24,lon=140), zoom=3.6),
                           margin=dict(l=0,r=0,t=0,b=0), height=720, paper_bgcolor='#1E1E2E' if dark else 'white')
         return [html.Span(f'Map error: {e}', style={'color':'red'})], dcc.Graph(
             id='map-graph-err', figure=fig, style={'height':'720px'}, config=_MAP_CONFIG)
@@ -1443,7 +1422,7 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
     def empty():
         fig = go.Figure()
         fig.update_layout(
-            map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-24, lon=140), zoom=3.6),
+            map=dict(style='carto-darkmatter' if dark else 'carto-positron', center=dict(lat=-24, lon=140), zoom=3.6),
             margin=dict(l=0, r=0, t=0, b=0), height=720,
             paper_bgcolor='#1E1E2E' if dark else 'white',
         )
@@ -1750,7 +1729,7 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
 
     scenario_label = pretty_key(key)
     fig.update_layout(
-        map=dict(style='carto-darkmatter' if dark else 'open-street-map', center=dict(lat=-24, lon=140), zoom=3.6),
+        map=dict(style='carto-darkmatter' if dark else 'carto-positron', center=dict(lat=-24, lon=140), zoom=3.6),
         margin=dict(l=0, r=0, t=40, b=0), height=720,
         title=dict(text=f'<b>{scenario_label}</b>  |  Year {map_year}',
                    x=0.5, xanchor='center',
