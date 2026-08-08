@@ -1809,7 +1809,7 @@ def update_prod(key, end_year, active_tab, theme):
         long  = pivot.reset_index().melt(id_vars='Date', var_name='Arc', value_name='Value')
         fig_flow = px.line(long, x='Date', y='Value', color='Arc',
                            title='Major Pipeline Flows (daily, TJ/d)', template=tmpl,
-                           labels={'Value': 'TJ/d', 'Date': ''}, render_mode='webgl')
+                           labels={'Value': 'TJ/d', 'Date': ''}, render_mode='svg')
         fig_flow.update_traces(connectgaps=False)
         fig_flow.update_yaxes(rangemode='tozero')
     else:
@@ -1865,7 +1865,7 @@ def update_storage(key, end_year, active_tab, theme):
     df_s = pd.concat(frames)
     fig_inv = px.line(df_s, x='Date', y='Inventory', color='Node',
                       title='Storage Inventory (TJ)', template=tmpl,
-                      labels={'Date': '', 'Inventory': 'TJ'}, render_mode='webgl')
+                      labels={'Date': '', 'Inventory': 'TJ'}, render_mode='svg')
     fig_inv.update_xaxes(tickformat='%Y', dtick='M12')
     fig_inv.update_layout(xaxis_rangeslider_visible=True)
 
@@ -1929,7 +1929,8 @@ def update_prices(key, end_year, active_tab, theme):
             f.update_layout(title=title)
             return f
         f = px.line(sub, x='Month', y='Price', color='Node', title=title,
-                    template=tmpl, labels={'Price': '$/GJ', 'Month': ''})
+                    template=tmpl, labels={'Price': '$/GJ', 'Month': ''},
+                    render_mode='svg')
         f.update_yaxes(rangemode='tozero')
         return f
 
