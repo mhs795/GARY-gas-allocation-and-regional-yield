@@ -43,3 +43,6 @@ src/data/gsoo/
 *.crdownload
 *.xdp-Unconfirmed*
 .~lock.*#
+
+# Local desktop launcher (contains machine-specific absolute paths)
+GARY.desktop
