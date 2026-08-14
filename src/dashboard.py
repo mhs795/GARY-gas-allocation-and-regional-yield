@@ -2105,4 +2105,13 @@ def download_chart_data(*args):
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == '__main__':
+    import argparse
+    import solvers
+    _parser = argparse.ArgumentParser(description="Run the GARY dashboard.")
+    solvers.add_solver_argument(_parser)
+    _args, _ = _parser.parse_known_args()
+    if _args.solver:
+        solvers.set_solver_name(_args.solver)
+    print(f"Solver: {solvers.describe()}")
+    solvers.require_available()
     app.run(debug=False, host='127.0.0.1', port=8050)

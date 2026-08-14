@@ -1,6 +1,9 @@
+import argparse
 import pandas as pd
 import os
 import time
+
+import solvers
 from model import GasMarketModel
 
 def load_data(baseline="StepChange"):
@@ -152,3 +155,37 @@ def _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline, dunkelfl
     if callback:
         callback(end_year, 1.0)
     return scenario_results
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Solve a GARY scenario over 2025-2050 and print a summary.")
+    parser.add_argument("--winter", choices=['Low', 'Medium', 'High'], default='Medium')
+    parser.add_argument("--lng", choices=['Low', 'Medium', 'High'], default='Medium')
+    parser.add_argument("--baseline", default="StepChange")
+    parser.add_argument("--adgsm", action="store_true", help="Enable the ADGSM lever")
+    parser.add_argument("--dunkelflaute", action="store_true")
+    parser.add_argument("--myopic", action="store_true",
+                        help="Year-by-year solve instead of the two-stage foresight method")
+    parser.add_argument("--mip-gap", type=float, default=0.005)
+    solvers.add_solver_argument(parser)
+    args = parser.parse_args()
+
+    if args.solver:
+        solvers.set_solver_name(args.solver)
+    print(f"Solver: {solvers.describe()}")
+    solvers.require_available()
+
+    t0 = time.time()
+    results = solve_scenario(
+        args.winter, args.lng, adgsm_enabled=args.adgsm, mip_gap=args.mip_gap,
+        baseline=args.baseline, dunkelflaute=args.dunkelflaute,
+        foresight=not args.myopic)
+    print(f"\nSolved {len(results)} years in {time.time() - t0:.1f}s "
+          f"using {solvers.describe()}")
+    builds = sorted({b for yr in results for b in yr['builds']})
+    print(f"Projects built: {', '.join(builds) if builds else 'none'}")
+
+
+if __name__ == "__main__":
+    main()

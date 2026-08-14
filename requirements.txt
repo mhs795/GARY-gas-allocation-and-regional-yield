@@ -1,7 +1,9 @@
 pandas
 numpy
 pyomo
-highspy
+highspy            # default solver backend
+# GLPK is the alternative backend (GARY_SOLVER=glpk). It is a system
+# package, not a pip one:  sudo apt install glpk-utils
 plotly
 dash
 dash-bootstrap-components

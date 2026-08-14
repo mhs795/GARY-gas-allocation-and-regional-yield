@@ -13,6 +13,8 @@ project's full CapEx is charged once, discounted to its build year.
 import calendar
 import pyomo.environ as pyo
 
+import solvers
+
 # Day-of-year (1..365, non-leap) -> calendar month.
 _MONTH_OF_DAY = {}
 _d = 1
@@ -179,9 +181,8 @@ class CapacityExpansionModel:
         m.stor_inj = pyo.Constraint(m.StorageNodes, m.YR, rule=lambda m, sn, y, i: m.injection[sn, y, i] <= 0.5 * storage_caps.get(sn, 0))
 
     def solve(self, mip_gap=0.005):
-        opt = pyo.SolverFactory('appsi_highs')
-        opt.options['threads'] = 4
-        opt.options['mip_rel_gap'] = mip_gap if mip_gap is not None else 0.005
+        opt = solvers.make_solver(rel_gap=mip_gap if mip_gap is not None else 0.005,
+                                  time_limit=solvers.env_time_limit())
         res = opt.solve(self.model, tee=False)
         ok = res.solver.termination_condition in (pyo.TerminationCondition.optimal,
                                                    pyo.TerminationCondition.feasible)

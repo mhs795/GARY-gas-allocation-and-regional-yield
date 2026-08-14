@@ -14,6 +14,8 @@ The only thing you need to install manually is **Python 3.10 or later**:
 
 All other dependencies (Dash, Plotly, Pyomo, HiGHS, etc.) are installed **automatically** the first time you run the app.
 
+GARY can also run on the **GLPK** solver instead of HiGHS — see [Choosing a solver](#choosing-a-solver).
+
 ## Installation & Running
 
 **Windows**
@@ -57,6 +59,7 @@ The first run will take 2–3 minutes while dependencies install. After that, op
 | `src/dashboard.py` | Dash web app |
 | `src/model.py` | Pyomo optimisation model |
 | `src/solve.py` | Scenario solver |
+| `src/solvers.py` | Solver backend selection (HiGHS / GLPK) |
 | `src/regenerate_data.py` | One-button rebuild of all derived data from source |
 | `src/build_*.py` | GSOO/GBB demand-build pipeline (see below) |
 | `src/data/` | Network nodes, pipelines, supply, demand, contracts |
@@ -69,9 +72,63 @@ All Data** button), which runs the build pipeline in dependency order:
 three baseline scenarios, and the demand builders emit one set of demand files per
 baseline (e.g. `demand_StepChange.csv`, `demand_Accelerated.csv`, `demand_SlowerGrowth.csv`).
 
+## Choosing a solver
+
+The optimisation is written in Pyomo, so the underlying solver is swappable. Two
+backends are supported:
+
+| Backend | Pyomo interface | Notes |
+|---|---|---|
+| `highs` (default) | `appsi_highs` | Multi-threaded, installed via pip (`highspy`). All published GARY results use this. |
+| `glpk` | `glpsol` | Single-threaded, pure system package. Slower on the full-horizon dispatch, but no Python extension module needed. |
+
+GLPK is **not** a pip dependency — install the system package:
+
+```
+sudo apt install glpk-utils          # Debian / Ubuntu / Pop!_OS
+brew install glpk                    # macOS
+```
+
+Select a backend with the `--solver` flag or the `GARY_SOLVER` environment variable:
+
+```
+./gas                                # HiGHS (default)
+./gas --glpk                         # GLPK, dashboard and all
+./gas --solver glpk                  # same thing, long form
+GARY_SOLVER=glpk ./gas               # via the environment
+
+python src/solve.py --solver glpk    # single scenario, headless
+python src/main.py --solver glpk
+python src/batch_solve.py --solver glpk
+```
+
+Optionally cap each individual solve with `GARY_SOLVER_TIMELIMIT` (seconds), which
+is mainly useful for GLPK:
+
+```
+GARY_SOLVER_TIMELIMIT=600 ./gas --glpk
+```
+
+**Do the two agree?** Yes, to within the MIP gap. On a 2030 single-year dispatch both
+solvers reach an identical optimum (objective 7,611,822,687.71) when the gap is
+tightened to 0.01%. At the default 0.5% gap they can stop at different incumbents of
+near-equal cost, so the *build schedule can differ* where projects are close to a tie
+— e.g. the capacity model puts `MSP_Expansion` at 2025 under HiGHS and 2027 under
+GLPK, with `SWQP_Expansion` at 2025 in both. Tighten `mip_gap` if you need the two to
+line up exactly.
+
+**Speed.** Measured on the Step Change baseline, Medium winter / Medium LNG, full
+2025–2050 two-stage solve:
+
+| Stage | HiGHS | GLPK |
+|---|---|---|
+| Capacity-expansion MILP | 5.1 s | 5.7 s |
+| Single-year dispatch (2030) | 10.8 s | 13.5 s |
+| Full 26-year run | ~200 s | ~330 s |
+
 ## Technical Details
 
-- **Optimisation:** Pyomo with the HiGHS solver (`appsi_highs`)
+- **Optimisation:** Pyomo, with a selectable solver backend — HiGHS (`appsi_highs`, default) or GLPK (`glpsol`)
 - **Network:** Nodal pipeline model covering eastern Australia **plus the Northern Territory** — the Amadeus and Beetaloo basins feed Darwin, and the NT links to the east-coast grid via the Northern Gas Pipeline (Tennant Creek → Mt Isa → Ballera → Moomba). Western Australia is a separate, physically isolated gas market and is **not** included.
 - **Horizon:** 2025–2050 (annual dispatch, 365 days/year)
 - **Solve method:** two-stage full-horizon — a perfect-foresight capacity-expansion layer (NPV over representative days) sets the build schedule, then each year is dispatched at 365-day resolution as a pure LP for nodal prices; a myopic year-by-year mode is also available as a toggle

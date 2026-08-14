@@ -1,9 +1,11 @@
 #!/bin/bash
 # GAS - Run the Nodal Gas Market Optimization Dashboard
 #
-#   ./gas                keeps the machine awake while GARY runs (default), so a
-#                        long batch survives closing the lid (uses systemd-inhibit)
-#   ./gas --allow-sleep  run without the suspend inhibitor (normal power behaviour)
+#   ./gas                  keeps the machine awake while GARY runs (default), so a
+#                          long batch survives closing the lid (uses systemd-inhibit)
+#   ./gas --allow-sleep    run without the suspend inhibitor (normal power behaviour)
+#   ./gas --solver glpk    use the GLPK backend instead of the HiGHS default
+#   ./gas --glpk           shorthand for --solver glpk
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
 
@@ -11,11 +13,20 @@ URL="http://127.0.0.1:8050"
 
 # --- options --------------------------------------------------------------
 KEEP_AWAKE=1                      # keep the laptop awake while GARY runs (default)
-for arg in "$@"; do
-    case "$arg" in
+SOLVER=""                         # empty -> $GARY_SOLVER, else the HiGHS default
+while [ $# -gt 0 ]; do
+    case "$1" in
         --allow-sleep|--no-keep-awake) KEEP_AWAKE=0 ;;
+        --glpk)   SOLVER="glpk" ;;
+        --highs)  SOLVER="highs" ;;
+        --solver) shift; SOLVER="$1" ;;
+        --solver=*) SOLVER="${1#*=}" ;;
     esac
+    shift
 done
+if [ -n "$SOLVER" ]; then
+    export GARY_SOLVER="$SOLVER"
+fi
 
 # Make sure the browser is already running before we ever hand it a URL.
 # If Brave is cold-started together with a URL argument, it both restores

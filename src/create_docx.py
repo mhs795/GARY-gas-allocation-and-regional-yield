@@ -114,11 +114,13 @@ def create_docs():
     
     doc.add_heading('4.1 Mathematical Optimization', level=2)
     doc.add_paragraph(
-        'The model uses Mixed-Integer Linear Programming (MILP), solved with the open-source HiGHS solver via '
-        'Pyomo (appsi_highs). The core constraints include nodal mass balance (Supply + Inflow = Demand + Outflow), '
-        'pipeline capacities, and storage continuity. Because HiGHS only returns dual values for a pure linear '
-        'program, the binary build decisions are fixed and relaxed to continuous after the MILP step, and the model '
-        'is re-solved as an LP to recover the shadow prices used for nodal price discovery.'
+        'The model uses Mixed-Integer Linear Programming (MILP), expressed in Pyomo and solved with an '
+        'open-source solver: HiGHS (appsi_highs) by default, with GLPK (glpsol) selectable as an alternative '
+        'backend. The core constraints include nodal mass balance (Supply + Inflow = Demand + Outflow), '
+        'pipeline capacities, and storage continuity. Because neither solver returns dual values for anything '
+        'but a pure linear program, the binary build decisions are fixed and relaxed to continuous after the '
+        'MILP step, and the model is re-solved as an LP to recover the shadow prices used for nodal price '
+        'discovery.'
     )
 
     doc.add_heading('4.2 Storage Modeling', level=2)

@@ -87,4 +87,13 @@ def run_batch(baselines=("StepChange", "Accelerated", "SlowerGrowth"),
     print("Pre-calculation complete. Results saved to src/data/precalculated_results.pkl")
 
 if __name__ == "__main__":
+    import argparse
+    import solvers
+    parser = argparse.ArgumentParser(description="Pre-calculate every GARY scenario.")
+    solvers.add_solver_argument(parser)
+    args = parser.parse_args()
+    if args.solver:
+        solvers.set_solver_name(args.solver)
+    print(f"Solver: {solvers.describe()}")
+    solvers.require_available()
     run_batch()

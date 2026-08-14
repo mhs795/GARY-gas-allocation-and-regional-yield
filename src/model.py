@@ -2,6 +2,8 @@ import pyomo.environ as pyo
 import pandas as pd
 import os
 
+import solvers
+
 # --- SA "dunkelflaute" event -------------------------------------------------
 # A wind/solar drought like the sustained low-renewables spell South Australia saw
 # in June 2025: SA gas generation runs near its maximum to cover the renewable
@@ -215,19 +217,17 @@ class GasMarketModel:
         m = self.model
 
         def make_solver(rel_gap=None):
-            # Fresh appsi_highs instance per solve: the persistent interface
+            # Fresh solver instance per solve: the persistent appsi interface
             # caches the model between calls, so a new instance avoids stale
             # state when we fix vars / change domains between solves.
-            opt = pyo.SolverFactory('appsi_highs')
-            opt.options['threads'] = 4
-            if rel_gap is not None:
-                opt.options['mip_rel_gap'] = rel_gap
-            return opt
+            return solvers.make_solver(rel_gap=rel_gap,
+                                       time_limit=solvers.env_time_limit())
 
-        # HiGHS only returns duals (nodal prices) for a pure LP — it refuses
-        # duals while any integer/binary var is present, even if fixed. So before
-        # any dual solve we relax the (already-decided) build binaries to Reals;
-        # they stay fixed at 0/1, but the problem is then a true LP.
+        # Neither backend returns duals (nodal prices) for anything but a pure
+        # LP — they refuse duals while any integer/binary var is present, even
+        # if fixed. So before any dual solve we relax the (already-decided)
+        # build binaries to Reals; they stay fixed at 0/1, but the problem is
+        # then a true LP.
 
         # If all expansion vars are already fixed there are no free binaries —
         # solve as pure LP (much faster, duals available immediately).

@@ -1,6 +1,8 @@
 import argparse
 import pandas as pd
 import os
+
+import solvers
 from scenarios import run_base_case, run_high_winter_demand, run_high_lng_demand
 
 def print_summary(results, name):
@@ -43,8 +45,14 @@ def main():
     parser = argparse.ArgumentParser(description="Gas Market Nodal Optimization Model")
     parser.add_argument("--scenario", choices=['base', 'high_winter', 'high_lng'], default='base', help="Scenario to run")
     parser.add_argument("--multiplier", type=float, default=1.5, help="Demand multiplier for scenarios")
-    
+    solvers.add_solver_argument(parser)
+
     args = parser.parse_args()
+
+    if args.solver:
+        solvers.set_solver_name(args.solver)
+    print(f"Solver: {solvers.describe()}")
+    solvers.require_available()
     
     if args.scenario == 'base':
         results = run_base_case()
