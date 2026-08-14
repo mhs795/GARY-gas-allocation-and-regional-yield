@@ -117,14 +117,16 @@ near-equal cost, so the *build schedule can differ* where projects are close to 
 GLPK, with `SWQP_Expansion` at 2025 in both. Tighten `mip_gap` if you need the two to
 line up exactly.
 
-**Speed.** Measured on the Step Change baseline, Medium winter / Medium LNG, full
-2025–2050 two-stage solve:
+**Speed.** GLPK is slower, but on a full run the difference is modest — the
+26-year solve is dominated by the 365-day LP dispatch, where the two are close;
+the gap would widen on a harder MILP. Measured on the Step Change baseline,
+Medium winter / Medium LNG, full 2025–2050 two-stage solve:
 
 | Stage | HiGHS | GLPK |
 |---|---|---|
 | Capacity-expansion MILP | 5.1 s | 5.7 s |
 | Single-year dispatch (2030) | 10.8 s | 13.5 s |
-| Full 26-year run | ~200 s | ~330 s |
+| Full 26-year run | 302 s | 328 s |
 
 ## Technical Details
 
