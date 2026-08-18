@@ -21,6 +21,45 @@ DUNKELFLAUTE_DAYS = range(152, 182)   # 1-30 June (gas day-of-year)
 DUNKELFLAUTE_MULT = 2.75
 
 
+# --- Domestic gas reservation ------------------------------------------------
+# East-coast LNG export trains. A reservation requires a fixed share of their
+# export volume to be released to the domestic market instead of liquefied:
+#
+#     served_LNG[t]  <=  (1 - share) * LNG_demand[t]
+#
+# It is applied on the demand side because the trains enter the network as plain
+# demand nodes and the objective is pure cost minimisation -- there is no export
+# revenue term -- so scaling their demand IS that constraint, with the shortage
+# variable still absorbing any genuine under-supply on top. Keeping exports out
+# of the objective is also what avoids the negative nodal prices the old WA
+# DomGas reservation produced, where a revenue term coupled through the
+# reservation made serving domestic demand look profitable at the margin.
+#
+# The freed gas is not new domestic demand; the effect is that cheap Surat/Bowen
+# gas and the pipeline capacity carrying it are released to domestic nodes,
+# which shows up as lower southern prices and less GPG/industrial curtailment.
+LNG_NODES = ['APLNG', 'GLNG', 'QCLNG']
+
+# Reservation shares offered by the dashboard slider (fraction of export volume).
+RESERVATION_LEVELS = [0.05, 0.10, 0.20, 0.30]
+
+
+def apply_lng_reservation(demand_df, share):
+    """Divert ``share`` (0-1) of LNG export volume to the domestic market.
+
+    Returns ``(demand frame, TJ diverted)``. Applied after the Winter/LNG
+    scenario levers, so the share bites on the export volume actually planned
+    under the scenario rather than on the raw baseline.
+    """
+    if not share:
+        return demand_df, 0.0
+    mask = demand_df['Node'].isin(LNG_NODES)
+    diverted = float(demand_df.loc[mask, 'Demand'].sum()) * share
+    demand_df = demand_df.copy()
+    demand_df.loc[mask, 'Demand'] *= (1.0 - share)
+    return demand_df, diverted
+
+
 class GasMarketModel:
     def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, adgsm_enabled=False, baseline="StepChange", dunkelflaute=False, builds_fixed=None):
         self.nodes = nodes_df

@@ -4,7 +4,7 @@ import os
 import time
 
 import solvers
-from model import GasMarketModel
+from model import GasMarketModel, apply_lng_reservation
 
 def load_data(baseline="StepChange"):
     base_path = os.path.dirname(__file__)
@@ -37,20 +37,25 @@ def get_lng_mult(scenario, year):
         else: return 1.1
     return 1.0
 
-def _year_demand(data, year, winter, lng):
-    """Mass-market demand for one year with the Winter and LNG levers applied."""
+def _year_demand(data, year, winter, lng, reservation=0.0):
+    """Demand for one year with the Winter, LNG and reservation levers applied.
+
+    Returns ``(demand frame, TJ of LNG export volume diverted domestically)``.
+    The reservation is applied last, so it bites on the export volume planned
+    under this scenario rather than on the raw baseline.
+    """
     dm = data['demand'].copy()
     winter_mult = {"Low": 1.0, "Medium": 1.5, "High": 2.2}[winter]
     dm.loc[(dm['Year'] == year) & (dm['Node'].isin(['Melbourne', 'Adelaide', 'Sydney'])) &
            (dm['Day'] >= 150) & (dm['Day'] <= 250), 'Demand'] *= winter_mult
     lng_mult = get_lng_mult(lng, year)
     dm.loc[(dm['Year'] == year) & (dm['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])), 'Demand'] *= lng_mult
-    return dm[dm['Year'] == year].copy()
+    return apply_lng_reservation(dm[dm['Year'] == year].copy(), reservation)
 
 
 def solve_scenario(winter, lng, adgsm_enabled=False, mip_gap=0.005, callback=None,
                    baseline="StepChange", dunkelflaute=False, discount_rate=0.07,
-                   foresight=True):
+                   foresight=True, reservation=0.0):
     """Solve a scenario over 2025-2050.
 
     ``foresight=True`` (default) uses the two-stage full-horizon method: a
@@ -66,19 +71,21 @@ def solve_scenario(winter, lng, adgsm_enabled=False, mip_gap=0.005, callback=Non
     years = list(range(2025, 2051))
     if foresight:
         return _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline,
-                                dunkelflaute, mip_gap, discount_rate, callback)
+                                dunkelflaute, mip_gap, discount_rate, callback,
+                                reservation)
     return _solve_myopic(data, years, winter, lng, adgsm_enabled, baseline,
-                         dunkelflaute, mip_gap, callback)
+                         dunkelflaute, mip_gap, callback, reservation)
 
 
-def _solve_myopic(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaute, mip_gap, callback):
+def _solve_myopic(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaute,
+                  mip_gap, callback, reservation=0.0):
     """Reactive year-by-year solve: each year decides builds with no foresight."""
     contracts_all = data['contracts']
     built_projects, results = [], []
     for i, year in enumerate(years):
         if callback:
             callback(year, i / len(years))
-        demand_yr = _year_demand(data, year, winter, lng)
+        demand_yr, diverted = _year_demand(data, year, winter, lng, reservation)
         gm = GasMarketModel(
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
             contracts_df=contracts_all if year <= 2040 else None, year=year,
@@ -90,6 +97,8 @@ def _solve_myopic(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaut
             raise RuntimeError(f"Solver failed in {year}: {status}")
         yr_res = gm.get_results()
         yr_res['Year'] = year
+        yr_res['reservation_share'] = reservation
+        yr_res['lng_reserved_tj'] = diverted
         results.append(yr_res)
         built_projects.extend([b for b in yr_res['builds'] if b not in built_projects])
         print(f"Year {year} complete")
@@ -98,7 +107,8 @@ def _solve_myopic(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaut
     return results
 
 
-def _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaute, mip_gap, discount_rate, callback):
+def _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaute,
+                     mip_gap, discount_rate, callback, reservation=0.0):
     """Two-stage full-horizon solve: perfect-foresight capacity + 365-day dispatch."""
     from capacity_model import CapacityExpansionModel, build_representative_days
     contracts_all = data['contracts']
@@ -106,8 +116,12 @@ def _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline, dunkelfl
 
     # --- Pass 1: assemble every year's demand + GPG/industrial (events applied) ---
     dispatch_models, demand_all, gpg_all, ind_all = {}, {}, {}, {}
+    diverted_by_year = {}
     for year in years:
-        demand_yr = _year_demand(data, year, winter, lng)
+        # Applied here, before the representative days are built, so the capacity
+        # layer sizes the network against the same post-reservation demand the
+        # dispatch layer will face.
+        demand_yr, diverted_by_year[year] = _year_demand(data, year, winter, lng, reservation)
         gm = GasMarketModel(
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
             contracts_df=contracts_all if year <= 2040 else None, year=year,
@@ -149,6 +163,8 @@ def _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline, dunkelfl
             raise RuntimeError(f"Dispatch failed in {year}: {status}")
         yr_res = gm.get_results()
         yr_res['Year'] = year
+        yr_res['reservation_share'] = reservation
+        yr_res['lng_reserved_tj'] = diverted_by_year[year]
         scenario_results.append(yr_res)
         print(f"Year {year} complete")
 
@@ -165,6 +181,9 @@ def main():
     parser.add_argument("--baseline", default="StepChange")
     parser.add_argument("--adgsm", action="store_true", help="Enable the ADGSM lever")
     parser.add_argument("--dunkelflaute", action="store_true")
+    parser.add_argument("--reservation", type=float, default=0.0, metavar="PCT",
+                        help="Domestic gas reservation: %% of LNG export volume "
+                             "diverted to the domestic market (e.g. 20 for 20%%)")
     parser.add_argument("--myopic", action="store_true",
                         help="Year-by-year solve instead of the two-stage foresight method")
     parser.add_argument("--mip-gap", type=float, default=0.005)
@@ -180,7 +199,7 @@ def main():
     results = solve_scenario(
         args.winter, args.lng, adgsm_enabled=args.adgsm, mip_gap=args.mip_gap,
         baseline=args.baseline, dunkelflaute=args.dunkelflaute,
-        foresight=not args.myopic)
+        foresight=not args.myopic, reservation=args.reservation / 100.0)
     print(f"\nSolved {len(results)} years in {time.time() - t0:.1f}s "
           f"using {solvers.describe()}")
     builds = sorted({b for yr in results for b in yr['builds']})

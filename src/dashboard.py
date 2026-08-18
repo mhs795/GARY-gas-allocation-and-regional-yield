@@ -1,4 +1,4 @@
-import os, sys
+import os, re, sys
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -11,6 +11,7 @@ import dash_bootstrap_components as dbc
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import results_io
+from model import RESERVATION_LEVELS
 from solve import solve_scenario
 from regenerate_data import regenerate_all
 
@@ -804,6 +805,8 @@ app.index_string = f"""<!DOCTYPE html>
 </html>"""
 
 LEVELS = ['Low', 'Medium', 'High']
+# Domestic gas reservation shares offered by the slider, as whole percents.
+RESERVATION_PCTS = [int(round(x * 100)) for x in RESERVATION_LEVELS]
 
 # AEMO 2026 GSOO baseline scenarios (label -> slug). The baseline sets the
 # underlying demand trajectory; the Winter/LNG levers then layer on top of it.
@@ -829,6 +832,8 @@ def short_key(k):
         parts.append(f"W-{_LVL_SHORT.get(winter, winter[:1])} L-{_LVL_SHORT.get(lng, lng[:1])}")
     if '_Dunkelflaute' in k:
         parts.append('Dunk27')
+    if '_Reserve' in k:
+        parts.append('Res' + k.split('_Reserve', 1)[1].split('_', 1)[0] + '%')
     if '_Myopic' in k:
         parts.append('Myopic')
     if '_DR' in k:
@@ -840,6 +845,9 @@ def pretty_key(k):
     """Human-readable label for a scenario key Base_<base>_ADGSM_<x>_Winter_<w>_LNG_<l>."""
     base = k.split('Base_', 1)[-1].split('_ADGSM', 1)[0] if 'Base_' in k else None
     rest = k.split('_ADGSM_', 1)[-1] if '_ADGSM_' in k else k
+    # Before the chained replaces below, which would otherwise rewrite a trailing
+    # _Myopic/_DR into the middle of the reservation percentage.
+    rest = re.sub(r'_Reserve(\d+)', r'  ·  \1% reservation', rest)
     rest = (rest.replace('False', '').replace('True', '(ADGSM)')
                 .replace('_Winter_', 'Winter ').replace('_LNG_', '  ·  LNG ')
                 .replace('_Dunkelflaute', '  ·  SA Dunkelflaute 2027')
@@ -968,6 +976,19 @@ sidebar = html.Div(className='md-sidebar', children=[
                       options=[{'label': ' SA Dunkelflaute (2027)', 'value': 'on'}],
                       value=[], switch=True,
                       style={'marginBottom': '16px', 'fontSize': '12px'}),
+
+        dbc.Checklist(id='reservation-toggle',
+                      options=[{'label': ' Domestic gas reservation', 'value': 'on'}],
+                      value=[], switch=True,
+                      style={'marginBottom': '8px', 'fontSize': '12px'}),
+
+        html.Div(id='reservation-slider-wrap', style={'display': 'none'}, children=[
+            slider_group('Share of LNG exports reserved',
+                dcc.Slider(id='reservation-slider', min=0, max=len(RESERVATION_PCTS) - 1,
+                           step=None,
+                           marks={i: f'{v}%' for i, v in enumerate(RESERVATION_PCTS)},
+                           value=1)),
+        ]),
 
         dbc.Checklist(id='foresight-toggle',
                       options=[{'label': ' Perfect-foresight capacity build', 'value': 'on'}],
@@ -1122,6 +1143,14 @@ app.layout = html.Div(
 # ---------------------------------------------------------------------------
 # Utility helpers
 # ---------------------------------------------------------------------------
+def reservation_share(toggle_value, slider_index):
+    """Sidebar toggle + slider -> reserved share of LNG exports (0 if off)."""
+    if not toggle_value or 'on' not in toggle_value:
+        return 0.0
+    i = 1 if slider_index is None else int(slider_index)
+    return RESERVATION_LEVELS[max(0, min(i, len(RESERVATION_LEVELS) - 1))]
+
+
 def get_filtered(key, end_year):
     data = load_results()
     return [r for r in data['all_scenarios'].get(key, []) if r['Year'] <= end_year]
@@ -1195,6 +1224,8 @@ def show_tab(active):
     State('gap-slider',    'value'),
     State('baseline-selector', 'value'),
     State('dunkelflaute-toggle', 'value'),
+    State('reservation-toggle', 'value'),
+    State('reservation-slider', 'value'),
     State('discount-slider', 'value'),
     State('foresight-toggle', 'value'),
     State('refresh-counter', 'data'),
@@ -1209,10 +1240,12 @@ def show_tab(active):
     progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
     prevent_initial_call=True,
 )
-def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, discount, foresight_v, refresh):
+def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on, resv_i,
+                 discount, foresight_v, refresh):
     w, l = LEVELS[wi], LEVELS[li]
     baseline = baseline or 'StepChange'
     dunkelflaute = bool(dunkel) and 'on' in dunkel
+    reservation = reservation_share(resv_on, resv_i)
     foresight = 'on' in (foresight_v or [])
     dr = 0.07 if discount is None else float(discount)
     def _cb(yr, p):
@@ -1220,9 +1253,11 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, discount
         set_progress((pct, f'Solving {yr}… {pct}%'))
     result = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap, callback=_cb,
                             baseline=baseline, dunkelflaute=dunkelflaute,
-                            discount_rate=dr, foresight=foresight)
+                            discount_rate=dr, foresight=foresight,
+                            reservation=reservation)
     key = (f'Base_{baseline}_ADGSM_False_Winter_{w}_LNG_{l}'
            + ('_Dunkelflaute' if dunkelflaute else '')
+           + (f'_Reserve{round(reservation * 100)}' if reservation else '')
            + ('' if foresight else '_Myopic')
            + (f'_DR{round(dr*100)}' if foresight and abs(dr - 0.07) > 1e-9 else ''))
     data = load_results()
@@ -1230,6 +1265,14 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, discount
     data['current_key'] = key
     save_results(data)
     return (refresh or 0) + 1, f'✓  {pretty_key(key)}'
+
+@app.callback(
+    Output('reservation-slider-wrap', 'style'),
+    Input('reservation-toggle', 'value'),
+)
+def toggle_reservation_slider(v):
+    return {'display': 'block'} if v and 'on' in v else {'display': 'none'}
+
 
 # ---------------------------------------------------------------------------
 # Run All Scenarios (background)
@@ -1368,12 +1411,19 @@ def update_header_kpis(key, end_year):
         return key, empty
     summary, _, builds_df, total_cost = build_summary(filtered)
     final_price = f"${summary['Avg_Price'].iloc[-1]:.2f}/GJ" if not summary.empty else '—'
+    reserved_pj = sum(r.get('lng_reserved_tj', 0) for r in filtered) / 1000
     chips = [
         kpi_card('Final Price',  final_price),
-        kpi_card('System Cost',  f"${total_cost/1e6:,.0f}M"),
+        # Under a reservation this is NOT comparable with an unreserved run: the
+        # objective carries no export revenue, so removing export demand always
+        # lowers it. It is the cost of serving what is left, not a welfare number.
+        kpi_card('System Cost' + (' (served gas only)' if reserved_pj else ''),
+                 f"${total_cost/1e6:,.0f}M"),
         kpi_card('Total Supply', f"{summary['Production_PJ'].sum():,.0f} PJ"),
         kpi_card('New Projects', str(len(builds_df))),
     ]
+    if reserved_pj:
+        chips.insert(3, kpi_card('Gas Reserved', f"{reserved_pj:,.0f} PJ"))
     return pretty_key(key), chips
 
 # ---------------------------------------------------------------------------
