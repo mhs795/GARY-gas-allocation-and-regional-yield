@@ -161,15 +161,32 @@ deliberate: it is what the removed WA DomGas reservation got wrong, where an exp
 revenue term coupled through the reservation constraint and produced negative nodal
 prices at Perth.
 
-**Reading the results.** The freed gas is not new domestic demand — domestic demand
-is exogenous. The effect is that cheap Surat/Bowen gas, and the pipeline capacity
-carrying it, are released to domestic users. On a stressed 2030 (Step Change, High
-winter) the average domestic price falls from $20.19 to $17.65/GJ, but the benefit
-**saturates at about 20%**: beyond that the southbound corridor is full, with
-`SWQP_Rev` at capacity on 63% of days and `VGP` on 45%, so further reserved gas
-cannot reach the southern market. Winter shortage and GPG/industrial curtailment are
-unchanged at every share — a reservation on its own does not fix the southern
-winter, without pipeline capacity to move the gas.
+**Reading the results — the reserved gas is not produced.** Domestic demand in the
+model is exogenous: a fixed volume per node per day, already met before the
+reservation applies. The freed gas therefore has no domestic buyer, and the
+cost-minimising solution simply leaves it in the ground. On a stressed 2030 (Step
+Change, High winter) a 20% reservation cuts total production by 263,018 TJ against
+263,883 TJ reserved — essentially all of it — while domestic gas actually consumed
+changes by 0.0 TJ.
+
+What is implemented is therefore an **export cap**, not a redirection of gas to
+domestic buyers. The domestic price still falls, $20.19 → $17.65/GJ, but through
+scarcity rather than volume: less total call on the system means a cheaper marginal
+supply source and less congestion, so the nodal duals fall.
+
+One channel could absorb the gas domestically — GPG and large industrial shed load
+when the nodal price exceeds their strike ($22 and $120/GJ), and would take it back
+if the price fell far enough. It does not fire here. All the shed load sits in
+Victoria and SA (Melbourne and Gippsland GPG at ~$53/GJ, Adelaide GPG), the freed gas
+is in Queensland, and the southbound corridor is full: at 30% `SWQP_Rev` is at
+capacity on 63% of days and `VGP` on 45%. Curtailment and winter shortage are
+unchanged at every share.
+
+The benefit therefore **saturates at about 20%**, and the finding is that a
+reservation on its own does not fix the southern winter without pipeline capacity to
+move the gas. Modelling a reservation that genuinely redirects gas to domestic users
+at a lower price would need price-responsive mass-market demand, which the model does
+not have.
 
 > **System Cost is not comparable across reservation levels.** The objective carries
 > no export revenue, so removing export demand always lowers it — the figure is the
