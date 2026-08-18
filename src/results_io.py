@@ -7,10 +7,19 @@ on). Across 27 scenarios x 26 years that is ~11 million dicts, which pickled to
 few columns repeated, so this module stores each series as a DataFrame and
 compresses the stream.
 
-On disk the frames are packed down (day numbers to int16, node/arc names to
-categoricals, values to float32). On load they are expanded straight back to the
-dtypes ``pd.DataFrame(list_of_dicts)`` used to produce, so callers see exactly
-what they saw before.
+Frames are stored packed -- node/arc names as categoricals, values as float32 --
+and are handed to callers still packed, because expanding 13.5M rows back to
+object/float64 columns cost more than everything else in the load put together
+(19.7s -> 2.5s to stop doing it). ``unpack`` is kept for callers that want the
+wider dtypes.
+
+Two things make it safe to compute on the packed frames directly. pandas 3
+groupby is ``observed=True``, so a categorical key yields only the groups
+actually present rather than the full cartesian product of categories; and
+concat/merge across frames with different category sets fall back to plain
+strings, preserving values. Day is stored int32 rather than int16 despite
+only ever holding 1-365: the dashboard offsets it into a whole-horizon day
+number, and an int16 would silently wrap if the horizon ever grew past ~2114.
 
 ``load`` sniffs the file, so old uncompressed record-list pickles still open.
 """
@@ -36,7 +45,7 @@ GZIP_LEVEL = 6
 # column is packed for storage. Declaring this explicitly rather than inferring
 # from dtypes matters: pandas 3 reports text columns as 'str', empty ones as
 # 'object', and an inferred rule mis-packs one or the other.
-#   'day' -> int16   'name' -> categorical   'val' -> float32
+#   'day' -> int32   'name' -> categorical   'val' -> float32
 SERIES_SCHEMA = {
     'prices':     {'Day': 'day', 'Node': 'name', 'Price': 'val'},
     'production': {'Day': 'day', 'Node': 'name', 'Potential': 'name', 'Value': 'val'},
@@ -51,7 +60,7 @@ SERIES_SCHEMA = {
 }
 SERIES_COLUMNS = {k: list(v) for k, v in SERIES_SCHEMA.items()}
 
-_PACKED   = {'day': 'int16',  'name': 'category', 'val': 'float32'}
+_PACKED   = {'day': 'int32',  'name': 'category', 'val': 'float32'}
 _UNPACKED = {'day': 'int64',  'name': 'object',   'val': 'float64'}
 
 
@@ -75,7 +84,8 @@ def pack(df, series):
 
 
 def unpack(df, series):
-    """Expand a stored frame back to the dtypes the dashboard has always seen."""
+    """Widen a stored frame to object/int64/float64. Not used on the load path --
+    see the module docstring -- but kept for callers that want plain dtypes."""
     return _cast(df, series, _UNPACKED)
 
 
@@ -97,11 +107,16 @@ def _walk_years(obj, fn):
     return obj
 
 
-def _unpack_in_place(year_results):
-    # Handles both stored frames and legacy record-list pickles.
+def _normalise_in_place(year_results, expand):
+    """Leave stored frames as they are; convert legacy record lists to frames."""
     for series in SERIES_SCHEMA:
-        if series in year_results:
-            year_results[series] = unpack(year_results[series], series)
+        if series not in year_results:
+            continue
+        val = year_results[series]
+        if expand:
+            year_results[series] = unpack(val, series)
+        elif not isinstance(val, pd.DataFrame):
+            year_results[series] = pack(val, series)   # legacy record list
 
 
 # ---------------------------------------------------------------------------
@@ -147,8 +162,12 @@ def save(obj, path):
     return path
 
 
-def load(path):
-    """Read a results cache written in any format this project has used."""
+def load(path, expand=False):
+    """Read a results cache written in any format this project has used.
+
+    Frames come back packed (categorical names, float32 values) unless
+    ``expand=True``, which widens them to object/int64/float64.
+    """
     kind = _sniff(path)
     if kind == 'zstd':
         if zstd is None:
@@ -165,5 +184,5 @@ def load(path):
         with open(path, 'rb') as f:
             obj = pickle.load(f)
 
-    _walk_years(obj, _unpack_in_place)
+    _walk_years(obj, lambda yr: _normalise_in_place(yr, expand))
     return obj

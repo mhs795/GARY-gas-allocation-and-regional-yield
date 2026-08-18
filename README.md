@@ -133,16 +133,26 @@ Medium winter / Medium LNG, full 2025–2050 two-stage solve:
 
 Solved scenarios are cached in `src/data/precalculated_results.pkl` so the dashboard
 can redraw without re-solving. Each solved year is stored as one DataFrame per
-result series (prices, flows, production, storage, curtailment), packed down for
-storage — day numbers as `int16`, node and pipeline names as categoricals, values as
-`float32` — and the whole file is compressed with zstd (gzip if `zstandard` is not
-installed). On load the frames are expanded back to ordinary `int64`/`object`/
-`float64` columns.
+result series (prices, flows, production, storage, curtailment), packed down — node
+and pipeline names as categoricals, values as `float32` — and the whole file is
+compressed with zstd (gzip if `zstandard` is not installed). The frames stay packed
+in memory; `results_io.unpack` widens them if you want plain `object`/`float64`
+columns.
 
 This replaced a cache of per-day Python dicts (`{'Day': 1, 'Node': 'Melbourne',
-'Price': 7.35}`, ~11 million of them across the full 27-scenario batch). The file is
-about **23x smaller** as a result, and loads faster because the dashboard no longer
-rebuilds a DataFrame from record lists on every callback.
+'Price': 7.35}`, ~13.5 million of them across the full 28-scenario batch).
+Measured on that cache:
+
+| | Before | After |
+|---|---|---|
+| File size | 640 MB | 23.4 MB |
+| Load time | 46.8 s | 2.3 s |
+| Peak memory | ~5 GB | 0.58 GB |
+
+Values are `float32`, so figures differ from the old `float64` cache in the 8th
+significant figure (worst relative difference 1e-7 across 158,000 plotted values —
+well below display precision). Model solving is unaffected: only stored results are
+packed, never the optimisation itself.
 
 `results_io.load` sniffs the file, so caches written in the old format still open.
 To convert one without re-solving:
