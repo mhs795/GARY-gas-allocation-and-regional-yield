@@ -53,7 +53,7 @@ def _year_demand(data, year, winter, lng, reservation=0.0):
     return apply_lng_reservation(dm[dm['Year'] == year].copy(), reservation)
 
 
-def solve_scenario(winter, lng, adgsm_enabled=False, mip_gap=0.005, callback=None,
+def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
                    baseline="StepChange", dunkelflaute=False, discount_rate=0.07,
                    foresight=True, reservation=0.0):
     """Solve a scenario over 2025-2050.
@@ -70,14 +70,14 @@ def solve_scenario(winter, lng, adgsm_enabled=False, mip_gap=0.005, callback=Non
     data = load_data(baseline)
     years = list(range(2025, 2051))
     if foresight:
-        return _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline,
+        return _solve_foresight(data, years, winter, lng, baseline,
                                 dunkelflaute, mip_gap, discount_rate, callback,
                                 reservation)
-    return _solve_myopic(data, years, winter, lng, adgsm_enabled, baseline,
+    return _solve_myopic(data, years, winter, lng, baseline,
                          dunkelflaute, mip_gap, callback, reservation)
 
 
-def _solve_myopic(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaute,
+def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
                   mip_gap, callback, reservation=0.0):
     """Reactive year-by-year solve: each year decides builds with no foresight."""
     contracts_all = data['contracts']
@@ -89,7 +89,7 @@ def _solve_myopic(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaut
         gm = GasMarketModel(
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
             contracts_df=contracts_all if year <= 2040 else None, year=year,
-            already_built=built_projects, adgsm_enabled=adgsm_enabled,
+            already_built=built_projects,
             baseline=baseline, dunkelflaute=dunkelflaute)
         gm.build_model()
         status = gm.solve(mip_gap=mip_gap)
@@ -107,7 +107,7 @@ def _solve_myopic(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaut
     return results
 
 
-def _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline, dunkelflaute,
+def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
                      mip_gap, discount_rate, callback, reservation=0.0):
     """Two-stage full-horizon solve: perfect-foresight capacity + 365-day dispatch."""
     from capacity_model import CapacityExpansionModel, build_representative_days
@@ -125,7 +125,7 @@ def _solve_foresight(data, years, winter, lng, adgsm_enabled, baseline, dunkelfl
         gm = GasMarketModel(
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
             contracts_df=contracts_all if year <= 2040 else None, year=year,
-            adgsm_enabled=adgsm_enabled, baseline=baseline, dunkelflaute=dunkelflaute)
+            baseline=baseline, dunkelflaute=dunkelflaute)
         dispatch_models[year] = gm
         for (n, d), v in demand_yr.set_index(['Node', 'Day'])['Demand'].to_dict().items():
             demand_all[(n, year, d)] = v
@@ -179,7 +179,6 @@ def main():
     parser.add_argument("--winter", choices=['Low', 'Medium', 'High'], default='Medium')
     parser.add_argument("--lng", choices=['Low', 'Medium', 'High'], default='Medium')
     parser.add_argument("--baseline", default="StepChange")
-    parser.add_argument("--adgsm", action="store_true", help="Enable the ADGSM lever")
     parser.add_argument("--dunkelflaute", action="store_true")
     parser.add_argument("--reservation", type=float, default=0.0, metavar="PCT",
                         help="Domestic gas reservation: %% of LNG export volume "
@@ -197,7 +196,7 @@ def main():
 
     t0 = time.time()
     results = solve_scenario(
-        args.winter, args.lng, adgsm_enabled=args.adgsm, mip_gap=args.mip_gap,
+        args.winter, args.lng, mip_gap=args.mip_gap,
         baseline=args.baseline, dunkelflaute=args.dunkelflaute,
         foresight=not args.myopic, reservation=args.reservation / 100.0)
     print(f"\nSolved {len(results)} years in {time.time() - t0:.1f}s "

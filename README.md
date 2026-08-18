@@ -47,7 +47,7 @@ The first run will take 2–3 minutes while dependencies install. After that, op
 
 1. Pick a **GSOO Baseline** scenario — **Step Change**, **Accelerated Transition**, or **Slower Growth** — in the sidebar
 2. Set **Winter Stress** and **LNG Demand** levels (these layer on top of the chosen baseline)
-2. Optionally switch on **Domestic gas reservation** and pick the share of LNG exports to reserve (5/10/20/30%)
+2. Optionally switch on **Gas reservation** and pick the share of LNG exports to reserve (5/10/20/30%)
 3. Click **Run Scenario** to solve one combination (~1–2 min)
 4. Click **Run All Scenarios** to pre-calculate **every combination** — all 3 baselines × 3 Winter × 3 LNG = 27 scenarios (~45 min)
 5. Click **Regenerate All Data** to rebuild all derived demand data from source (GBB + GSOO, all three baselines)
@@ -130,7 +130,7 @@ Medium winter / Medium LNG, full 2025–2050 two-stage solve:
 | Single-year dispatch (2030) | 10.8 s | 13.5 s |
 | Full 26-year run | 302 s | 328 s |
 
-## Domestic gas reservation
+## Gas reservation
 
 An optional policy lever: a share of east-coast LNG export volume is required to be
 released to the domestic market instead of liquefied.
@@ -147,6 +147,11 @@ The share is applied to the export volume *planned under the scenario*, so it
 compounds with the Global LNG Demand lever rather than ignoring it. It is applied
 before the representative days are built, so the perfect-foresight capacity layer
 and the 365-day dispatch both size against the same post-reservation demand.
+
+It replaces the old **ADGSM** toggle, which was an unfinished attempt at the same
+thing: its constraint (LNG flow ≤ 85% of Surat production) was commented out, so the
+switch never affected a solve. That code and the `_ADGSM_<x>` segment it wrote into
+every scenario key are gone.
 
 It is implemented on the demand side. The LNG trains enter the network as ordinary
 demand nodes and the objective is pure cost minimisation with no export revenue
@@ -211,5 +216,5 @@ python src/migrate_results.py            # rewrites in place, keeps a .bak
 - **Horizon:** 2025–2050 (annual dispatch, 365 days/year)
 - **Solve method:** two-stage full-horizon — a perfect-foresight capacity-expansion layer (NPV over representative days) sets the build schedule, then each year is dispatched at 365-day resolution as a pure LP for nodal prices; a myopic year-by-year mode is also available as a toggle
 - **Baselines:** selectable AEMO **2026 GSOO** scenario — **Step Change** (central), **Accelerated Transition**, or **Slower Growth** (demand re-based on the GSOO; daily shapes from GBB actuals)
-- **Scenario levers:** Winter stress × LNG demand (9 combinations) layered on the chosen baseline, plus the SA Dunkelflaute event and a domestic gas reservation; the batch runs all 3 baselines × 9 = 27 scenarios
+- **Scenario levers:** Winter stress × LNG demand (9 combinations) layered on the chosen baseline, plus the SA Dunkelflaute event and the gas reservation; the batch runs all 3 baselines × 9 = 27 scenarios
 

@@ -822,9 +822,16 @@ _BASE_SHORT = {'StepChange': 'SC', 'Accelerated': 'Acc', 'SlowerGrowth': 'SG'}
 _LVL_SHORT = {'Low': 'L', 'Medium': 'M', 'High': 'H'}
 
 
+def _base_of(k):
+    """Baseline name out of a scenario key."""
+    if 'Base_' not in k:
+        return ''
+    return k.split('Base_', 1)[1].split('_Winter', 1)[0]
+
+
 def short_key(k):
     """Shorthand scenario label, e.g. 'SC · W-M L-M · Dunk27 · Myopic'."""
-    base = k.split('Base_', 1)[-1].split('_ADGSM', 1)[0] if 'Base_' in k else ''
+    base = _base_of(k)
     winter = k.split('_Winter_', 1)[1].split('_', 1)[0] if '_Winter_' in k else ''
     lng = k.split('_LNG_', 1)[1].split('_', 1)[0] if '_LNG_' in k else ''
     parts = [_BASE_SHORT.get(base, base)]
@@ -842,14 +849,13 @@ def short_key(k):
 
 
 def pretty_key(k):
-    """Human-readable label for a scenario key Base_<base>_ADGSM_<x>_Winter_<w>_LNG_<l>."""
-    base = k.split('Base_', 1)[-1].split('_ADGSM', 1)[0] if 'Base_' in k else None
-    rest = k.split('_ADGSM_', 1)[-1] if '_ADGSM_' in k else k
+    """Human-readable label for a scenario key Base_<base>_Winter_<w>_LNG_<l>."""
+    base = _base_of(k) or None
+    rest = k.split(base, 1)[-1] if base else k
     # Before the chained replaces below, which would otherwise rewrite a trailing
     # _Myopic/_DR into the middle of the reservation percentage.
     rest = re.sub(r'_Reserve(\d+)', r'  ·  \1% reservation', rest)
-    rest = (rest.replace('False', '').replace('True', '(ADGSM)')
-                .replace('_Winter_', 'Winter ').replace('_LNG_', '  ·  LNG ')
+    rest = (rest.replace('_Winter_', 'Winter ').replace('_LNG_', '  ·  LNG ')
                 .replace('_Dunkelflaute', '  ·  SA Dunkelflaute 2027')
                 .replace('_Myopic', '  ·  Myopic'))
     if '_DR' in rest:
@@ -978,7 +984,7 @@ sidebar = html.Div(className='md-sidebar', children=[
                       style={'marginBottom': '16px', 'fontSize': '12px'}),
 
         dbc.Checklist(id='reservation-toggle',
-                      options=[{'label': ' Domestic gas reservation', 'value': 'on'}],
+                      options=[{'label': ' Gas reservation', 'value': 'on'}],
                       value=[], switch=True,
                       style={'marginBottom': '8px', 'fontSize': '12px'}),
 
@@ -1251,11 +1257,11 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
     def _cb(yr, p):
         pct = int(p * 100)
         set_progress((pct, f'Solving {yr}… {pct}%'))
-    result = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap, callback=_cb,
+    result = solve_scenario(w, l, mip_gap=gap, callback=_cb,
                             baseline=baseline, dunkelflaute=dunkelflaute,
                             discount_rate=dr, foresight=foresight,
                             reservation=reservation)
-    key = (f'Base_{baseline}_ADGSM_False_Winter_{w}_LNG_{l}'
+    key = (f'Base_{baseline}_Winter_{w}_LNG_{l}'
            + ('_Dunkelflaute' if dunkelflaute else '')
            + (f'_Reserve{round(reservation * 100)}' if reservation else '')
            + ('' if foresight else '_Myopic')
@@ -1298,7 +1304,7 @@ def toggle_reservation_slider(v):
     prevent_initial_call=True,
 )
 def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v, refresh):
-    # Every combination: all GSOO baselines x Winter x LNG (ADGSM off, dunkelflaute
+    # Every combination: all GSOO baselines x Winter x LNG (dunkelflaute
     # off) -> 27 runs, plus one Step Change + SA Dunkelflaute (2027) case at the
     # central Winter/LNG so it sits alongside its plain Step Change counterpart.
     foresight = 'on' in (foresight_v or [])
@@ -1308,7 +1314,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v, refr
     jobs.append(('StepChange', 'Medium', 'Medium', True))
     data = load_results()
     for i, (b, w, l, dunkel) in enumerate(jobs):
-        key = f'Base_{b}_ADGSM_False_Winter_{w}_LNG_{l}' + ('_Dunkelflaute' if dunkel else '') + suffix
+        key = f'Base_{b}_Winter_{w}_LNG_{l}' + ('_Dunkelflaute' if dunkel else '') + suffix
         # Skip already-computed base combos, but always recompute the dunkelflaute
         # case so edits to the event flow through on a re-run.
         if dunkel or key not in data['all_scenarios']:
@@ -1316,7 +1322,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v, refr
                 overall = int((_i + p) / _n * 100)
                 tag = ' · SA Dunkelflaute 2027' if _d else ''
                 set_progress((overall, f'{BASELINE_LABEL.get(_b, _b)} · Winter {_w} · LNG {_l}{tag} · Year {yr} — {overall}%'))
-            data['all_scenarios'][key] = solve_scenario(w, l, adgsm_enabled=False, mip_gap=gap, callback=_cb, baseline=b, dunkelflaute=dunkel, discount_rate=dr, foresight=foresight)
+            data['all_scenarios'][key] = solve_scenario(w, l, mip_gap=gap, callback=_cb, baseline=b, dunkelflaute=dunkel, discount_rate=dr, foresight=foresight)
             data['current_key'] = key
             save_results(data)
         pct = int((i + 1) / len(jobs) * 100)

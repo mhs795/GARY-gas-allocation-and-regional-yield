@@ -23,63 +23,61 @@ def load_data(baseline="StepChange"):
     }
 
 def run_batch(baselines=("StepChange", "Accelerated", "SlowerGrowth"),
-              adgsm_options=(False,),
               winter_options=("Low", "Medium", "High"),
               lng_options=("Low", "Medium", "High")):
     start_year, end_year = 2025, 2050
 
     all_scenarios_results = {}
 
-    total_scenarios = len(baselines) * len(adgsm_options) * len(winter_options) * len(lng_options)
+    total_scenarios = len(baselines) * len(winter_options) * len(lng_options)
     count = 0
 
     print(f"Starting batch pre-calculation of {total_scenarios} scenarios...")
 
     for baseline in baselines:
         data = load_data(baseline)
-        for adgsm in adgsm_options:
-            for winter in winter_options:
-                for lng in lng_options:
-                    count += 1
-                    scenario_key = (baseline, adgsm, winter, lng)
-                    print(f"[{count}/{total_scenarios}] Solving: Baseline={baseline}, ADGSM={adgsm}, Winter={winter}, LNG={lng}")
+        for winter in winter_options:
+            for lng in lng_options:
+                count += 1
+                scenario_key = (baseline, winter, lng)
+                print(f"[{count}/{total_scenarios}] Solving: Baseline={baseline}, Winter={winter}, LNG={lng}")
 
-                    built_projects = []
-                    scenario_results = []
+                built_projects = []
+                scenario_results = []
 
-                    for year in range(start_year, end_year + 1):
-                        demand_mod = data['demand'].copy()
+                for year in range(start_year, end_year + 1):
+                    demand_mod = data['demand'].copy()
 
-                        # Scenario Logic (match solve.py)
-                        winter_mult = {"Low": 1.0, "Medium": 1.5, "High": 2.2}[winter]
-                        demand_mod.loc[(demand_mod['Year'] == year) & (demand_mod['Node'].isin(['Melbourne', 'Adelaide', 'Sydney'])) &
-                                       (demand_mod['Day'] >= 150) & (demand_mod['Day'] <= 250), 'Demand'] *= winter_mult
+                    # Scenario Logic (match solve.py)
+                    winter_mult = {"Low": 1.0, "Medium": 1.5, "High": 2.2}[winter]
+                    demand_mod.loc[(demand_mod['Year'] == year) & (demand_mod['Node'].isin(['Melbourne', 'Adelaide', 'Sydney'])) &
+                                   (demand_mod['Day'] >= 150) & (demand_mod['Day'] <= 250), 'Demand'] *= winter_mult
 
-                        if year <= 2030:
-                            lng_mult = {"Low": 0.7, "Medium": 1.0, "High": 1.3}[lng]
-                            demand_mod.loc[(demand_mod['Year'] == year) & (demand_mod['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])), 'Demand'] *= lng_mult
+                    if year <= 2030:
+                        lng_mult = {"Low": 0.7, "Medium": 1.0, "High": 1.3}[lng]
+                        demand_mod.loc[(demand_mod['Year'] == year) & (demand_mod['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])), 'Demand'] *= lng_mult
 
-                        active_contracts = data['contracts'] if year <= 2040 else None
+                    active_contracts = data['contracts'] if year <= 2040 else None
 
-                        model = GasMarketModel(
-                            data['nodes'], data['arcs'], data['supply'], demand_mod, data['expansion'],
-                            contracts_df=active_contracts, year=year, already_built=built_projects,
-                            adgsm_enabled=adgsm, baseline=baseline
-                        )
-                        model.build_model()
-                        solve_status = model.solve()
+                    model = GasMarketModel(
+                        data['nodes'], data['arcs'], data['supply'], demand_mod, data['expansion'],
+                        contracts_df=active_contracts, year=year, already_built=built_projects,
+                    baseline=baseline
+                    )
+                    model.build_model()
+                    solve_status = model.solve()
 
-                        year_results = model.get_results()
-                        if not year_results['solved']:
-                            print(f"  FAILED at Year {year}")
-                            break
+                    year_results = model.get_results()
+                    if not year_results['solved']:
+                        print(f"  FAILED at Year {year}")
+                        break
 
-                        year_results['Year'] = year
-                        scenario_results.append(year_results)
-                        # Update built projects for next year
-                        built_projects.extend([b for b in year_results['builds'] if b not in built_projects])
+                    year_results['Year'] = year
+                    scenario_results.append(year_results)
+                    # Update built projects for next year
+                    built_projects.extend([b for b in year_results['builds'] if b not in built_projects])
 
-                    all_scenarios_results[scenario_key] = scenario_results
+                all_scenarios_results[scenario_key] = scenario_results
 
     results_io.save({'all_scenarios': all_scenarios_results, 'current_key': None},
                     "src/data/precalculated_results.pkl")

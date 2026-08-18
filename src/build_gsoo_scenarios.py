@@ -10,7 +10,7 @@ The GSOO GPG/RC&I/Industrial/LNG forecasts are built on the Draft 2026 ISP optim
 development path (gas-regionalised, calendar year, weather-averaged). The 2026 GSOO
 publishes three demand scenarios -- Step Change (central), Accelerated Transition,
 and Slower Growth -- which the model now exposes as selectable *baselines*. The
-model's own scenario levers (Winter, LNG, ADGSM) then layer on top of whichever
+model's own scenario levers (Winter, LNG, gas reservation) then layer on top of whichever
 baseline is chosen.
 
 Scenario coverage in the source workbooks:

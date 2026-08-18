@@ -52,7 +52,7 @@ def create_docs():
         'applying arbitrary per-node growth rates, each demand sector is re-based directly onto its GSOO annual '
         'trajectory for the chosen baseline while the empirical daily profile shape from Gas Bulletin Board (GBB) '
         'actuals is preserved (shape correlation 1.0; only the annual level is scaled). GSOO indices are applied '
-        'relative to 2026 and clamped to the 2026-2045 GSOO horizon, then held flat to 2050. The Winter, LNG and ADGSM '
+        'relative to 2026 and clamped to the 2026-2045 GSOO horizon, then held flat to 2050. The Winter, LNG and gas reservation '
         'scenario levers layer multiplicatively on top of whichever baseline is chosen. Queensland LNG export demand is '
         'calibrated to ~3,650 TJ/day (~1,250 PJ/year) in 2026. ("Progressive Change" is not a 2026 GSOO scenario - it '
         'belongs to the older 2025 GSOO vintage - so the model uses the consistent 2026 GSOO trio above.)'

@@ -61,7 +61,7 @@ def apply_lng_reservation(demand_df, share):
 
 
 class GasMarketModel:
-    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, adgsm_enabled=False, baseline="StepChange", dunkelflaute=False, builds_fixed=None):
+    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, baseline="StepChange", dunkelflaute=False, builds_fixed=None):
         self.nodes = nodes_df
         self.arcs = arcs_df
         self.supply = supply_df
@@ -70,7 +70,6 @@ class GasMarketModel:
         self.contracts = contracts_df
         self.year = year
         self.already_built = already_built if already_built else []
-        self.adgsm_enabled = adgsm_enabled
         # AEMO 2026 GSOO baseline scenario: StepChange / Accelerated / SlowerGrowth.
         # Selects which per-baseline GPG & industrial demand profiles to load.
         self.baseline = baseline
@@ -237,11 +236,10 @@ class GasMarketModel:
             return m.inventory[sn, t] <= storage_caps.get(sn, 0)
         m.storage_cap = pyo.Constraint(m.StorageNodes, m.T, rule=storage_cap_rule)
 
-        # if self.adgsm_enabled:
-        #     def reservation_rule(m, t):
-        #         lng_flow = sum(m.flow[a, t] for a in m.Arcs if arc_data[a]['To'] in ['APLNG', 'GLNG', 'QCLNG'])
-        #         return lng_flow <= sum(m.production[s[0], s[1], t] for s in supply_at['Surat']) * 0.85
-        #     m.reservation = pyo.Constraint(m.T, rule=reservation_rule)
+        # The gas reservation is applied to LNG demand before the model is built
+        # (see apply_lng_reservation above and _year_demand in solve.py), so there
+        # is no reservation constraint here. It replaced an unfinished flow-side
+        # rule -- LNG flow <= 85% of Surat production -- that was never enabled.
 
         if self.builds_fixed is not None:
             # Two-stage mode: honour the capacity model's schedule exactly.
