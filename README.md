@@ -60,6 +60,7 @@ The first run will take 2–3 minutes while dependencies install. After that, op
 | `src/model.py` | Pyomo optimisation model |
 | `src/solve.py` | Scenario solver |
 | `src/solvers.py` | Solver backend selection (HiGHS / GLPK) |
+| `src/results_io.py` | Compressed, column-oriented scenario-results cache |
 | `src/regenerate_data.py` | One-button rebuild of all derived data from source |
 | `src/build_*.py` | GSOO/GBB demand-build pipeline (see below) |
 | `src/data/` | Network nodes, pipelines, supply, demand, contracts |
@@ -127,6 +128,28 @@ Medium winter / Medium LNG, full 2025–2050 two-stage solve:
 | Capacity-expansion MILP | 5.1 s | 5.7 s |
 | Single-year dispatch (2030) | 10.8 s | 13.5 s |
 | Full 26-year run | 302 s | 328 s |
+
+## The results cache
+
+Solved scenarios are cached in `src/data/precalculated_results.pkl` so the dashboard
+can redraw without re-solving. Each solved year is stored as one DataFrame per
+result series (prices, flows, production, storage, curtailment), packed down for
+storage — day numbers as `int16`, node and pipeline names as categoricals, values as
+`float32` — and the whole file is compressed with zstd (gzip if `zstandard` is not
+installed). On load the frames are expanded back to ordinary `int64`/`object`/
+`float64` columns.
+
+This replaced a cache of per-day Python dicts (`{'Day': 1, 'Node': 'Melbourne',
+'Price': 7.35}`, ~11 million of them across the full 27-scenario batch). The file is
+about **23x smaller** as a result, and loads faster because the dashboard no longer
+rebuilds a DataFrame from record lists on every callback.
+
+`results_io.load` sniffs the file, so caches written in the old format still open.
+To convert one without re-solving:
+
+```
+python src/migrate_results.py            # rewrites in place, keeps a .bak
+```
 
 ## Technical Details
 

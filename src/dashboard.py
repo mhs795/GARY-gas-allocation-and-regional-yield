@@ -1,4 +1,4 @@
-import os, sys, pickle
+import os, sys
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -10,6 +10,7 @@ from dash import dcc, html, Input, Output, State, DiskcacheManager, no_update, c
 import dash_bootstrap_components as dbc
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import results_io
 from solve import solve_scenario
 from regenerate_data import regenerate_all
 
@@ -95,8 +96,7 @@ def load_results():
         return {'all_scenarios': {}, 'current_key': None}
     if _results_mem['data'] is None or mtime > _results_mem['mtime']:
         try:
-            with open(RESULTS_FILE, 'rb') as f:
-                _results_mem['data'] = pickle.load(f)
+            _results_mem['data'] = results_io.load(RESULTS_FILE)
             _results_mem['mtime'] = mtime
             _map_fig_cache.clear()   # invalidate map cache when data changes
         except Exception:
@@ -104,8 +104,7 @@ def load_results():
     return _results_mem['data'] or {'all_scenarios': {}, 'current_key': None}
 
 def save_results(data):
-    with open(RESULTS_FILE, 'wb') as f:
-        pickle.dump(data, f)
+    results_io.save(data, RESULTS_FILE)
 
 # Map figure cache — keyed by (key, end_year, map_year, options_tuple)
 _map_fig_cache: dict = {}
@@ -1133,17 +1132,17 @@ def build_summary(filtered_results):
     exp_lookup = static_data['expansion'].set_index('Name').to_dict('index')
     for res in filtered_results:
         y = res['Year']
-        _prices = pd.DataFrame(res['prices'])
-        _prod   = pd.DataFrame(res['production'])
+        _prices = res['prices']
+        _prod   = res['production']
         merged  = pd.merge(_prices, _prod, on=['Node', 'Day'])
         p_avg   = ((merged['Price'] * merged['Value']).sum() / merged['Value'].sum()
                    if not merged.empty else _prices['Price'].mean())
         rows.append({'Year': y, 'Production_PJ': _prod['Value'].sum() / 1000,
-                     'Shortage_TJ': sum(s['Value'] for s in res['shortage']) if res['shortage'] else 0,
+                     'Shortage_TJ': res['shortage']['Value'].sum(),
                      'Avg_Price': p_avg})
         total_cost += res['total_cost']
-        for p in res['prices']:
-            prices_trend.append({'Year': y, 'Node': p['Node'], 'Price': p['Price']})
+        if not _prices.empty:
+            prices_trend.append(_prices[['Node', 'Price']].assign(Year=y))
         for b in res['builds']:
             if not any(bt['Project'] == b for bt in builds_timeline):
                 info = exp_lookup.get(b, {})
@@ -1156,7 +1155,8 @@ def build_summary(filtered_results):
                 })
     return (
         pd.DataFrame(rows) if rows else pd.DataFrame(columns=['Year','Production_PJ','Shortage_TJ','Avg_Price']),
-        pd.DataFrame(prices_trend) if prices_trend else pd.DataFrame(columns=['Year','Node','Price']),
+        pd.concat(prices_trend, ignore_index=True)[['Year', 'Node', 'Price']]
+        if prices_trend else pd.DataFrame(columns=['Year', 'Node', 'Price']),
         pd.DataFrame(builds_timeline) if builds_timeline else pd.DataFrame(columns=['Year','Project','Type','New Capacity (TJ/d)','CapEx ($M)']),
         total_cost,
     )
@@ -1437,9 +1437,9 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
 
     _, _, builds_df, _ = build_summary(filtered)
     res     = next((r for r in filtered if r['Year'] == map_year), filtered[-1])
-    _prices = pd.DataFrame(res['prices'])
-    _prod   = pd.DataFrame(res['production'])
-    _flow   = pd.DataFrame(res['flow'])
+    _prices = res['prices']
+    _prod   = res['production']
+    _flow   = res['flow']
 
     price_map = _prices.groupby('Node')['Price'].mean()
     prod_map  = _prod.groupby('Node')['Value'].sum() / 1000
@@ -1462,7 +1462,7 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
         map_kpi(f'Avg Price ({map_year})', f"${avg_price:.2f}/GJ"),
         map_kpi('Total Production',        f"{_prod['Value'].sum()/1000:.1f} PJ"),
         map_kpi('Total Shortage',
-                f"{sum(s['Value'] for s in res['shortage']):.1f} TJ" if res['shortage'] else '0 TJ'),
+                f"{res['shortage']['Value'].sum():.1f} TJ"),
         map_kpi('Active Pipelines',        str(_flow[_flow['Value'] > 10]['Arc'].nunique())),
     ]
 
@@ -1525,7 +1525,7 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
 
     node_types  = static_data['nodes'].set_index('Name')['Type'].to_dict()
     def _node_sum(stream, col):
-        df = pd.DataFrame(res.get(stream, []))
+        df = res[stream]
         return (df.groupby('Node')[col].sum() / 1000).to_dict() if not df.empty else {}
     gpg_serv, gpg_cur = _node_sum('gpg', 'Served'), _node_sum('gpg', 'Curtailed')
     ind_serv, ind_cur = _node_sum('industrial', 'Served'), _node_sum('industrial', 'Curtailed')
@@ -1766,8 +1766,8 @@ def update_prod(key, end_year, active_tab, theme):
     if not filtered:
         return b, b, b, html.Div()
 
-    prod_frames = [pd.DataFrame(r['production']).assign(Year=r['Year'])
-                   for r in filtered if r['production']]
+    prod_frames = [r['production'].assign(Year=r['Year'])
+                   for r in filtered if not r['production'].empty]
     if not prod_frames:
         return b, b, b, html.Div()
     all_prod = pd.concat(prod_frames)
@@ -1781,10 +1781,11 @@ def update_prod(key, end_year, active_tab, theme):
 
     daily = []
     for r in filtered:
-        if r['production']:
-            df = pd.DataFrame(r['production'])
-            df['GlobalDay'] = df['Day'] + (r['Year'] - 2025) * 365
-            daily.append(df)
+        if not r['production'].empty:
+            # assign(), not in-place: these frames are the cached results themselves,
+            # not throwaway copies rebuilt from records on each callback.
+            daily.append(r['production'].assign(
+                GlobalDay=r['production']['Day'] + (r['Year'] - 2025) * 365))
     if daily:
         df_d = pd.concat(daily)
         fig_disp = px.area(df_d, x='GlobalDay', y='Value', color='Node',
@@ -1794,7 +1795,7 @@ def update_prod(key, end_year, active_tab, theme):
     else:
         fig_disp = b
 
-    flow_frames = [pd.DataFrame(r['flow']).assign(Year=r['Year']) for r in filtered if r['flow']]
+    flow_frames = [r['flow'].assign(Year=r['Year']) for r in filtered if not r['flow'].empty]
     if flow_frames:
         all_flow = pd.concat(flow_frames)
         major    = ['MSP','EGP','VNI','WGP_Pipe','APLNG_Pipe','GLNG_Pipe']
@@ -1815,8 +1816,8 @@ def update_prod(key, end_year, active_tab, theme):
     else:
         fig_flow = b
 
-    short_frames = [pd.DataFrame(r['shortage']).assign(Year=r['Year'])
-                    for r in filtered if r['shortage']]
+    short_frames = [r['shortage'].assign(Year=r['Year'])
+                    for r in filtered if not r['shortage'].empty]
     if short_frames:
         df_s = pd.concat(short_frames).groupby(['Year','Node'])['Value'].sum().reset_index()
         df_s['Value'] /= 1000
@@ -1854,8 +1855,8 @@ def update_storage(key, end_year, active_tab, theme):
 
     frames = []
     for r in filtered:
-        if r.get('storage'):
-            df = pd.DataFrame(r['storage'])
+        if not r['storage'].empty:
+            df = r['storage'].copy()
             df['Date'] = pd.to_datetime(str(r['Year']) + df['Day'].astype(int).astype(str).str.zfill(3), format='%Y%j')
             frames.append(df)
 
@@ -1904,7 +1905,7 @@ def update_prices(key, end_year, active_tab, theme):
         return b, b
 
     # Daily nodal prices for the demand centres over the selected horizon.
-    frames = [pd.DataFrame(r['prices']).assign(Year=r['Year']) for r in filtered if r['prices']]
+    frames = [r['prices'].assign(Year=r['Year']) for r in filtered if not r['prices'].empty]
     if not frames:
         return b, b
     price_nodes = static_data['nodes'][static_data['nodes']['Type'].isin(['Demand', 'LNG'])]['Name'].tolist()
@@ -2025,7 +2026,7 @@ def update_industrial(key, end_year, active_tab, theme):
     for r in filtered:
         yr = r['Year']
         for stream, lbl in (('gpg', 'GPG'), ('industrial', 'Large Industrial')):
-            df = pd.DataFrame(r.get(stream, []))
+            df = r[stream]
             if df.empty:
                 continue
             df = df.copy()

@@ -2,6 +2,7 @@ import pyomo.environ as pyo
 import pandas as pd
 import os
 
+import results_io
 import solvers
 
 # --- SA "dunkelflaute" event -------------------------------------------------
@@ -305,4 +306,7 @@ class GasMarketModel:
             if pyo.value(m.build[e]) > 0.5: res['builds'].append(e)
         res['total_cost'] = pyo.value(m.obj)
         res['solved'] = getattr(self, 'solved', True)
-        return res
+        # Collapse the per-day record lists into packed columns straight away: a
+        # full batch holds every scenario in memory at once, and the dicts cost
+        # orders of magnitude more RAM than the frames they become.
+        return results_io.frames_from_year(res)

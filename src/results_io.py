@@ -1,0 +1,169 @@
+"""Compressed, column-oriented storage for GARY scenario results.
+
+Each solved year used to be stored as eight lists of one-dict-per-row records
+(``{'Day': 1, 'Node': 'Melbourne', 'Price': 7.35}``, 365 days x 18 nodes, and so
+on). Across 27 scenarios x 26 years that is ~11 million dicts, which pickled to
+640 MB and cost several GB of RAM to hold. The numbers underneath are the same
+few columns repeated, so this module stores each series as a DataFrame and
+compresses the stream.
+
+On disk the frames are packed down (day numbers to int16, node/arc names to
+categoricals, values to float32). On load they are expanded straight back to the
+dtypes ``pd.DataFrame(list_of_dicts)`` used to produce, so callers see exactly
+what they saw before.
+
+``load`` sniffs the file, so old uncompressed record-list pickles still open.
+"""
+import gzip
+import os
+import pickle
+import tempfile
+
+import pandas as pd
+
+try:
+    import zstandard as zstd
+except ImportError:                                   # optional; gzip is stdlib
+    zstd = None
+
+ZSTD_MAGIC = b'\x28\xb5\x2f\xfd'
+GZIP_MAGIC = b'\x1f\x8b'
+
+ZSTD_LEVEL = 3          # ~9x on GARY results at ~500 MB/s
+GZIP_LEVEL = 6
+
+# The per-day result series emitted by GasMarketModel.get_results(), and how each
+# column is packed for storage. Declaring this explicitly rather than inferring
+# from dtypes matters: pandas 3 reports text columns as 'str', empty ones as
+# 'object', and an inferred rule mis-packs one or the other.
+#   'day' -> int16   'name' -> categorical   'val' -> float32
+SERIES_SCHEMA = {
+    'prices':     {'Day': 'day', 'Node': 'name', 'Price': 'val'},
+    'production': {'Day': 'day', 'Node': 'name', 'Potential': 'name', 'Value': 'val'},
+    'flow':       {'Day': 'day', 'Arc': 'name', 'From': 'name', 'To': 'name', 'Value': 'val'},
+    'storage':    {'Day': 'day', 'Node': 'name', 'Inventory': 'val', 'Injection': 'val',
+                   'Withdrawal': 'val'},
+    'shortage':   {'Day': 'day', 'Node': 'name', 'Value': 'val'},
+    'gpg':        {'Day': 'day', 'Node': 'name', 'Demand': 'val', 'Served': 'val',
+                   'Curtailed': 'val'},
+    'industrial': {'Day': 'day', 'Node': 'name', 'Demand': 'val', 'Served': 'val',
+                   'Curtailed': 'val'},
+}
+SERIES_COLUMNS = {k: list(v) for k, v in SERIES_SCHEMA.items()}
+
+_PACKED   = {'day': 'int16',  'name': 'category', 'val': 'float32'}
+_UNPACKED = {'day': 'int64',  'name': 'object',   'val': 'float64'}
+
+
+# ---------------------------------------------------------------------------
+# Frame packing
+# ---------------------------------------------------------------------------
+def _cast(df, series, dtypes):
+    schema = SERIES_SCHEMA[series]
+    cols = list(schema)
+    if isinstance(df, pd.DataFrame):
+        df = df.reindex(columns=cols)
+    else:
+        df = pd.DataFrame(df, columns=cols)
+    return pd.DataFrame(
+        {c: df[c].astype(dtypes[schema[c]]) for c in cols}, columns=cols)
+
+
+def pack(df, series):
+    """Shrink a result frame for storage: int16 days, categorical names, float32."""
+    return _cast(df, series, _PACKED)
+
+
+def unpack(df, series):
+    """Expand a stored frame back to the dtypes the dashboard has always seen."""
+    return _cast(df, series, _UNPACKED)
+
+
+def frames_from_year(year_results):
+    """Convert one get_results() dict in place to packed frames."""
+    for series in SERIES_SCHEMA:
+        if series in year_results:
+            year_results[series] = pack(year_results[series], series)
+    return year_results
+
+
+def _walk_years(obj, fn):
+    """Apply fn to every per-year result dict in a saved results structure."""
+    scenarios = obj.get('all_scenarios', {}) if isinstance(obj, dict) else {}
+    for years in scenarios.values():
+        for yr in years or []:
+            if isinstance(yr, dict):
+                fn(yr)
+    return obj
+
+
+def _unpack_in_place(year_results):
+    # Handles both stored frames and legacy record-list pickles.
+    for series in SERIES_SCHEMA:
+        if series in year_results:
+            year_results[series] = unpack(year_results[series], series)
+
+
+# ---------------------------------------------------------------------------
+# File I/O
+# ---------------------------------------------------------------------------
+def _umask():
+    m = os.umask(0)      # no way to read it without setting it
+    os.umask(m)
+    return m
+
+
+def _sniff(path):
+    with open(path, 'rb') as f:
+        head = f.read(4)
+    if head.startswith(ZSTD_MAGIC):
+        return 'zstd'
+    if head.startswith(GZIP_MAGIC):
+        return 'gzip'
+    return 'raw'
+
+
+def save(obj, path):
+    """Write results compressed, atomically (a half-written cache is worse than none)."""
+    _walk_years(obj, lambda yr: frames_from_year(yr))
+    blob = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+
+    d = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(dir=d, prefix='.results-', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            if zstd is not None:
+                f.write(zstd.ZstdCompressor(level=ZSTD_LEVEL).compress(blob))
+            else:
+                f.write(gzip.compress(blob, compresslevel=GZIP_LEVEL))
+        # mkstemp makes the temp file 0600; the cache should keep normal file
+        # permissions so anything else running as the user can still read it.
+        os.chmod(tmp, 0o666 & ~_umask())
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+    return path
+
+
+def load(path):
+    """Read a results cache written in any format this project has used."""
+    kind = _sniff(path)
+    if kind == 'zstd':
+        if zstd is None:
+            raise RuntimeError(
+                f"{path} is zstd-compressed but the 'zstandard' package is not "
+                "installed. Run: pip install zstandard")
+        with open(path, 'rb') as f:
+            obj = pickle.loads(zstd.ZstdDecompressor().decompress(
+                f.read(), max_output_size=0))
+    elif kind == 'gzip':
+        with gzip.open(path, 'rb') as f:
+            obj = pickle.load(f)
+    else:
+        with open(path, 'rb') as f:
+            obj = pickle.load(f)
+
+    _walk_years(obj, _unpack_in_place)
+    return obj

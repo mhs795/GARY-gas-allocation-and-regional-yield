@@ -3,6 +3,10 @@ __pycache__/
 *.pyc
 *.pyo
 *.pkl
+*.pkl.bak
+*.pkl.new
+# results_io atomic-write temp files
+.results-*.tmp
 *.egg-info/
 .eggs/
 dist/

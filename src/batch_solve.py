@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import os
-import pickle
+import results_io
 from model import GasMarketModel
 
 def load_data(baseline="StepChange"):
@@ -81,9 +81,8 @@ def run_batch(baselines=("StepChange", "Accelerated", "SlowerGrowth"),
 
                     all_scenarios_results[scenario_key] = scenario_results
 
-    # Save to compressed pickle
-    with open("src/data/precalculated_results.pkl", "wb") as f:
-        pickle.dump(all_scenarios_results, f)
+    results_io.save({'all_scenarios': all_scenarios_results, 'current_key': None},
+                    "src/data/precalculated_results.pkl")
     print("Pre-calculation complete. Results saved to src/data/precalculated_results.pkl")
 
 if __name__ == "__main__":

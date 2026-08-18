@@ -9,5 +9,6 @@ dash
 dash-bootstrap-components
 diskcache
 multiprocess
+zstandard        # results-cache compression (falls back to stdlib gzip)
 psutil
 python-docx
