@@ -57,6 +57,10 @@ SERIES_SCHEMA = {
                    'Curtailed': 'val'},
     'industrial': {'Day': 'day', 'Node': 'name', 'Demand': 'val', 'Served': 'val',
                    'Curtailed': 'val'},
+    # Mass-market step demand curve; one row per block that shed something.
+    # Absent from scenarios solved with elastic demand off.
+    'massmarket': {'Day': 'day', 'Node': 'name', 'Block': 'name', 'Demand': 'val',
+                   'Served': 'val', 'Curtailed': 'val'},
 }
 SERIES_COLUMNS = {k: list(v) for k, v in SERIES_SCHEMA.items()}
 

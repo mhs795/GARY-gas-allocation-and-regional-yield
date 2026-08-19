@@ -17,6 +17,10 @@ baseline (e.g. gpg_demand_profile_StepChange.csv, ..._Accelerated.csv, ...):
   3. build_gpg_demand_gsoo      -> gpg_demand_profile_<scenario>.csv (all baselines)
   4. build_industrial_demand_gsoo -> industrial_demand_profile_<scenario>.csv (+Yarwun)
   5. build_demand_gsoo          -> demand_<scenario>.csv (node distribution + LNG)
+  6. build_massmarket_blocks    -> mass-market demand curve blocks appended to
+                                   curtailment_params.csv. Must follow step 1,
+                                   which rewrites that file with only the GPG and
+                                   Industrial strikes.
 
 Run the model scenarios afterwards via the "Run All Scenarios (Batch)" button.
 """
@@ -25,6 +29,7 @@ import build_gsoo_scenarios
 import build_gpg_demand_gsoo
 import build_industrial_demand_gsoo
 import build_demand_gsoo
+import build_massmarket_blocks
 
 # (label, callable) in dependency order.
 STEPS = [
@@ -33,6 +38,7 @@ STEPS = [
     ("GPG demand (all baselines)", build_gpg_demand_gsoo.build_all),
     ("Industrial demand (all baselines)", build_industrial_demand_gsoo.build_all),
     ("Node distribution + LNG demand (all baselines)", build_demand_gsoo.build_all),
+    ("Mass-market demand curve blocks", build_massmarket_blocks.main),
 ]
 
 

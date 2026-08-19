@@ -14,6 +14,7 @@ import calendar
 import pyomo.environ as pyo
 
 import solvers
+from model import LNG_NODES, VOLL_PER_GJ, WINTER_DAYS
 
 # Day-of-year (1..365, non-leap) -> calendar month.
 _MONTH_OF_DAY = {}
@@ -27,14 +28,29 @@ for _mo in range(1, 13):
 PEAK_DAY_WEIGHT = 5.0        # days represented by the annual peak day (adequacy)
 
 
-def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df):
+def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
+                              mm_blocks=()):
     """Reduce each year's 365 daily profiles to representative days.
 
     Returns {year: [ {weight, demand{node:v}, gpg{node:v}, ind{node:v}} ]} — 12
     monthly *mean* days (weighted by days in the month) plus one annual *peak* day
     (the highest total-demand day, so the capacity layer sizes for stress).
+
+    ``mm_blocks`` is the mass-market step demand curve (see model.py); each rep
+    day also carries ``mm{block: {node: TJ available}}``. A block's availability is
+    averaged over the bucket's real days rather than derived from the averaged
+    demand, so the winter damping — which applies to some days of a month and not
+    others — survives the reduction intact.
     """
     node_names = nodes_df['Name'].tolist()
+    mm_node_names = [n for n in node_names if n not in LNG_NODES]
+
+    def mm_avail(n, y, d, share, winter_scale):
+        """TJ of one mass-market block available at node n on day d."""
+        if d in WINTER_DAYS:
+            share *= winter_scale
+        return demand_all.get((n, y, d), 0) * share
+
     rep = {}
     for y in years:
         # bucket days by month
@@ -52,7 +68,10 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df):
             dem = {n: sum(demand_all.get((n, y, d), 0) for d in days) / w for n in node_names}
             gpg = {n: sum(gpg_all.get((n, y, d), 0) for d in days) / w for n in node_names}
             ind = {n: sum(ind_all.get((n, y, d), 0) for d in days) / w for n in node_names}
-            days_reps.append({'weight': w, 'demand': dem, 'gpg': gpg, 'ind': ind})
+            mm = {blk: {n: sum(mm_avail(n, y, d, share, ws) for d in days) / w
+                        for n in mm_node_names}
+                  for blk, _strike, share, ws in mm_blocks}
+            days_reps.append({'weight': w, 'demand': dem, 'gpg': gpg, 'ind': ind, 'mm': mm})
         # annual peak day (actual profile) for adequacy
         dpk = max(day_total, key=day_total.get)
         days_reps.append({
@@ -60,6 +79,8 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df):
             'demand': {n: demand_all.get((n, y, dpk), 0) for n in node_names},
             'gpg':    {n: gpg_all.get((n, y, dpk), 0) for n in node_names},
             'ind':    {n: ind_all.get((n, y, dpk), 0) for n in node_names},
+            'mm':     {blk: {n: mm_avail(n, y, dpk, share, ws) for n in mm_node_names}
+                       for blk, _strike, share, ws in mm_blocks},
         })
         rep[y] = days_reps
     return rep
@@ -70,12 +91,17 @@ class CapacityExpansionModel:
 
     def __init__(self, nodes_df, arcs_df, supply_df, expansion_df, years, rep,
                  discount_rate=0.07, strike_gpg=22.0, strike_ind=120.0,
-                 terminal_earliest=2028, base_year=2025):
+                 terminal_earliest=2028, base_year=2025, mm_blocks=()):
         self.nodes, self.arcs, self.supply, self.expansion = nodes_df, arcs_df, supply_df, expansion_df
         self.years = list(years)
         self.rep = rep                      # {year: [rep-day dicts]}
         self.r = discount_rate
         self.strike_gpg, self.strike_ind = strike_gpg, strike_ind
+        # Mass-market step demand curve, same blocks the dispatch layer will face.
+        # The investment layer has to see it too: if it sized the network against
+        # demand that dispatch then sheds, it would build pipe for gas nobody is
+        # willing to pay for.
+        self.mm_blocks = list(mm_blocks)
         self.terminal_earliest = terminal_earliest
         self.base_year = base_year
         self.solved = False
@@ -105,6 +131,14 @@ class CapacityExpansionModel:
         m.injection = pyo.Var(m.StorageNodes, m.YR, domain=pyo.NonNegativeReals)
         m.gpg_curtail = pyo.Var(m.GPGNodes, m.YR, domain=pyo.NonNegativeReals)
         m.ind_curtail = pyo.Var(m.INDNodes, m.YR, domain=pyo.NonNegativeReals)
+
+        mm_strike = {b[0]: b[1] for b in self.mm_blocks}
+        mm_nodes = sorted({n for y in Y for rd_ in self.rep[y]
+                           for blk in rd_.get('mm', {})
+                           for n, v in rd_['mm'][blk].items() if v > 0})
+        m.MMNodes = pyo.Set(initialize=[n for n in mm_nodes if n in self.nodes['Name'].tolist()])
+        m.MMBlocks = pyo.Set(initialize=list(mm_strike))
+        m.mm_curtail = pyo.Var(m.MMNodes, m.MMBlocks, m.YR, domain=pyo.NonNegativeReals)
         m.build = pyo.Var(m.Expansion, Y, domain=pyo.Binary)   # build project e in year y
 
         arc_data = self.arcs.set_index('Name').to_dict('index')
@@ -135,10 +169,12 @@ class CapacityExpansionModel:
                 df[y] * wt[y, i] * (
                     pyo.quicksum(m.production[s[0], s[1], y, i] * supply_dict[s]['Cost'] * 1000 for s in m.Supply)
                     + pyo.quicksum(m.flow[a, y, i] * arc_data[a]['Cost'] * 1000 for a in m.Arcs)
-                    + pyo.quicksum(m.shortage[n, y, i] * 300000 for n in m.Nodes)
+                    + pyo.quicksum(m.shortage[n, y, i] * VOLL_PER_GJ * 1000 for n in m.Nodes)
                     + pyo.quicksum((m.injection[sn, y, i] + m.withdrawal[sn, y, i]) * 0.5 * 1000 for sn in m.StorageNodes)
                     + pyo.quicksum(m.gpg_curtail[n, y, i] * self.strike_gpg * 1000 for n in m.GPGNodes)
-                    + pyo.quicksum(m.ind_curtail[n, y, i] * self.strike_ind * 1000 for n in m.INDNodes))
+                    + pyo.quicksum(m.ind_curtail[n, y, i] * self.strike_ind * 1000 for n in m.INDNodes)
+                    + pyo.quicksum(m.mm_curtail[n, b, y, i] * mm_strike[b] * 1000
+                                   for n in m.MMNodes for b in m.MMBlocks))
                 for (y, i) in YR)
             capex = pyo.quicksum(m.build[e, y] * exp_data[e]['CapEx'] * df[y] for e in m.Expansion for y in Y)
             return ops + capex
@@ -156,12 +192,16 @@ class CapacityExpansionModel:
                     + m.shortage[n, y, i]
                     + (m.gpg_curtail[n, y, i] if n in m.GPGNodes else 0)
                     + (m.ind_curtail[n, y, i] if n in m.INDNodes else 0)
+                    + (pyo.quicksum(m.mm_curtail[n, b, y, i] for b in m.MMBlocks)
+                       if n in m.MMNodes else 0)
                     == r['demand'].get(n, 0) + r['gpg'].get(n, 0) + r['ind'].get(n, 0)
                     + pyo.quicksum(m.flow[a, y, i] for a in arcs_from[n]))
         m.balance = pyo.Constraint(m.Nodes, m.YR, rule=balance_rule)
 
         m.gpg_cap = pyo.Constraint(m.GPGNodes, m.YR, rule=lambda m, n, y, i: m.gpg_curtail[n, y, i] <= rd(y, i)['gpg'].get(n, 0))
         m.ind_cap = pyo.Constraint(m.INDNodes, m.YR, rule=lambda m, n, y, i: m.ind_curtail[n, y, i] <= rd(y, i)['ind'].get(n, 0))
+        m.mm_cap = pyo.Constraint(m.MMNodes, m.MMBlocks, m.YR,
+            rule=lambda m, n, b, y, i: m.mm_curtail[n, b, y, i] <= rd(y, i)['mm'].get(b, {}).get(n, 0))
 
         def supply_cap_rule(m, node, is_pot, y, i):
             cap = supply_dict[node, is_pot]['Capacity']

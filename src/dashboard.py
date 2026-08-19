@@ -841,6 +841,8 @@ def short_key(k):
         parts.append('Dunk27')
     if '_Reserve' in k:
         parts.append('Res' + k.split('_Reserve', 1)[1].split('_', 1)[0] + '%')
+    if '_Elastic' in k:
+        parts.append('Elastic')
     if '_Myopic' in k:
         parts.append('Myopic')
     if '_DR' in k:
@@ -857,6 +859,7 @@ def pretty_key(k):
     rest = re.sub(r'_Reserve(\d+)', r'  ·  \1% reservation', rest)
     rest = (rest.replace('_Winter_', 'Winter ').replace('_LNG_', '  ·  LNG ')
                 .replace('_Dunkelflaute', '  ·  SA Dunkelflaute 2027')
+                .replace('_Elastic', '  ·  Elastic demand')
                 .replace('_Myopic', '  ·  Myopic'))
     if '_DR' in rest:
         head, dr = rest.rsplit('_DR', 1)
@@ -995,6 +998,11 @@ sidebar = html.Div(className='md-sidebar', children=[
                            marks={i: f'{v}%' for i, v in enumerate(RESERVATION_PCTS)},
                            value=1)),
         ]),
+
+        dbc.Checklist(id='elastic-toggle',
+                      options=[{'label': ' Price-responsive mass-market demand', 'value': 'on'}],
+                      value=[], switch=True,
+                      style={'marginBottom': '16px', 'fontSize': '12px'}),
 
         dbc.Checklist(id='foresight-toggle',
                       options=[{'label': ' Perfect-foresight capacity build', 'value': 'on'}],
@@ -1234,6 +1242,7 @@ def show_tab(active):
     State('reservation-slider', 'value'),
     State('discount-slider', 'value'),
     State('foresight-toggle', 'value'),
+    State('elastic-toggle', 'value'),
     State('refresh-counter', 'data'),
     background=True,
     running=[
@@ -1247,12 +1256,13 @@ def show_tab(active):
     prevent_initial_call=True,
 )
 def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on, resv_i,
-                 discount, foresight_v, refresh):
+                 discount, foresight_v, elastic_v, refresh):
     w, l = LEVELS[wi], LEVELS[li]
     baseline = baseline or 'StepChange'
     dunkelflaute = bool(dunkel) and 'on' in dunkel
     reservation = reservation_share(resv_on, resv_i)
     foresight = 'on' in (foresight_v or [])
+    elastic = 'on' in (elastic_v or [])
     dr = 0.07 if discount is None else float(discount)
     def _cb(yr, p):
         pct = int(p * 100)
@@ -1260,10 +1270,11 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
     result = solve_scenario(w, l, mip_gap=gap, callback=_cb,
                             baseline=baseline, dunkelflaute=dunkelflaute,
                             discount_rate=dr, foresight=foresight,
-                            reservation=reservation)
+                            reservation=reservation, elastic_demand=elastic)
     key = (f'Base_{baseline}_Winter_{w}_LNG_{l}'
            + ('_Dunkelflaute' if dunkelflaute else '')
            + (f'_Reserve{round(reservation * 100)}' if reservation else '')
+           + ('_Elastic' if elastic else '')
            + ('' if foresight else '_Myopic')
            + (f'_DR{round(dr*100)}' if foresight and abs(dr - 0.07) > 1e-9 else ''))
     data = load_results()
@@ -1418,6 +1429,10 @@ def update_header_kpis(key, end_year):
     summary, _, builds_df, total_cost = build_summary(filtered)
     final_price = f"${summary['Avg_Price'].iloc[-1]:.2f}/GJ" if not summary.empty else '—'
     reserved_pj = sum(r.get('lng_reserved_tj', 0) for r in filtered) / 1000
+    # Mass-market load that priced itself out. Absent from scenarios solved before
+    # the elastic lever existed, and from any run with it switched off.
+    mm_shed_pj = sum(float(r['massmarket']['Curtailed'].sum())
+                     for r in filtered if len(r.get('massmarket', ()))) / 1000
     chips = [
         kpi_card('Final Price',  final_price),
         # Under a reservation this is NOT comparable with an unreserved run: the
@@ -1430,6 +1445,8 @@ def update_header_kpis(key, end_year):
     ]
     if reserved_pj:
         chips.insert(3, kpi_card('Gas Reserved', f"{reserved_pj:,.0f} PJ"))
+    if mm_shed_pj:
+        chips.insert(3, kpi_card('Demand Response', f"{mm_shed_pj:,.0f} PJ"))
     return pretty_key(key), chips
 
 # ---------------------------------------------------------------------------
