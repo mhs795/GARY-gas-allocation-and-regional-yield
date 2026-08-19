@@ -1309,6 +1309,8 @@ def toggle_reservation_slider(v):
     State('baseline-selector', 'value'),
     State('discount-slider', 'value'),
     State('foresight-toggle', 'value'),
+    State('reservation-toggle', 'value'),
+    State('reservation-slider', 'value'),
     State('refresh-counter', 'data'),
     background=True,
     running=[
@@ -1321,31 +1323,44 @@ def toggle_reservation_slider(v):
     progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
     prevent_initial_call=True,
 )
-def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v, refresh):
+def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
+              resv_on, resv_i, refresh):
     # Every combination: all GSOO baselines x Winter x LNG (dunkelflaute
     # off) -> 27 runs, plus one Step Change + SA Dunkelflaute (2027) case at the
     # central Winter/LNG so it sits alongside its plain Step Change counterpart.
+    #
+    # The batch honours the sidebar reservation setting: with the toggle on it
+    # solves the whole sweep at that reserved share and writes _Reserve<pct>
+    # keys, which land in the result dropdown ALONGSIDE the plain runs rather
+    # than replacing them. It does not loop over reservation levels itself --
+    # one batch, one share, deliberately (the full cross-product is ~12 h).
     foresight = 'on' in (foresight_v or [])
+    reservation = reservation_share(resv_on, resv_i)
     dr = 0.07 if discount is None else float(discount)
+    # Segment order must match the single-run key builder in run_scenario:
+    # Dunkelflaute, then Reserve, then Myopic/DR.
+    resv_suffix = f'_Reserve{round(reservation * 100)}' if reservation else ''
     suffix = ('' if foresight else '_Myopic') + (f'_DR{round(dr * 100)}' if foresight and abs(dr - 0.07) > 1e-9 else '')
     jobs = [(b['value'], w, l, False) for b in BASELINES for w in LEVELS for l in LEVELS]
     jobs.append(('StepChange', 'Medium', 'Medium', True))
     data = load_results()
     for i, (b, w, l, dunkel) in enumerate(jobs):
-        key = f'Base_{b}_Winter_{w}_LNG_{l}' + ('_Dunkelflaute' if dunkel else '') + suffix
+        key = f'Base_{b}_Winter_{w}_LNG_{l}' + ('_Dunkelflaute' if dunkel else '') + resv_suffix + suffix
         # Skip already-computed base combos, but always recompute the dunkelflaute
         # case so edits to the event flow through on a re-run.
         if dunkel or key not in data['all_scenarios']:
             def _cb(yr, p, _i=i, _n=len(jobs), _b=b, _w=w, _l=l, _d=dunkel):
                 overall = int((_i + p) / _n * 100)
                 tag = ' · SA Dunkelflaute 2027' if _d else ''
+                tag += f' · {round(reservation * 100)}% reservation' if reservation else ''
                 set_progress((overall, f'{BASELINE_LABEL.get(_b, _b)} · Winter {_w} · LNG {_l}{tag} · Year {yr} — {overall}%'))
-            data['all_scenarios'][key] = solve_scenario(w, l, mip_gap=gap, callback=_cb, baseline=b, dunkelflaute=dunkel, discount_rate=dr, foresight=foresight)
+            data['all_scenarios'][key] = solve_scenario(w, l, mip_gap=gap, callback=_cb, baseline=b, dunkelflaute=dunkel, discount_rate=dr, foresight=foresight, reservation=reservation)
             data['current_key'] = key
             save_results(data)
         pct = int((i + 1) / len(jobs) * 100)
         set_progress((pct, f'Scenario {i+1}/{len(jobs)} complete — {pct}%'))
-    return (refresh or 0) + 1, f'✓  Batch complete — {len(jobs)} scenarios (all baselines + SA dunkelflaute)'
+    resv_note = f' at {round(reservation * 100)}% reservation' if reservation else ''
+    return (refresh or 0) + 1, f'✓  Batch complete — {len(jobs)} scenarios (all baselines + SA dunkelflaute){resv_note}'
 
 # ---------------------------------------------------------------------------
 # Clear
