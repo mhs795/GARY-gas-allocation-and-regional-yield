@@ -999,10 +999,17 @@ sidebar = html.Div(className='md-sidebar', children=[
                            value=1)),
         ]),
 
+        # Covers every tier and both directions now, not just mass-market shedding,
+        # so the label says "demand" rather than naming one tier.
         dbc.Checklist(id='elastic-toggle',
-                      options=[{'label': ' Price-responsive mass-market demand', 'value': 'on'}],
+                      options=[{'label': ' Price-responsive demand', 'value': 'on'}],
                       value=[], switch=True,
-                      style={'marginBottom': '16px', 'fontSize': '12px'}),
+                      style={'marginBottom': '2px', 'fontSize': '12px'}),
+        html.Div('Off: fixed volumes, GPG and industrial curtailment only. '
+                 'On: demand sheds above its willingness to pay and rises when '
+                 'gas is cheap.',
+                 style={'marginBottom': '16px', 'fontSize': '10px',
+                        'color': '#888', 'lineHeight': '1.35', 'paddingLeft': '38px'}),
 
         dbc.Checklist(id='foresight-toggle',
                       options=[{'label': ' Perfect-foresight capacity build', 'value': 'on'}],

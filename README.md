@@ -229,9 +229,17 @@ The **Price-responsive demand** switch replaces that with a **step demand curve*
 around the baseline for each tier — blocks that **shed** when the nodal price rises
 above their willingness to pay, and blocks that **raise** demand when it falls below.
 
+In the dashboard it is the **Price-responsive demand** switch in the sidebar; on the
+command line:
+
 ```bash
 python src/solve.py --elastic-demand --winter High
 ```
+
+**Off** (the default) is the original model: fixed demand volumes with GPG and
+industrial curtailment at their flat $22 and $120/GJ strikes. **On** adds the step
+curves below. Runs are cached separately — scenario keys gain an `_Elastic` segment —
+so the two can be compared side by side without re-solving either.
 
 Every block is derived by `src/build_demand_curves.py`, which writes
 `data/curtailment_params.csv` and `data/gpg_capacity.csv`.
