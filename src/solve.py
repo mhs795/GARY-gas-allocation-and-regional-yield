@@ -68,7 +68,7 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     scenario) where perfect foresight would unrealistically pre-build ahead of it.
 
     ``elastic_demand=True`` replaces must-serve mass-market demand with the step
-    demand curve calibrated in build_massmarket_blocks.py, so distribution load
+    demand curves calibrated in build_demand_curves.py, so distribution load
     sheds when the nodal price exceeds its willingness to pay instead of being
     served at any cost. Off by default: it changes every scenario, not just
     reservation runs, so the inelastic case stays the comparison baseline.
@@ -156,7 +156,10 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         discount_rate=discount_rate,
         strike_gpg=dispatch_models[start_year].strike_gpg,
         strike_ind=dispatch_models[start_year].strike_ind,
-        mm_blocks=mm_blocks)
+        mm_blocks=mm_blocks,
+        ind_raise=dispatch_models[start_year].ind_raise,
+        gpg_raise=dispatch_models[start_year].gpg_raise,
+        gpg_capacity=dispatch_models[start_year].gpg_capacity)
     cap.build_model()
     status = cap.solve(mip_gap=mip_gap)
     if status != "ok":

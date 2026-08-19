@@ -61,6 +61,10 @@ SERIES_SCHEMA = {
     # Absent from scenarios solved with elastic demand off.
     'massmarket': {'Day': 'day', 'Node': 'name', 'Block': 'name', 'Demand': 'val',
                    'Served': 'val', 'Curtailed': 'val'},
+    # Demand taken up because gas was cheap, one row per block that fired.
+    # Absent from scenarios solved with elastic demand off.
+    'demand_raise': {'Day': 'day', 'Node': 'name', 'Tier': 'name', 'Block': 'name',
+                     'Value': 'val'},
 }
 SERIES_COLUMNS = {k: list(v) for k, v in SERIES_SCHEMA.items()}
 

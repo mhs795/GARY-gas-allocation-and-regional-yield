@@ -1433,20 +1433,29 @@ def update_header_kpis(key, end_year):
     # the elastic lever existed, and from any run with it switched off.
     mm_shed_pj = sum(float(r['massmarket']['Curtailed'].sum())
                      for r in filtered if len(r.get('massmarket', ()))) / 1000
+    # Demand taken up because gas was cheap (GPG expansion and industrial uptake).
+    raised_pj = sum(float(r['demand_raise']['Value'].sum())
+                    for r in filtered if len(r.get('demand_raise', ()))) / 1000
+    elastic_run = any(r.get('elastic_demand') for r in filtered)
     chips = [
         kpi_card('Final Price',  final_price),
-        # Under a reservation this is NOT comparable with an unreserved run: the
+        # Not comparable across runs in two separate ways. Under a reservation the
         # objective carries no export revenue, so removing export demand always
-        # lowers it. It is the cost of serving what is left, not a welfare number.
-        kpi_card('System Cost' + (' (served gas only)' if reserved_pj else ''),
+        # lowers it. Under elastic demand it also carries a negative benefit term
+        # for demand taken up cheaply, which is a surplus, not a cost. Either way
+        # it is the cost of serving what was served, not a welfare number.
+        kpi_card('System Cost' + (' (served gas only)' if reserved_pj else '')
+                 + (' (net of demand benefit)' if elastic_run and not reserved_pj else ''),
                  f"${total_cost/1e6:,.0f}M"),
         kpi_card('Total Supply', f"{summary['Production_PJ'].sum():,.0f} PJ"),
         kpi_card('New Projects', str(len(builds_df))),
     ]
     if reserved_pj:
         chips.insert(3, kpi_card('Gas Reserved', f"{reserved_pj:,.0f} PJ"))
+    if raised_pj:
+        chips.insert(3, kpi_card('Demand Raised', f"{raised_pj:,.0f} PJ"))
     if mm_shed_pj:
-        chips.insert(3, kpi_card('Demand Response', f"{mm_shed_pj:,.0f} PJ"))
+        chips.insert(3, kpi_card('Demand Shed', f"{mm_shed_pj:,.0f} PJ"))
     return pretty_key(key), chips
 
 # ---------------------------------------------------------------------------

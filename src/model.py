@@ -1,6 +1,7 @@
 import pyomo.environ as pyo
 import pandas as pd
 import os
+import re
 
 import results_io
 import solvers
@@ -52,7 +53,7 @@ RESERVATION_LEVELS = [0.05, 0.10, 0.20, 0.30]
 # is the willingness-to-pay schedule of the mass market, discretised.
 #
 # The blocks live in data/curtailment_params.csv (rows MassMarket_B2..Bn) and are
-# DERIVED, not asserted: build_massmarket_blocks.py fits a constant-elasticity
+# DERIVED, not asserted: build_demand_curves.py fits a constant-elasticity
 # curve Q(P) = Q0 (P/P0)^e to a log-spaced price grid, using
 #   P0 = $13.56/GJ  ACCC Gas Inquiry, producer offers for 2026 supply
 #   e  = -0.180     short-run own-price elasticity of natural gas demand,
@@ -83,29 +84,58 @@ VOLL_PER_GJ = 300.0
 WINTER_DAYS = range(150, 251)
 
 
-def load_massmarket_blocks(data_dir):
-    """Read the mass-market step demand curve from curtailment_params.csv.
+def load_demand_blocks(data_dir):
+    """Read every demand-curve block from curtailment_params.csv.
 
-    Returns ``[(name, strike $/GJ, share of node demand, winter scale), ...]``
-    ordered cheapest-to-shed first. Blocks priced at or above VOLL_PER_GJ are
-    dropped: shedding one would cost the same as the shortage variable already in
-    the model, so it would add a degenerate duplicate rather than any behaviour.
+    Returns ``{(tier, direction): [(name, price $/GJ, share, winter scale), ...]}``
+    where tier is MassMarket/Industrial/GPG and direction is 'shed' or 'raise'.
+    Shed blocks come back cheapest-to-shed first, raise blocks highest-value
+    first, which is the order each is consumed in.
+
+    Shed blocks priced at or above VOLL_PER_GJ are dropped: shedding one would
+    cost the same as the shortage variable already in the model, so it would add
+    a degenerate duplicate rather than any behaviour.
     """
     try:
         df = pd.read_csv(os.path.join(data_dir, "curtailment_params.csv"))
     except FileNotFoundError:
-        return []
-    df = df[df['Tier'].astype(str).str.startswith("MassMarket_")]
-    if df.empty or 'Share' not in df.columns:
-        return []
-    out = []
-    for _, r in df.sort_values('StrikePrice').iterrows():
-        strike, share = float(r['StrikePrice']), float(r['Share'])
-        if strike >= VOLL_PER_GJ or share <= 0:
+        return {}
+    if 'Share' not in df.columns or 'Direction' not in df.columns:
+        return {}
+    out = {}
+    for _, r in df.iterrows():
+        name = str(r['Tier'])
+        m = re.match(r'^(MassMarket|Industrial|GPG)_([BU])\d+$', name)
+        if not m or pd.isna(r['Share']):
             continue
-        ws = float(r['WinterScale']) if 'WinterScale' in df.columns and pd.notna(r['WinterScale']) else 1.0
-        out.append((str(r['Tier']), strike, share, ws))
+        tier, direction = m.group(1), str(r['Direction'])
+        price, share = float(r['StrikePrice']), float(r['Share'])
+        if share <= 0 or (direction == 'shed' and price >= VOLL_PER_GJ):
+            continue
+        ws = float(r['WinterScale']) if pd.notna(r.get('WinterScale')) else 1.0
+        out.setdefault((tier, direction), []).append((name, price, share, ws))
+    for (tier, direction), blocks in out.items():
+        # Cheapest first when shedding, most valuable first when raising.
+        blocks.sort(key=lambda b: b[1], reverse=(direction == 'raise'))
     return out
+
+
+def load_gpg_capacity(data_dir):
+    """Per-node GPG expansion ceiling, as ``{node: (nameplate TJ/d, cap multiple)}``.
+
+    Written by build_demand_curves.py. Nameplate is the physical ceiling from the
+    Gas Bulletin Board register; the cap multiple is a modelling guardrail --
+    GARY models gas, not the NEM, and the fleet runs at ~9% of nameplate, so
+    unbounded expansion would let an unmodelled electricity market set gas demand.
+    """
+    try:
+        df = pd.read_csv(os.path.join(data_dir, "gpg_capacity.csv"))
+    except FileNotFoundError:
+        return {}
+    cap = df['ExpansionCap'].astype(float) if 'ExpansionCap' in df.columns else 1.0
+    return {n: (float(np_), float(c)) for n, np_, c
+            in zip(df['Node'], df['Nameplate'].astype(float),
+                   cap if hasattr(cap, '__iter__') else [cap] * len(df))}
 
 
 def apply_lng_reservation(demand_df, share):
@@ -205,13 +235,18 @@ class GasMarketModel:
             strikes = {}
         self.strike_gpg = float(strikes.get('GPG', 22.0))
         self.strike_ind = float(strikes.get('Industrial', 120.0))
-        self.mm_blocks = load_massmarket_blocks(data_dir) if self.elastic_demand else []
-        if self.elastic_demand and not self.mm_blocks:
-            # Silently falling back to must-serve demand would look like the lever
+        blocks = load_demand_blocks(data_dir) if self.elastic_demand else {}
+        self.mm_blocks = blocks.get(('MassMarket', 'shed'), [])
+        self.mm_raise = blocks.get(('MassMarket', 'raise'), [])
+        self.ind_raise = blocks.get(('Industrial', 'raise'), [])
+        self.gpg_raise = blocks.get(('GPG', 'raise'), [])
+        self.gpg_capacity = load_gpg_capacity(data_dir) if self.elastic_demand else {}
+        if self.elastic_demand and not blocks:
+            # Silently falling back to fixed demand would look like the lever
             # simply had no effect, which is indistinguishable from a real result.
             raise RuntimeError(
-                "elastic_demand=True but no MassMarket_* blocks were found in "
-                "data/curtailment_params.csv. Run: python src/build_massmarket_blocks.py")
+                "elastic_demand=True but no demand-curve blocks were found in "
+                "data/curtailment_params.csv. Run: python src/build_demand_curves.py")
         self.gpg_nodes = sorted({n for (n, _) in self.gpg_demand})
         self.ind_nodes = sorted({n for (n, _) in self.ind_demand})
 
@@ -263,6 +298,40 @@ class GasMarketModel:
         self._mm_available = mm_available
         gpg_dem = self.gpg_demand
         ind_dem = self.ind_demand
+
+        # --- Demand that RISES when gas is cheap -----------------------------
+        # Shedding is penalised, so serving is implicitly worth the strike price.
+        # Expansion is the mirror image: a block adds demand and pays its value
+        # into the objective as a negative cost, so the solver takes it up only
+        # while the marginal cost of supplying it stays below what it is worth.
+        # At an interior optimum the nodal price equals the block's value, which
+        # is exactly a demand curve. Every block is bounded above, which is what
+        # keeps this from reproducing the unbounded export-revenue formulation
+        # that drove Perth prices negative in the removed WA build.
+        ind_raise_val = {b[0]: b[1] for b in self.ind_raise}
+        ind_raise_share = {b[0]: b[2] for b in self.ind_raise}
+        gpg_raise_val = {b[0]: b[1] for b in self.gpg_raise}
+        gpg_raise_share = {b[0]: b[2] for b in self.gpg_raise}
+
+        def ind_raise_available(n, blk, t):
+            return ind_dem.get((n, t), 0) * ind_raise_share[blk]
+
+        def gpg_raise_available(n, blk, t):
+            """Headroom for extra GPG: physical nameplate less what already runs,
+            and never more than the cap multiple of baseline demand."""
+            base = gpg_dem.get((n, t), 0)
+            nameplate, cap_mult = self.gpg_capacity.get(n, (0.0, 0.0))
+            headroom = max(0.0, min(nameplate - base, cap_mult * base))
+            return headroom * gpg_raise_share[blk]
+        self._ind_raise_available = ind_raise_available
+        self._gpg_raise_available = gpg_raise_available
+
+        m.INDRaise = pyo.Set(initialize=[b[0] for b in self.ind_raise])
+        m.GPGRaise = pyo.Set(initialize=[b[0] for b in self.gpg_raise])
+        gpg_raise_nodes = sorted({n for n in m.GPGNodes if n in self.gpg_capacity})
+        m.GPGRaiseNodes = pyo.Set(initialize=gpg_raise_nodes)
+        m.ind_expand = pyo.Var(m.INDNodes, m.INDRaise, m.T, domain=pyo.NonNegativeReals)
+        m.gpg_expand = pyo.Var(m.GPGRaiseNodes, m.GPGRaise, m.T, domain=pyo.NonNegativeReals)
         arc_data = self.arcs.set_index('Name').to_dict('index')
         supply_dict = self.supply.set_index(['Node', 'IsPotential']).to_dict('index')
         exp_data = self.expansion.set_index('Name').to_dict('index')
@@ -285,7 +354,15 @@ class GasMarketModel:
             # that. The inelastic remainder is priced by shortage_penalty at VOLL.
             mm_pen = sum(m.mm_curtail[n, b, t] * mm_strike[b] * 1000
                          for n in m.MMNodes for b in m.MMBlocks for t in m.T)
-            return prod_cost + trans_cost + shortage_penalty + storage_cost + exp_capex + gpg_pen + ind_pen + mm_pen
+            # Benefit of demand taken up when gas is cheap; negative, so the
+            # solver serves a block only while supplying it costs less than its
+            # value. This makes total_cost NOT comparable with an inelastic run.
+            ind_benefit = sum(m.ind_expand[n, b, t] * ind_raise_val[b] * 1000
+                              for n in m.INDNodes for b in m.INDRaise for t in m.T)
+            gpg_benefit = sum(m.gpg_expand[n, b, t] * gpg_raise_val[b] * 1000
+                              for n in m.GPGRaiseNodes for b in m.GPGRaise for t in m.T)
+            return (prod_cost + trans_cost + shortage_penalty + storage_cost + exp_capex
+                    + gpg_pen + ind_pen + mm_pen - ind_benefit - gpg_benefit)
         m.obj = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
 
         arcs_to = {n: [a for a in m.Arcs if arc_data[a]['To'] == n] for n in m.Nodes}
@@ -303,6 +380,8 @@ class GasMarketModel:
                     (m.ind_curtail[n, t] if n in m.INDNodes else 0) +
                     (sum(m.mm_curtail[n, b, t] for b in m.MMBlocks) if n in m.MMNodes else 0) ==
                     node_demand.get((n, t), 0) + gpg_dem.get((n, t), 0) + ind_dem.get((n, t), 0) +
+                    (sum(m.ind_expand[n, b, t] for b in m.INDRaise) if n in m.INDNodes else 0) +
+                    (sum(m.gpg_expand[n, b, t] for b in m.GPGRaise) if n in m.GPGRaiseNodes else 0) +
                     sum(m.flow[a, t] for a in arcs_from[n]))
         m.balance = pyo.Constraint(m.Nodes, m.T, rule=balance_rule)
 
@@ -314,6 +393,11 @@ class GasMarketModel:
         # A mass-market block can shed at most its own slice of that node's load.
         m.mm_curtail_cap = pyo.Constraint(m.MMNodes, m.MMBlocks, m.T,
             rule=lambda m, n, b, t: m.mm_curtail[n, b, t] <= mm_available(n, b, t))
+        # A block can add at most its own slice of the available headroom.
+        m.ind_expand_cap = pyo.Constraint(m.INDNodes, m.INDRaise, m.T,
+            rule=lambda m, n, b, t: m.ind_expand[n, b, t] <= ind_raise_available(n, b, t))
+        m.gpg_expand_cap = pyo.Constraint(m.GPGRaiseNodes, m.GPGRaise, m.T,
+            rule=lambda m, n, b, t: m.gpg_expand[n, b, t] <= gpg_raise_available(n, b, t))
 
         def supply_cap_rule(m, node, is_pot, t):
             cap = supply_dict[node, is_pot]['Capacity']
@@ -403,7 +487,7 @@ class GasMarketModel:
 
     def get_results(self):
         m = self.model
-        res = {k: [] for k in ['prices', 'production', 'flow', 'storage', 'shortage', 'builds', 'gpg', 'industrial', 'massmarket']}
+        res = {k: [] for k in ['prices', 'production', 'flow', 'storage', 'shortage', 'builds', 'gpg', 'industrial', 'massmarket', 'demand_raise']}
         demand_dict = self.demand.set_index(['Node', 'Day'])['Demand'].to_dict()
         supply_at = {n: [s for s in m.Supply if s[0] == n] for n in m.Nodes}
 
@@ -416,9 +500,28 @@ class GasMarketModel:
         gpg_cv = m.gpg_curtail.get_values()
         ind_cv = m.ind_curtail.get_values()
         mm_cv = m.mm_curtail.get_values()
+        ind_ev = m.ind_expand.get_values()
+        gpg_ev = m.gpg_expand.get_values()
+
+        # Nodes whose balance dual is a meaningful price. A node that never has
+        # demand and never carries gas has a degenerate dual -- the constraint is
+        # 0 == 0, so the solver is free to report anything, and it reports the
+        # shortage penalty. Beetaloo (undeveloped supply, no demand) sat at a flat
+        # $300/GJ for the whole horizon that way, which is not a price.
+        has_demand = {n for n in m.Nodes
+                      if any(demand_dict.get((n, t), 0) + self.gpg_demand.get((n, t), 0)
+                             + self.ind_demand.get((n, t), 0) > 0 for t in m.T)}
+        carries_gas = {s_[0] for s_ in m.Supply for t in m.T if pv[s_[0], s_[1], t] > 0.01}
+        for a in m.Arcs:
+            if any(fv[a, t] > 0.01 for t in m.T):
+                row = self.arcs[self.arcs['Name'] == a].iloc[0]
+                carries_gas.update([row['From'], row['To']])
+        priced_nodes = has_demand | carries_gas
         
         for t in m.T:
             for n in m.Nodes:
+                if n not in priced_nodes:
+                    continue
                 p = (m.dual[m.balance[n, t]]/1000 ) if hasattr(m, 'dual') and m.balance[n, t] in m.dual else 0.0
                 res['prices'].append({'Day': t, 'Node': n, 'Price': float(p)})
                 if sv[n, t] > 0.1: res['shortage'].append({'Day': t, 'Node': n, 'Value': float(sv[n, t])})
@@ -450,6 +553,19 @@ class GasMarketModel:
                         dem = self._mm_available(n, b, t)
                         res['massmarket'].append({'Day': t, 'Node': n, 'Block': b, 'Demand': float(dem),
                                                   'Served': float(dem - cur), 'Curtailed': cur})
+            # Demand taken up because gas was cheap; only rows that fired.
+            for n in m.INDNodes:
+                for b in m.INDRaise:
+                    v = float(ind_ev[n, b, t] or 0)
+                    if v > 0.001:
+                        res['demand_raise'].append({'Day': t, 'Node': n, 'Tier': 'Industrial',
+                                                    'Block': b, 'Value': v})
+            for n in m.GPGRaiseNodes:
+                for b in m.GPGRaise:
+                    v = float(gpg_ev[n, b, t] or 0)
+                    if v > 0.001:
+                        res['demand_raise'].append({'Day': t, 'Node': n, 'Tier': 'GPG',
+                                                    'Block': b, 'Value': v})
 
         for e in m.Expansion:
             if pyo.value(m.build[e]) > 0.5: res['builds'].append(e)

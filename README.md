@@ -48,7 +48,7 @@ The first run will take 2–3 minutes while dependencies install. After that, op
 1. Pick a **GSOO Baseline** scenario — **Step Change**, **Accelerated Transition**, or **Slower Growth** — in the sidebar
 2. Set **Winter Stress** and **LNG Demand** levels (these layer on top of the chosen baseline)
 2. Optionally switch on **Gas reservation** and pick the share of LNG exports to reserve (5/10/20/30%),
-   and/or **Price-responsive mass-market demand**
+   and/or **Price-responsive demand**
 3. Click **Run Scenario** to solve one combination (~1–2 min)
 4. Click **Run All Scenarios** to pre-calculate **every combination** — all 3 baselines × 3 Winter × 3 LNG = 27 scenarios (~45 min)
 5. Click **Regenerate All Data** to rebuild all derived demand data from source (GBB + GSOO, all three baselines)
@@ -187,24 +187,39 @@ The benefit therefore **saturates at about 20%**, and the finding is that a
 reservation on its own does not fix the southern winter without pipeline capacity to
 move the gas.
 
-Price-responsive mass-market demand was the obvious candidate for the missing
-channel, so it was built (see below) and tested. **It does not change the answer.**
-On the same stressed 2030 with the demand curve switched on, a 20% reservation still
-cuts production by 263,018 TJ and still moves domestic gas consumed by 0.0 TJ. The
-reason is visible in the flows: all mass-market shedding is at Melbourne, on 58
-winter days, at $27-54/GJ — and on those exact node-days the price is *identical*
-with and without the reservation ($32.73 mean either way). The relief lands in
-Queensland instead (APLNG, Brisbane, GLNG, QCLNG, Gladstone and Surat all -$4.41/GJ)
-because `SWQP_Rev` runs at its full 512 TJ/d on all 58 of those days once the
-reservation is applied, against 358 TJ/d and only 2 days at capacity without it.
+Endogenous demand was the obvious candidate for the missing channel, and it was built
+and tested in two stages.
 
-The binding constraint is **transport, not molecules**. A reservation frees gas in
-Queensland that physically cannot reach the market willing to pay for it on the days
-that matter, so no formulation of domestic demand will make it deliver volume. What
-elastic demand changes is *who gives way*: unserved load and industrial curtailment
-both go to zero and mass-market shedding takes their place, and average prices fall
-(system mean $29.72 -> $25.11). It is a better model of the market, not a fix for the
-reservation.
+**Shed-only demand did not change the answer at all.** With mass-market load able to
+shed but not expand, a 20% reservation still cut production by 263,018 TJ and still
+moved domestic gas consumed by 0.0 TJ. All shedding was at Melbourne, on 58 winter
+days, and on those exact node-days the price was *identical* with and without the
+reservation ($32.73 mean either way). The relief landed in Queensland instead (APLNG,
+Brisbane, GLNG, QCLNG, Gladstone and Surat all −$4.41/GJ) because `SWQP_Rev` ran at
+its full 512 TJ/d on all 58 of those days under the reservation, against 358 TJ/d and
+only 2 days at capacity without it. **The binding constraint is transport, not
+molecules** — on the days that matter, freed Queensland gas physically cannot reach
+the southern market that would pay for it.
+
+**Demand that can also rise changes it, but only at the margin.** Once GPG and
+industrial demand can expand when gas is cheap, the same 20% reservation leaves
+239,989 TJ in the ground rather than 263,018 TJ, and 23,178 TJ of domestic demand is
+taken up — **8.7% of the reserved volume**. So a reservation is no longer a *pure*
+export cap, but **91% of the reserved gas still stays in the ground**.
+
+What absorbs it is worth reading closely:
+
+| | |
+| --- | --- |
+| gas-powered generation | 22,631 TJ (97.6%) |
+| industrial uptake | 548 TJ (2.4%) |
+| in Queensland/NT | 72.9% |
+| in the southern states | 27.1% |
+
+Almost all of it is Queensland GPG burning cheap gas *because it is stranded there* —
+QLD nodal prices fall to $4.17/GJ, below the $6.43/GJ a CCGT can pay to displace coal.
+That is the transport constraint showing up again from the other side: the gas is
+absorbed where it is trapped, not where it is wanted.
 
 > **System Cost is not comparable across reservation levels.** The objective carries
 > no export revenue, so removing export demand always lowers it — the figure is the
@@ -212,78 +227,179 @@ reservation.
 > **System Cost (served gas only)** and adds a **Gas Reserved** card when a
 > reservation is active.
 
-## Price-responsive mass-market demand
+## Endogenous demand
 
-Mass-market (distribution-level residential and commercial) gas is normally a fixed
-must-serve volume. The **Price-responsive mass-market demand** switch replaces it
-with a **step demand curve**: the load at each distribution node is split into
-blocks, each with a strike price, and a block sheds rather than being supplied once
-the nodal price exceeds its strike. LNG trains are excluded — their volume is an
-export commitment, not household load.
+Demand is normally a fixed volume: whatever the GSOO baseline says, at any price.
+The **Price-responsive demand** switch replaces that with a **step demand curve**
+around the baseline for each tier — blocks that **shed** when the nodal price rises
+above their willingness to pay, and blocks that **raise** demand when it falls below.
 
 ```bash
 python src/solve.py --elastic-demand --winter High
 ```
 
-The blocks are **derived, not asserted**. `src/build_massmarket_blocks.py` fits a
-constant-elasticity curve `Q(P) = Q0 (P/P0)^e` on a log-spaced price grid and writes
-the result into `data/curtailment_params.csv`:
+Every block is derived by `src/build_demand_curves.py`, which writes
+`data/curtailment_params.csv` and `data/gpg_capacity.csv`.
+
+### The reference price, and why it is the model's own
+
+An elasticity measures response to a price *deviation*, so it needs the price being
+deviated from. **GARY's nodal prices are LP duals** — short-run marginal cost plus
+transport — and come out at **$4–8/GJ** against field costs of $4–14/GJ. They are
+*not* east coast contract prices ($13–15/GJ), which are set by LNG export parity and
+carry capital recovery and resource rent on top of SRMC.
+
+Calibrating against a contract price was the original mistake here. It put **93.8% of
+node-days below the reference**, so the shed blocks almost never fired, and an upward
+response would have inflated demand ~16% everywhere, permanently — a pure artefact of
+comparing two different price series. There is a second reason to use the model's own
+price: the GSOO baselines already embed AEMO's assumed price path, so an elasticity
+applied to the absolute level would count the price response twice.
+
+`REFERENCE_PRICE` is therefore the **demand-weighted mean nodal dual of the inelastic
+baseline run**, $5.49/GJ. The generator recomputes it from the cached baseline and
+warns if it has drifted, so a change that moves baseline prices cannot quietly leave
+the curves calibrated against a stale number.
+
+### Calibration inputs
 
 | input | value | source |
 | --- | --- | --- |
-| `P0` reference price | $13.56/GJ | ACCC Gas Inquiry 2017-2030, producer offers for 2026 supply (the east coast contract range has held at $13-15/GJ since 2023) |
-| `e` own-price elasticity | -0.180 (short run) | Labandeira, Labeaga & López-Otero (2017), "A meta-analysis on the price elasticity of energy demand", *Energy Policy* 102, 549-568, Table 6 — significant at 1%; long-run counterpart -0.684, 230-estimate sample mean -0.184 |
+| `REFERENCE_PRICE` | $5.49/GJ | demand-weighted mean dual, inelastic baseline (StepChange, Winter Medium, LNG Medium) |
+| `ELASTICITY` (shed) | −0.180 short run | Labandeira, Labeaga & López-Otero (2017), "A meta-analysis on the price elasticity of energy demand", *Energy Policy* 102, 549–568, Table 6 — significant at 1%; long-run −0.684, 230-estimate sample mean −0.184 |
+| `ASYMMETRY` (raise) | 0.5 × shed | Direction from Gately & Huntington (2002), "The asymmetric effects of changes in price and income on energy and oil demand", *The Energy Journal* 23(1), 19–55 — efficiency investment and plant closure triggered by high prices do not reverse when prices fall. **The ratio is a judgement, not a measurement** |
+| `HEAT_RATES` | 7 / 10.64 / 13 GJ/MWh | CCGT, NEM capacity-weighted average, OCGT (AEMO 2021, via Griffith University 2022-08) |
+| `COAL_SRMC` | $45/MWh | NEM black coal SRMC was ~$26–28/MWh in 2020 and rose sharply after 2022. **The single most influential assumption behind the GPG response** |
 
-which gives strikes at 2×, 4× and 8× the reference price:
+### Elasticities — every value in one place
 
-| block | strike | share of mass-market load |
-| --- | --- | --- |
-| `MassMarket_B2` | $27.12/GJ | 11.73% |
-| `MassMarket_B3` | $54.24/GJ | 10.35% |
-| `MassMarket_B4` | $108.48/GJ | 9.14% |
-| inelastic core | value of lost load | 68.78% |
+All own-price elasticities of **natural gas** demand. GARY's shed side uses the
+short-run figure; the raise side scales it by `ASYMMETRY`.
 
-The inelastic core is **not** a block. It is the existing `shortage` variable priced
-at `VOLL_PER_GJ`, which already means "served unless nothing can reach it, valued at
-the value of lost load" — a block at VOLL would just duplicate it. Both solve stages
-see the same curve: the capacity layer averages each block's availability over the
-real days in a representative-day bucket, so it cannot size the network against
-demand the dispatch layer will then shed.
+| elasticity | value | used for | source |
+| --- | --- | --- | --- |
+| Short-run, own-price | **−0.180** | **the shed blocks** (all tiers) | Labandeira et al. (2017) Table 6, meta-regression estimate, significant at 1% |
+| Long-run, own-price | −0.684 | not used — see note below | Labandeira et al. (2017) Table 6, significant at 10% |
+| Sample mean, short run | −0.184 | robustness check on the figure used | Labandeira et al. (2017), mean of 230 natural gas estimates |
+| Sample mean, long run | −0.568 | context | Labandeira et al. (2017), same 230 estimates |
+| **Raise-side, short run** | **−0.090** | **the industrial raise blocks** | `ASYMMETRY (0.5) × −0.180`; direction from Gately & Huntington (2002), ratio is a judgement |
 
-Run this again if the ACCC reference price moves materially:
+For comparison, the same meta-analysis puts short-run electricity at −0.126,
+gasoline at −0.293, diesel at −0.153 and heating oil at −0.017 (not significant).
+Gas is the second most price-responsive fuel in that set in the short run, and the
+most responsive of all in the long run.
 
-```bash
-python src/build_massmarket_blocks.py
-```
+**Why the long-run elasticity is not used.** GARY dispatches daily and the shed
+decision is a daily one — a cold Tuesday in Melbourne, not a decade of appliance
+turnover. Using −0.684 would attribute a capital-stock response to a single day's
+price. The long-run figure is the right number for a question GARY does not ask:
+how the *baseline* demand trajectory itself responds to a sustained price level.
+That trajectory comes from the AEMO GSOO instead, which is also why the elasticity
+here applies to deviations from the baseline rather than to the price level.
 
-**Three caveats worth carrying into any result.**
+**What each block implies.** The blocks are increments of the fitted curve, so the
+elasticity is embedded rather than restated per block:
 
-1. **Extrapolation.** -0.18 is estimated on the modest price variation in the
-   historical record, not on prices 8× the contract price. The upper blocks
-   extrapolate the fitted curve rather than measuring anything. The inelastic core
-   caps how far that extrapolation can run.
-2. **Frequency mismatch.** The literature elasticity is monthly or annual; GARY
-   applies it to a daily nodal price. Kanellakis et al. find European gas demand
-   shows little or no daily price response *through the heating season*, with the
-   response concentrated in the shoulder months ("The daily price and income
-   elasticity of natural gas demand in Europe", *Energy Reports* 8, 2022). GARY's
-   winter peak is exactly where it sheds, so this matters. The `WinterScale` column
-   in `curtailment_params.csv` damps each block's response over the winter window
-   and **defaults to 1.0 — no adjustment** — so the shipped calibration is exactly
-   what the elasticity implies and nothing more. Set it to ~0.3-0.5 to test the
-   daily-frequency evidence.
-3. **VOLL.** GARY penalises unserved gas at $300/GJ. The National Gas Rules set VoLL
-   at **$800/GJ** in the Victorian DWGM and the STTM market price cap at **$400/GJ**
-   (AEMO, *Gas Market Parameters Review 2022 — Final Recommendations*, Feb 2023).
-   GARY's figure is conservative and is left alone because changing it moves every
-   historical result, but it is the number to revisit if VOLL drives a conclusion.
+| block | price vs reference | cumulative demand change | implied by |
+| --- | --- | --- | --- |
+| `MassMarket_B2` | 2× ($10.98) | −11.73% | `1 − 2^−0.18` |
+| `MassMarket_B3` | 4× ($21.96) | −22.08% | `1 − 4^−0.18` |
+| `MassMarket_B4` | 8× ($43.92) | −31.22% | `1 − 8^−0.18` |
+| `Industrial_U1` | 0.85× ($4.67) | +1.47% | `0.85^−0.09 − 1` |
+| `Industrial_U2` | 0.70× ($3.84) | +3.26% | `0.70^−0.09 − 1` |
+| `Industrial_U3` | 0.55× ($3.02) | +5.53% | `0.55^−0.09 − 1` |
 
-The lever is **off by default**, so the 28 cached scenarios stay valid and the
-inelastic case remains the comparison baseline. Scenario keys gain an `_Elastic`
-segment, results carry a `massmarket` series, and the dashboard adds a **Demand
-Response** KPI in PJ.
+So the mass-market curve gives up ~31% of load by an eightfold price rise, with the
+remaining **68.78% inelastic** — served, or unserved at the value of lost load. The
+industrial curve adds ~5.5% at 55% of the reference price. Both are deliberately
+modest: gas demand is inelastic, and the numbers say so.
 
-## The results cache
+**GPG has no elasticity.** Its raise ladder is an engineering substitution
+threshold — `COAL_SRMC / heat_rate`, the gas price at which a generator can afford
+to displace coal — not an econometric response. Its shed side is the existing flat
+$22/GJ strike. Do not read the GPG blocks as an elasticity estimate; they are the
+largest demand response in the model and none of it comes from the elasticity
+literature.
+
+### The blocks
+
+| tier | direction | blocks | basis |
+| --- | --- | --- | --- |
+| Mass-market | shed | $10.98 / $21.96 / $43.92 for 11.7% / 10.4% / 9.1% of load | elasticity at 2×, 4×, 8× reference |
+| Mass-market | **none** | — | see below |
+| Industrial | shed | flat $120/GJ strike (unchanged) | existing tier |
+| Industrial | raise | $4.67 / $3.84 / $3.02 for 1.5% / 1.8% / 2.3% | asymmetric elasticity at 0.85×, 0.70×, 0.55× reference |
+| GPG | shed | flat $22/GJ strike (unchanged) | existing tier |
+| GPG | raise | $6.43 / $4.23 / $3.46, a third of node headroom each | `COAL_SRMC / heat_rate` |
+
+**Mass-market demand does not rise when gas gets cheap.** Victoria
+[banned gas connections in new homes from 1 January 2024](https://www.abc.net.au/news/2023-07-28/victoria-bans-gas-new-homes-housing-developments-emissions/102659636)
+and ~80% of Victorian homes were on gas; the sector is in policy-driven structural
+decline and a lower commodity price does not reverse a connection ban. Households
+shed but never expand (`MASSMARKET_RAISES = False` to revisit).
+
+**The GPG ladder is engineering, not econometrics.** A generator's willingness to pay
+per GJ is the cost of the generation it displaces divided by its heat rate. Volume is
+bounded by nameplate capacity from the Gas Bulletin Board register (36 of 37 modelled
+facilities matched) — but GARY models gas, **not the NEM**, and the fleet runs at
+**8.9% of nameplate** (321 TJ/d against 3,619 TJ/d). Unbounded expansion would let an
+unmodelled electricity market set gas demand, so `GPG_EXPANSION_CAP` also limits
+expansion to a multiple of baseline GPG demand (default 1.0 — GPG may at most double).
+That is a modelling guardrail, not a finding.
+
+### How expansion works, and why it does not repeat the WA mistake
+
+Shedding is *penalised*, so serving is implicitly worth the strike price. Expansion is
+the mirror image: a block adds demand and pays its value into the objective as a
+**negative cost**, so the solver takes it up only while supplying it costs less than
+it is worth. At an interior optimum the nodal price equals the block's value — exactly
+a demand curve.
+
+This is the same shape as the export-revenue term that drove Perth prices negative in
+the removed WA DomGas build, so it is worth being precise about the difference: there,
+revenue was coupled through a *reservation constraint* that forced domestic service.
+Here **every block is bounded above** by physical headroom, and no constraint forces
+uptake. Verified across the stressed 2030: minimum nodal price $4.90/GJ, **no negative
+prices**. Check this again if the formulation changes.
+
+### Three caveats worth carrying into any result
+
+1. **Extrapolation.** −0.18 is estimated on the modest price variation in the historical
+   record. The upper shed blocks extrapolate the fitted curve rather than measuring
+   anything; the inelastic core caps how far that runs.
+2. **Frequency mismatch.** The literature elasticity is monthly or annual; GARY applies
+   it to a daily nodal price. Kanellakis et al. find European gas demand shows little or
+   no daily price response *through the heating season*, with the response concentrated
+   in the shoulder months ("The daily price and income elasticity of natural gas demand
+   in Europe", *Energy Reports* 8, 2022). GARY sheds almost entirely in winter, so this
+   matters. `WinterScale` damps it and **defaults to 1.0 — no adjustment**; set ~0.3–0.5
+   to test the daily-frequency evidence.
+3. **VOLL.** GARY penalises unserved gas at $300/GJ. The National Gas Rules set VoLL at
+   **$800/GJ** in the Victorian DWGM and the STTM market price cap at **$400/GJ** (AEMO,
+   *Gas Market Parameters Review 2022 — Final Recommendations*, Feb 2023). GARY's figure
+   is conservative and left alone because changing it moves every historical result.
+
+The lever is **off by default**, so the 28 cached scenarios stay valid and the inelastic
+case remains the comparison baseline. Scenario keys gain an `_Elastic` segment; results
+carry `massmarket` and `demand_raise` series; the dashboard adds **Demand Shed** and
+**Demand Raised** KPIs in PJ.
+
+> **System Cost is not comparable with an inelastic run.** The objective now carries a
+> negative benefit term for demand taken up cheaply, which is a surplus, not a cost. The
+> dashboard relabels the KPI **System Cost (net of demand benefit)**.
+
+### Nodes without a meaningful price
+
+A node that never has demand and never carries gas has a **degenerate dual**: its
+balance constraint reads `0 == 0`, so the solver may report anything within a range,
+and it reports the shortage penalty. Beetaloo (undeveloped supply, no demand assigned)
+sat at a flat **$300/GJ for the whole horizon** that way, which is not a price — it
+pulled a naive cross-node mean from $5.81 to $22.15. Price rows are now emitted only
+for nodes that have demand or carry gas, so such nodes simply do not appear in price
+outputs. The headline `Avg_Price` KPI was always production-weighted and so was never
+affected; per-node price charts were.
+
+## The results cache## The results cache
 
 Solved scenarios are cached in `src/data/precalculated_results.pkl` so the dashboard
 can redraw without re-solving. Each solved year is stored as one DataFrame per
@@ -322,5 +438,5 @@ python src/migrate_results.py            # rewrites in place, keeps a .bak
 - **Horizon:** 2025–2050 (annual dispatch, 365 days/year)
 - **Solve method:** two-stage full-horizon — a perfect-foresight capacity-expansion layer (NPV over representative days) sets the build schedule, then each year is dispatched at 365-day resolution as a pure LP for nodal prices; a myopic year-by-year mode is also available as a toggle
 - **Baselines:** selectable AEMO **2026 GSOO** scenario — **Step Change** (central), **Accelerated Transition**, or **Slower Growth** (demand re-based on the GSOO; daily shapes from GBB actuals)
-- **Scenario levers:** Winter stress × LNG demand (9 combinations) layered on the chosen baseline, plus the SA Dunkelflaute event, the gas reservation and price-responsive mass-market demand; the batch runs all 3 baselines × 9 = 27 scenarios
+- **Scenario levers:** Winter stress × LNG demand (9 combinations) layered on the chosen baseline, plus the SA Dunkelflaute event, the gas reservation and price-responsive demand; the batch runs all 3 baselines × 9 = 27 scenarios
 

@@ -91,7 +91,8 @@ class CapacityExpansionModel:
 
     def __init__(self, nodes_df, arcs_df, supply_df, expansion_df, years, rep,
                  discount_rate=0.07, strike_gpg=22.0, strike_ind=120.0,
-                 terminal_earliest=2028, base_year=2025, mm_blocks=()):
+                 terminal_earliest=2028, base_year=2025, mm_blocks=(),
+                 ind_raise=(), gpg_raise=(), gpg_capacity=None):
         self.nodes, self.arcs, self.supply, self.expansion = nodes_df, arcs_df, supply_df, expansion_df
         self.years = list(years)
         self.rep = rep                      # {year: [rep-day dicts]}
@@ -102,6 +103,12 @@ class CapacityExpansionModel:
         # demand that dispatch then sheds, it would build pipe for gas nobody is
         # willing to pay for.
         self.mm_blocks = list(mm_blocks)
+        # Raise-side blocks need no rep-day series of their own: industrial
+        # headroom is a share of rd['ind'] and GPG headroom is nameplate less
+        # rd['gpg'], both already carried on the representative day.
+        self.ind_raise = list(ind_raise)
+        self.gpg_raise = list(gpg_raise)
+        self.gpg_capacity = dict(gpg_capacity or {})
         self.terminal_earliest = terminal_earliest
         self.base_year = base_year
         self.solved = False
@@ -139,6 +146,24 @@ class CapacityExpansionModel:
         m.MMNodes = pyo.Set(initialize=[n for n in mm_nodes if n in self.nodes['Name'].tolist()])
         m.MMBlocks = pyo.Set(initialize=list(mm_strike))
         m.mm_curtail = pyo.Var(m.MMNodes, m.MMBlocks, m.YR, domain=pyo.NonNegativeReals)
+
+        ind_raise_val = {b[0]: b[1] for b in self.ind_raise}
+        ind_raise_share = {b[0]: b[2] for b in self.ind_raise}
+        gpg_raise_val = {b[0]: b[1] for b in self.gpg_raise}
+        gpg_raise_share = {b[0]: b[2] for b in self.gpg_raise}
+        m.INDRaise = pyo.Set(initialize=list(ind_raise_val))
+        m.GPGRaise = pyo.Set(initialize=list(gpg_raise_val))
+        m.GPGRaiseNodes = pyo.Set(initialize=[n for n in m.GPGNodes if n in self.gpg_capacity])
+        m.ind_expand = pyo.Var(m.INDNodes, m.INDRaise, m.YR, domain=pyo.NonNegativeReals)
+        m.gpg_expand = pyo.Var(m.GPGRaiseNodes, m.GPGRaise, m.YR, domain=pyo.NonNegativeReals)
+
+        def ind_raise_avail(n, b, y, i):
+            return self.rep[y][i]['ind'].get(n, 0) * ind_raise_share[b]
+
+        def gpg_raise_avail(n, b, y, i):
+            base = self.rep[y][i]['gpg'].get(n, 0)
+            nameplate, cap_mult = self.gpg_capacity.get(n, (0.0, 0.0))
+            return max(0.0, min(nameplate - base, cap_mult * base)) * gpg_raise_share[b]
         m.build = pyo.Var(m.Expansion, Y, domain=pyo.Binary)   # build project e in year y
 
         arc_data = self.arcs.set_index('Name').to_dict('index')
@@ -174,7 +199,12 @@ class CapacityExpansionModel:
                     + pyo.quicksum(m.gpg_curtail[n, y, i] * self.strike_gpg * 1000 for n in m.GPGNodes)
                     + pyo.quicksum(m.ind_curtail[n, y, i] * self.strike_ind * 1000 for n in m.INDNodes)
                     + pyo.quicksum(m.mm_curtail[n, b, y, i] * mm_strike[b] * 1000
-                                   for n in m.MMNodes for b in m.MMBlocks))
+                                   for n in m.MMNodes for b in m.MMBlocks)
+                    # Negative: benefit of demand taken up while gas is cheap.
+                    - pyo.quicksum(m.ind_expand[n, b, y, i] * ind_raise_val[b] * 1000
+                                   for n in m.INDNodes for b in m.INDRaise)
+                    - pyo.quicksum(m.gpg_expand[n, b, y, i] * gpg_raise_val[b] * 1000
+                                   for n in m.GPGRaiseNodes for b in m.GPGRaise))
                 for (y, i) in YR)
             capex = pyo.quicksum(m.build[e, y] * exp_data[e]['CapEx'] * df[y] for e in m.Expansion for y in Y)
             return ops + capex
@@ -195,6 +225,10 @@ class CapacityExpansionModel:
                     + (pyo.quicksum(m.mm_curtail[n, b, y, i] for b in m.MMBlocks)
                        if n in m.MMNodes else 0)
                     == r['demand'].get(n, 0) + r['gpg'].get(n, 0) + r['ind'].get(n, 0)
+                    + (pyo.quicksum(m.ind_expand[n, b, y, i] for b in m.INDRaise)
+                       if n in m.INDNodes else 0)
+                    + (pyo.quicksum(m.gpg_expand[n, b, y, i] for b in m.GPGRaise)
+                       if n in m.GPGRaiseNodes else 0)
                     + pyo.quicksum(m.flow[a, y, i] for a in arcs_from[n]))
         m.balance = pyo.Constraint(m.Nodes, m.YR, rule=balance_rule)
 
@@ -202,6 +236,10 @@ class CapacityExpansionModel:
         m.ind_cap = pyo.Constraint(m.INDNodes, m.YR, rule=lambda m, n, y, i: m.ind_curtail[n, y, i] <= rd(y, i)['ind'].get(n, 0))
         m.mm_cap = pyo.Constraint(m.MMNodes, m.MMBlocks, m.YR,
             rule=lambda m, n, b, y, i: m.mm_curtail[n, b, y, i] <= rd(y, i)['mm'].get(b, {}).get(n, 0))
+        m.ind_expand_cap = pyo.Constraint(m.INDNodes, m.INDRaise, m.YR,
+            rule=lambda m, n, b, y, i: m.ind_expand[n, b, y, i] <= ind_raise_avail(n, b, y, i))
+        m.gpg_expand_cap = pyo.Constraint(m.GPGRaiseNodes, m.GPGRaise, m.YR,
+            rule=lambda m, n, b, y, i: m.gpg_expand[n, b, y, i] <= gpg_raise_avail(n, b, y, i))
 
         def supply_cap_rule(m, node, is_pot, y, i):
             cap = supply_dict[node, is_pot]['Capacity']
