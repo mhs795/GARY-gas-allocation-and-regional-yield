@@ -40,7 +40,7 @@ def get_lng_mult(scenario, year):
 def _year_demand(data, year, winter, lng, reservation=0.0):
     """Demand for one year with the Winter, LNG and reservation levers applied.
 
-    Returns ``(demand frame, TJ of LNG export volume diverted domestically)``.
+    Returns ``(demand frame, TJ diverted, {day: TJ reserved})``.
     The reservation is applied last, so it bites on the export volume planned
     under this scenario rather than on the raw baseline.
     """
@@ -92,13 +92,13 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
     for i, year in enumerate(years):
         if callback:
             callback(year, i / len(years))
-        demand_yr, diverted = _year_demand(data, year, winter, lng, reservation)
+        demand_yr, diverted, reserved_day = _year_demand(data, year, winter, lng, reservation)
         gm = GasMarketModel(
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
             contracts_df=contracts_all if year <= 2040 else None, year=year,
             already_built=built_projects,
             baseline=baseline, dunkelflaute=dunkelflaute,
-            elastic_demand=elastic_demand)
+            elastic_demand=elastic_demand, reserved_by_day=reserved_day)
         gm.build_model()
         status = gm.solve(mip_gap=mip_gap)
         if status != "ok":
@@ -126,17 +126,20 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
 
     # --- Pass 1: assemble every year's demand + GPG/industrial (events applied) ---
     dispatch_models, demand_all, gpg_all, ind_all = {}, {}, {}, {}
-    diverted_by_year = {}
+    diverted_by_year, reserved_all = {}, {}
     for year in years:
         # Applied here, before the representative days are built, so the capacity
         # layer sizes the network against the same post-reservation demand the
         # dispatch layer will face.
-        demand_yr, diverted_by_year[year] = _year_demand(data, year, winter, lng, reservation)
+        demand_yr, diverted_by_year[year], reserved_day = _year_demand(
+            data, year, winter, lng, reservation)
+        for d, v in reserved_day.items():
+            reserved_all[(year, d)] = v
         gm = GasMarketModel(
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
             contracts_df=contracts_all if year <= 2040 else None, year=year,
             baseline=baseline, dunkelflaute=dunkelflaute,
-            elastic_demand=elastic_demand)
+            elastic_demand=elastic_demand, reserved_by_day=reserved_day)
         dispatch_models[year] = gm
         for (n, d), v in demand_yr.set_index(['Node', 'Day'])['Demand'].to_dict().items():
             demand_all[(n, year, d)] = v
@@ -150,7 +153,8 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         callback(start_year, 0.0)
     mm_blocks = dispatch_models[start_year].mm_blocks
     rep = build_representative_days(years, demand_all, gpg_all, ind_all,
-                                    data['nodes'], mm_blocks=mm_blocks)
+                                    data['nodes'], mm_blocks=mm_blocks,
+                                    reserved_all=reserved_all)
     cap = CapacityExpansionModel(
         data['nodes'], data['arcs'], data['supply'], data['expansion'], years, rep,
         discount_rate=discount_rate,
@@ -159,7 +163,9 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         mm_blocks=mm_blocks,
         ind_raise=dispatch_models[start_year].ind_raise,
         gpg_raise=dispatch_models[start_year].gpg_raise,
-        gpg_capacity=dispatch_models[start_year].gpg_capacity)
+        gpg_capacity=dispatch_models[start_year].gpg_capacity,
+        lng_arcs=dispatch_models[start_year].lng_arcs,
+        lng_source=dispatch_models[start_year].lng_source)
     cap.build_model()
     status = cap.solve(mip_gap=mip_gap)
     if status != "ok":

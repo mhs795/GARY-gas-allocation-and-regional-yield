@@ -1429,6 +1429,10 @@ def update_header_kpis(key, end_year):
     summary, _, builds_df, total_cost = build_summary(filtered)
     final_price = f"${summary['Avg_Price'].iloc[-1]:.2f}/GJ" if not summary.empty else '—'
     reserved_pj = sum(r.get('lng_reserved_tj', 0) for r in filtered) / 1000
+    # How much of the reserved volume the domestic market actually absorbed. It is
+    # offered at $0 so it is taken up wherever it can physically reach a buyer;
+    # a gap means the market could not absorb it, not that it was uneconomic.
+    served_pj = sum(r.get('reserved_served_tj', 0) for r in filtered) / 1000
     # Mass-market load that priced itself out. Absent from scenarios solved before
     # the elastic lever existed, and from any run with it switched off.
     mm_shed_pj = sum(float(r['massmarket']['Curtailed'].sum())
@@ -1440,10 +1444,11 @@ def update_header_kpis(key, end_year):
     chips = [
         kpi_card('Final Price',  final_price),
         # Not comparable across runs in two separate ways. Under a reservation the
-        # objective carries no export revenue, so removing export demand always
-        # lowers it. Under elastic demand it also carries a negative benefit term
-        # for demand taken up cheaply, which is a surplus, not a cost. Either way
-        # it is the cost of serving what was served, not a welfare number.
+        # objective carries no export revenue, and the reserved gas is costed at
+        # zero, so both removing export demand and reserving more always lower it.
+        # Under elastic demand it also carries a negative benefit term for demand
+        # taken up cheaply, which is a surplus, not a cost. Either way it is the
+        # cost of serving what was served, not a welfare number.
         kpi_card('System Cost' + (' (served gas only)' if reserved_pj else '')
                  + (' (net of demand benefit)' if elastic_run and not reserved_pj else ''),
                  f"${total_cost/1e6:,.0f}M"),
@@ -1451,7 +1456,8 @@ def update_header_kpis(key, end_year):
         kpi_card('New Projects', str(len(builds_df))),
     ]
     if reserved_pj:
-        chips.insert(3, kpi_card('Gas Reserved', f"{reserved_pj:,.0f} PJ"))
+        take_up = f" ({served_pj/reserved_pj*100:.0f}% taken up)" if reserved_pj else ""
+        chips.insert(3, kpi_card('Gas Reserved', f"{reserved_pj:,.0f} PJ{take_up}"))
     if raised_pj:
         chips.insert(3, kpi_card('Demand Raised', f"{raised_pj:,.0f} PJ"))
     if mm_shed_pj:

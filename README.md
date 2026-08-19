@@ -133,103 +133,94 @@ Medium winter / Medium LNG, full 2025–2050 two-stage solve:
 
 ## Gas reservation
 
-An optional policy lever: a share of east-coast LNG export volume is required to be
-released to the domestic market instead of liquefied.
+A reservation carves a share of planned LNG export volume out of the export stream
+and puts it into the domestic market **at zero cost**, so it is the cheapest gas in
+the system and is taken up ahead of everything else.
 
-    served_LNG[t]  <=  (1 - share) * LNG_demand[t]
-
-Switch it on in the sidebar and pick 5, 10, 20 or 30%. Headless:
-
-```
+```bash
 python src/solve.py --reservation 20
 ```
 
-The share is applied to the export volume *planned under the scenario*, so it
-compounds with the Global LNG Demand lever rather than ignoring it. It is applied
-before the representative days are built, so the perfect-foresight capacity layer
-and the 365-day dispatch both size against the same post-reservation demand.
+Four pieces, all applied in `_year_demand` (solve.py) and `model.py` so the foresight
+capacity layer and the 365-day dispatch see the same policy:
 
-It replaces the old **ADGSM** toggle, which was an unfinished attempt at the same
-thing: its constraint (LNG flow ≤ 85% of Surat production) was commented out, so the
-switch never affected a solve. That code and the `_ADGSM_<x>` segment it wrote into
-every scenario key are gone.
+1. `served_LNG[t] <= (1 - share) * LNG_demand[t]` — the carve-out; the trains may
+   only liquefy what is left. Applied *after* the Winter/LNG levers, so the share
+   bites on the export volume actually planned under the scenario.
+2. `reserved_prod[t] <= share * LNG_demand[t]`, priced at **$0/GJ** — the carved-out
+   volume, offered to the domestic market for nothing.
+3. `production[source, t] + reserved_prod[t] <= source capacity` — the reserved gas
+   is the *same* gas, not extra. Total physical deliverability is unchanged; a slice
+   of it is simply free.
+4. `sum(flow over LNG feed pipes)[t] <= commercial gas reaching the source` — exports
+   may draw only on commercial gas. Without this the free gas would flow straight to
+   the trains, which are ordinary demand nodes and cannot tell one molecule from
+   another, and the reservation would do nothing. This is exact rather than an
+   approximation because the trains have exactly three feed pipes (`APLNG_Pipe`,
+   `GLNG_Pipe`, `WGP_Pipe`), all from Surat. "Commercial gas" must include transit
+   inflows — Surat takes gas from Moomba over the SWQP and from Silver Springs, and
+   LNG demand exceeds Surat's own deliverability on ~30 days a year, so restricting
+   exports to Surat's own production would strand the trains on those days and
+   change the no-reservation base case.
 
-It is implemented on the demand side. The LNG trains enter the network as ordinary
-demand nodes and the objective is pure cost minimisation with no export revenue
-term, so scaling their demand *is* the constraint above, with the shortage variable
-still absorbing genuine under-supply on top. Keeping exports out of the objective is
-deliberate: it is what the removed WA DomGas reservation got wrong, where an export
-revenue term coupled through the reservation constraint and produced negative nodal
-prices at Perth.
+There is still **no export revenue term in the objective**. That coupling is what
+produced negative nodal prices at Perth in the removed WA DomGas build; here the
+reservation acts entirely through supply cost and flow eligibility.
 
-**Reading the results — the reserved gas is not produced.** Domestic demand in the
-model is exogenous: a fixed volume per node per day, already met before the
-reservation applies. The freed gas therefore has no domestic buyer, and the
-cost-minimising solution simply leaves it in the ground. On a stressed 2030 (Step
-Change, High winter) a 20% reservation cuts total production by 263,018 TJ against
-263,883 TJ reserved — essentially all of it — while domestic gas actually consumed
-changes by 0.0 TJ.
+> This replaces an earlier **pure export-cap** formulation (piece 1 alone). Under
+> that version the reserved gas was never produced at all: domestic demand was
+> already met, so cost minimisation left it in the ground, and the reservation was
+> an export cap by another name. Pricing the gas at zero is what makes it move.
 
-What is implemented is therefore an **export cap**, not a redirection of gas to
-domestic buyers. The domestic price still falls, $20.19 → $17.65/GJ, but through
-scarcity rather than volume: less total call on the system means a cheaper marginal
-supply source and less congestion, so the nodal duals fall.
+### What it does
 
-One channel could absorb the gas domestically — GPG and large industrial shed load
-when the nodal price exceeds their strike ($22 and $120/GJ), and would take it back
-if the price fell far enough. It does not fire here. All the shed load sits in
-Victoria and SA (Melbourne and Gippsland GPG at ~$53/GJ, Adelaide GPG), the freed gas
-is in Queensland, and the southbound corridor is full: at 30% `SWQP_Rev` is at
-capacity on 63% of days and `VGP` on 45%. Curtailment and winter shortage are
-unchanged at every share.
+Stressed 2030 (Step Change, Winter High, LNG Medium), demand **inelastic** so the
+price effect is not confounded by demand response:
 
-The benefit therefore **saturates at about 20%**, and the finding is that a
-reservation on its own does not fix the southern winter without pipeline capacity to
-move the gas.
+| reservation | offered | taken up | production | mean price | QLD price | Melbourne |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0% | — | — | 1,711,690 TJ | $13.82 | $8.57 | $53.45 |
+| 5% | 65,971 TJ | 99.7% | −65,755 TJ | −$1.73 | −$2.57 | −$0.71 |
+| 10% | 131,942 TJ | 99.7% | −131,509 TJ | −$2.61 | −$3.78 | −$1.28 |
+| 20% | 263,883 TJ | 99.7% | −263,018 TJ | −$3.13 | −$4.59 | −$1.42 |
+| 30% | 395,825 TJ | **80.3%** | −377,028 TJ | −$4.03 | −$8.41 | −$1.43 |
 
-Endogenous demand was the obvious candidate for the missing channel, and it was built
-and tested in two stages.
+**The gas now moves.** Take-up is 99.7% up to a 20% reservation — priced at zero it
+is dispatched ahead of everything else. Beyond that the domestic market cannot
+absorb it: at 30% nearly a fifth of the offered volume finds no buyer it can reach.
 
-**Shed-only demand did not change the answer at all.** With mass-market load able to
-shed but not expand, a 20% reservation still cut production by 263,018 TJ and still
-moved domestic gas consumed by 0.0 TJ. All shedding was at Melbourne, on 58 winter
-days, and on those exact node-days the price was *identical* with and without the
-reservation ($32.73 mean either way). The relief landed in Queensland instead (APLNG,
-Brisbane, GLNG, QCLNG, Gladstone and Surat all −$4.41/GJ) because `SWQP_Rev` ran at
-its full 512 TJ/d on all 58 of those days under the reservation, against 358 TJ/d and
-only 2 days at capacity without it. **The binding constraint is transport, not
-molecules** — on the days that matter, freed Queensland gas physically cannot reach
-the southern market that would pay for it.
+**But it displaces rather than adds.** With demand inelastic, domestic consumption
+is fixed, so the free gas substitutes one-for-one for commercial gas that would have
+been produced anyway. Total production falls by exactly the export cut. What changes
+is the *price*, because the marginal molecule at Surat is now free.
 
-**Demand that can also rise changes it, but only at the margin.** Once GPG and
-industrial demand can expand when gas is cheap, the same 20% reservation leaves
-247,136 TJ in the ground rather than 263,018 TJ, and 15,101 TJ of domestic demand is
-taken up — **5.7% of the reserved volume**. So a reservation is no longer a *pure*
-export cap, but **94% of the reserved gas still stays in the ground**.
+**And the relief does not travel.** Price falls decay with distance from Surat:
 
-What absorbs it is worth reading closely:
+| Brisbane / Gladstone / Surat | LNG nodes | Moomba / Darwin | Adelaide | Sydney | **Melbourne / Gippsland** | Iona |
+| --- | --- | --- | --- | --- | --- | --- |
+| −$4.59 | −$4.41 | −$3.62 | −$2.59 | −$1.93 | **−$1.42** | −$0.97 |
 
-| | |
-| --- | --- |
-| gas-powered generation | 14,553 TJ (96.4%) |
-| industrial uptake | 548 TJ (3.6%) |
-| Surat | 10,895 TJ (72.1%) |
-| Brisbane | 2,108 TJ (14.0%) |
-| Sydney | 1,549 TJ (10.3%) |
-| Gladstone | 548 TJ (3.6%) |
+The smallest relief lands exactly where prices are highest. Melbourne and Gippsland
+sit at ~$53/GJ and move $1.42. The corridor is doing far more work than under the
+export-cap version — `SWQP_Rev` goes from 257 TJ/d mean and 2 days at capacity to
+**505 TJ/d and 280 days at capacity**, and the `VGP` from 1.9 to 168.9 TJ/d — but it
+fills, and then nothing more gets through.
 
-Almost all of it is Queensland GPG burning cheap gas *because it is stranded there* —
-QLD nodal prices fall to $4.17/GJ, below the $6.43/GJ a CCGT can pay to displace black
-coal. That is the transport constraint showing up again from the other side: the gas is
-absorbed where it is trapped, not where it is wanted. Nothing at all is absorbed in
-Victoria, South Australia or the Northern Territory, because gas cannot outbid
-mine-mouth brown coal and the NT has no coal to displace in the first place.
+**Curtailment does not move at all.** GPG shedding (11,877 TJ), industrial shedding
+(1,448 TJ) and winter shortage (4,302 TJ) are *identical at every reservation level*,
+0% through 30%. Crashing the Queensland gas price to $0.17/GJ relieves not one TJ of
+southern curtailment.
+
+So the conclusion from the export-cap version survives the change of mechanism, and
+in sharper form: **a reservation is a Queensland price policy, not a southern supply
+policy.** Forcing the gas into the market at zero cost gets it produced and consumed,
+which the export cap never did, but it cannot put it where the shortage is.
 
 > **System Cost is not comparable across reservation levels.** The objective carries
-> no export revenue, so removing export demand always lowers it — the figure is the
-> cost of serving what is left, not a welfare measure. The dashboard relabels the KPI
-> **System Cost (served gas only)** and adds a **Gas Reserved** card when a
-> reservation is active.
+> no export revenue and costs the reserved gas at zero, so both removing export demand
+> and reserving more always lower it — the figure is the cost of serving what is left,
+> not a welfare measure. The dashboard relabels the KPI **System Cost (served gas
+> only)** and shows **Gas Reserved** with the percentage actually taken up.
 
 ## Endogenous demand
 
@@ -429,7 +420,7 @@ for nodes that have demand or carry gas, so such nodes simply do not appear in p
 outputs. The headline `Avg_Price` KPI was always production-weighted and so was never
 affected; per-node price charts were.
 
-## The results cache## The results cache
+## The results cache
 
 Solved scenarios are cached in `src/data/precalculated_results.pkl` so the dashboard
 can redraw without re-solving. Each solved year is stored as one DataFrame per

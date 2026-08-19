@@ -29,7 +29,7 @@ PEAK_DAY_WEIGHT = 5.0        # days represented by the annual peak day (adequacy
 
 
 def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
-                              mm_blocks=()):
+                              mm_blocks=(), reserved_all=None):
     """Reduce each year's 365 daily profiles to representative days.
 
     Returns {year: [ {weight, demand{node:v}, gpg{node:v}, ind{node:v}} ]} — 12
@@ -44,6 +44,7 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
     """
     node_names = nodes_df['Name'].tolist()
     mm_node_names = [n for n in node_names if n not in LNG_NODES]
+    reserved_all = reserved_all or {}
 
     def mm_avail(n, y, d, share, winter_scale):
         """TJ of one mass-market block available at node n on day d."""
@@ -71,7 +72,9 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
             mm = {blk: {n: sum(mm_avail(n, y, d, share, ws) for d in days) / w
                         for n in mm_node_names}
                   for blk, _strike, share, ws in mm_blocks}
-            days_reps.append({'weight': w, 'demand': dem, 'gpg': gpg, 'ind': ind, 'mm': mm})
+            reserved = sum(reserved_all.get((y, d), 0.0) for d in days) / w
+            days_reps.append({'weight': w, 'demand': dem, 'gpg': gpg, 'ind': ind,
+                              'mm': mm, 'reserved': reserved})
         # annual peak day (actual profile) for adequacy
         dpk = max(day_total, key=day_total.get)
         days_reps.append({
@@ -81,6 +84,7 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
             'ind':    {n: ind_all.get((n, y, dpk), 0) for n in node_names},
             'mm':     {blk: {n: mm_avail(n, y, dpk, share, ws) for n in mm_node_names}
                        for blk, _strike, share, ws in mm_blocks},
+            'reserved': reserved_all.get((y, dpk), 0.0),
         })
         rep[y] = days_reps
     return rep
@@ -92,7 +96,8 @@ class CapacityExpansionModel:
     def __init__(self, nodes_df, arcs_df, supply_df, expansion_df, years, rep,
                  discount_rate=0.07, strike_gpg=22.0, strike_ind=120.0,
                  terminal_earliest=2028, base_year=2025, mm_blocks=(),
-                 ind_raise=(), gpg_raise=(), gpg_capacity=None):
+                 ind_raise=(), gpg_raise=(), gpg_capacity=None,
+                 lng_arcs=(), lng_source=()):
         self.nodes, self.arcs, self.supply, self.expansion = nodes_df, arcs_df, supply_df, expansion_df
         self.years = list(years)
         self.rep = rep                      # {year: [rep-day dicts]}
@@ -111,6 +116,10 @@ class CapacityExpansionModel:
         # is regional because what gas displaces differs by jurisdiction.
         self.gpg_raise = dict(gpg_raise)
         self.gpg_capacity = dict(gpg_capacity or {})
+        # Reservation: which arcs feed the LNG trains and which node supplies them,
+        # so the investment layer sees the same zero-cost reserved tranche and the
+        # same export-eligibility rule the dispatch layer will face.
+        self.lng_arcs, self.lng_source = list(lng_arcs), list(lng_source)
         self.terminal_earliest = terminal_earliest
         self.base_year = base_year
         self.solved = False
@@ -171,6 +180,9 @@ class CapacityExpansionModel:
             nameplate, cap_mult = self.gpg_capacity.get(n, (0.0, 0.0))
             return max(0.0, min(nameplate - base, cap_mult * base)) * share
         m.build = pyo.Var(m.Expansion, Y, domain=pyo.Binary)   # build project e in year y
+        m.reserved_prod = pyo.Var(m.YR, domain=pyo.NonNegativeReals)
+        m.reserved_cap = pyo.Constraint(m.YR, rule=lambda m, y, i:
+            m.reserved_prod[y, i] <= self.rep[y][i].get('reserved', 0.0))
 
         arc_data = self.arcs.set_index('Name').to_dict('index')
         supply_dict = self.supply.set_index(['Node', 'IsPotential']).to_dict('index')
@@ -224,6 +236,7 @@ class CapacityExpansionModel:
         def balance_rule(m, n, y, i):
             r = rd(y, i)
             return (pyo.quicksum(m.production[s[0], s[1], y, i] for s in supply_at[n])
+                    + (m.reserved_prod[y, i] if n in self.lng_source else 0)
                     + pyo.quicksum(m.flow[a, y, i] for a in arcs_to[n])
                     + (m.withdrawal[n, y, i] - m.injection[n, y, i] if n in m.StorageNodes else 0)
                     + m.shortage[n, y, i]
@@ -253,13 +266,32 @@ class CapacityExpansionModel:
             if is_pot:
                 rel = [e for e in m.Expansion if exp_data[e]['Type'] == 'Terminal' and exp_data[e]['Target'] == node]
                 return m.production[node, is_pot, y, i] <= cap * active(rel[0], y) if rel else m.production[node, is_pot, y, i] == 0
-            return m.production[node, is_pot, y, i] <= cap * ((1 + supply_dict[node, is_pot].get('DeclineRate', 0)) ** (y - 2025))
+            declined = cap * ((1 + supply_dict[node, is_pot].get('DeclineRate', 0)) ** (y - 2025))
+            # Reserved gas is a zero-cost slice of the same field, not extra gas.
+            if node in self.lng_source:
+                return m.production[node, is_pot, y, i] + m.reserved_prod[y, i] <= declined
+            return m.production[node, is_pot, y, i] <= declined
         m.supply_cap = pyo.Constraint(m.Supply, m.YR, rule=supply_cap_rule)
+
+        # Exports draw only on commercial gas, so the free reserved gas cannot
+        # simply flow to the trains. See the header block in model.py.
+
 
         def flow_cap_rule(m, a, y, i):
             extra = pyo.quicksum(active(e, y) * exp_data[e]['NewCapacity'] for e in m.Expansion if exp_data[e]['Target'] == a)
             return m.flow[a, y, i] <= arc_data[a]['Capacity'] + extra
         m.flow_cap = pyo.Constraint(m.Arcs, m.YR, rule=flow_cap_rule)
+
+        # Exports draw only on commercial gas -- everything reaching the source
+        # node except the reserved tranche, transit inflows included. See the
+        # header block in model.py.
+        if self.lng_arcs:
+            _commercial = [s_ for s_ in m.Supply if s_[0] in self.lng_source and not s_[1]]
+            _inflows = [a for n in self.lng_source for a in arcs_to[n]]
+            m.export_eligibility = pyo.Constraint(m.YR, rule=lambda m, y, i:
+                pyo.quicksum(m.flow[a, y, i] for a in self.lng_arcs) <=
+                pyo.quicksum(m.production[s_[0], s_[1], y, i] for s_ in _commercial)
+                + pyo.quicksum(m.flow[a, y, i] for a in _inflows))
 
         # storage on a representative day: draw down / fill from a half-full store
         m.stor_wd = pyo.Constraint(m.StorageNodes, m.YR, rule=lambda m, sn, y, i: m.withdrawal[sn, y, i] <= 0.5 * storage_caps.get(sn, 0))

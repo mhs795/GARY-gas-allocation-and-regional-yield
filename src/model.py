@@ -23,22 +23,33 @@ DUNKELFLAUTE_MULT = 2.75
 
 
 # --- Domestic gas reservation ------------------------------------------------
-# East-coast LNG export trains. A reservation requires a fixed share of their
-# export volume to be released to the domestic market instead of liquefied:
+# East-coast LNG export trains. A reservation carves a share of their planned
+# export volume out of the export stream and puts it into the domestic market
+# AT ZERO COST, so it is the cheapest gas in the system and is taken up ahead of
+# everything else. Three pieces:
 #
-#     served_LNG[t]  <=  (1 - share) * LNG_demand[t]
+#   1. served_LNG[t] <= (1 - share) * LNG_demand[t]
+#        the carve-out itself -- the trains may only liquefy what is left.
+#   2. reserved_prod[t] <= share * LNG_demand[t],  priced at $0/GJ
+#        the carved-out volume, offered to the domestic market for nothing.
+#   3. production[source, t] + reserved_prod[t] <= source capacity
+#        the reserved gas is the SAME gas, not extra: total physical deliverability
+#        is unchanged, a slice of it is simply free.
+#   4. sum(flow over the LNG feed pipes)[t] <= production[source, t]
+#        exports may draw only on commercial gas. Without this the free gas would
+#        simply flow to the trains -- they are ordinary demand nodes and do not
+#        care where a molecule came from -- and the reservation would do nothing.
+#        It is exact rather than an approximation because the trains have exactly
+#        three feed pipes (APLNG_Pipe, GLNG_Pipe, WGP_Pipe), all from Surat.
 #
-# It is applied on the demand side because the trains enter the network as plain
-# demand nodes and the objective is pure cost minimisation -- there is no export
-# revenue term -- so scaling their demand IS that constraint, with the shortage
-# variable still absorbing any genuine under-supply on top. Keeping exports out
-# of the objective is also what avoids the negative nodal prices the old WA
-# DomGas reservation produced, where a revenue term coupled through the
-# reservation made serving domestic demand look profitable at the margin.
+# There is still no export revenue term in the objective. That coupling is what
+# produced negative Perth prices in the removed WA DomGas build; here the
+# reservation acts entirely through supply cost and flow eligibility.
 #
-# The freed gas is not new domestic demand; the effect is that cheap Surat/Bowen
-# gas and the pipeline capacity carrying it are released to domestic nodes,
-# which shows up as lower southern prices and less GPG/industrial curtailment.
+# This REPLACES the earlier pure export-cap formulation (piece 1 alone), under
+# which the reserved gas was never produced at all: domestic demand was already
+# met, so cost minimisation simply left it in the ground and the reservation was
+# an export cap by another name. Pricing it at zero is what makes it move.
 LNG_NODES = ['APLNG', 'GLNG', 'QCLNG']
 
 # Reservation shares offered by the dashboard slider (fraction of export volume).
@@ -159,21 +170,25 @@ def load_gpg_capacity(data_dir):
 def apply_lng_reservation(demand_df, share):
     """Divert ``share`` (0-1) of LNG export volume to the domestic market.
 
-    Returns ``(demand frame, TJ diverted)``. Applied after the Winter/LNG
-    scenario levers, so the share bites on the export volume actually planned
-    under the scenario rather than on the raw baseline.
+    Returns ``(demand frame, TJ diverted, {day: TJ reserved})``. The per-day
+    series is what the zero-cost supply tranche is sized against, so the volume
+    released each day matches the export volume withheld that day rather than an
+    annual average. Applied after the Winter/LNG scenario levers, so the share
+    bites on the export volume actually planned under the scenario rather than on
+    the raw baseline.
     """
     if not share:
-        return demand_df, 0.0
+        return demand_df, 0.0, {}
     mask = demand_df['Node'].isin(LNG_NODES)
     diverted = float(demand_df.loc[mask, 'Demand'].sum()) * share
+    by_day = (demand_df.loc[mask].groupby('Day')['Demand'].sum() * share).to_dict()
     demand_df = demand_df.copy()
     demand_df.loc[mask, 'Demand'] *= (1.0 - share)
-    return demand_df, diverted
+    return demand_df, diverted, {int(d): float(v) for d, v in by_day.items()}
 
 
 class GasMarketModel:
-    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, baseline="StepChange", dunkelflaute=False, builds_fixed=None, elastic_demand=False):
+    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, baseline="StepChange", dunkelflaute=False, builds_fixed=None, elastic_demand=False, reserved_by_day=None):
         self.nodes = nodes_df
         self.arcs = arcs_df
         self.supply = supply_df
@@ -189,6 +204,14 @@ class GasMarketModel:
         self.dunkelflaute = dunkelflaute
         # Mass-market step demand curve on/off (see the header block above).
         self.elastic_demand = elastic_demand
+        # {day: TJ} of export volume withheld and offered domestically at $0.
+        self.reserved_by_day = dict(reserved_by_day or {})
+        # The LNG trains' only feed pipes, and the node behind them. Resolved here
+        # rather than in build_model so the capacity layer can read them before any
+        # dispatch model has been built.
+        _arc_ix = arcs_df.set_index('Name')
+        self.lng_arcs = [a for a in arcs_df['Name'] if _arc_ix.loc[a, 'To'] in LNG_NODES]
+        self.lng_source = sorted({_arc_ix.loc[a, 'From'] for a in self.lng_arcs})
         # When set (a set of active project names), ALL build decisions are fixed:
         # projects in the set -> 1, all others -> 0. Used by the two-stage solve so
         # dispatch honours the capacity model's schedule and runs as a pure LP.
@@ -288,6 +311,15 @@ class GasMarketModel:
         m.injection = pyo.Var(m.StorageNodes, m.T, domain=pyo.NonNegativeReals)
         m.withdrawal = pyo.Var(m.StorageNodes, m.T, domain=pyo.NonNegativeReals)
         m.build = pyo.Var(m.Expansion, domain=pyo.Binary)
+
+        # Reserved gas: the carved-out export volume, offered domestically at $0.
+        # Sourced from whichever node feeds the LNG trains (Surat), so it enters
+        # that node's balance and must then find its own way to a domestic buyer.
+        lng_arcs, lng_source = self.lng_arcs, self.lng_source
+        m.reserved_prod = pyo.Var(m.T, domain=pyo.NonNegativeReals)
+        reserved_day = self.reserved_by_day
+        m.reserved_cap = pyo.Constraint(m.T,
+            rule=lambda m, t: m.reserved_prod[t] <= reserved_day.get(t, 0.0))
 
         # Curtailable large-user demand: served unless price exceeds strike.
         m.GPGNodes = pyo.Set(initialize=[n for n in self.gpg_nodes if n in self.nodes['Name'].tolist()])
@@ -398,6 +430,7 @@ class GasMarketModel:
             # Total demand at the node = distribution (mass-market) + GPG + large
             # industrial. GPG/industrial may be shed via their curtail variables.
             return (sum(m.production[s[0], s[1], t] for s in supply_at[n]) +
+                    (m.reserved_prod[t] if n in lng_source else 0) +
                     sum(m.flow[a, t] for a in arcs_to[n]) +
                     (m.withdrawal[n, t] - m.injection[n, t] if n in m.StorageNodes else 0) +
                     m.shortage[n, t] +
@@ -429,13 +462,40 @@ class GasMarketModel:
             if is_pot:
                 rel_exp = [e for e in m.Expansion if exp_data[e]['Type'] == 'Terminal' and exp_data[e]['Target'] == node]
                 return m.production[node, is_pot, t] <= cap * m.build[rel_exp[0]] if rel_exp else m.production[node, is_pot, t] == 0
-            return m.production[node, is_pot, t] <= cap * ((1 + supply_dict[node, is_pot].get('DeclineRate', 0)) ** (self.year - 2025))
+            declined = cap * ((1 + supply_dict[node, is_pot].get('DeclineRate', 0)) ** (self.year - 2025))
+            # The reserved tranche is a slice of the SAME field, priced at zero --
+            # not extra gas. Both draw on one physical deliverability limit.
+            if node in lng_source:
+                return m.production[node, is_pot, t] + m.reserved_prod[t] <= declined
+            return m.production[node, is_pot, t] <= declined
         m.supply_cap = pyo.Constraint(m.Supply, m.T, rule=supply_cap_rule)
+
 
         def flow_cap_rule(m, a, t):
             extra = sum(m.build[e] * exp_data[e]['NewCapacity'] for e in m.Expansion if exp_data[e]['Target'] == a)
             return m.flow[a, t] <= arc_data[a]['Capacity'] + extra
         m.flow_cap = pyo.Constraint(m.Arcs, m.T, rule=flow_cap_rule)
+
+        # Exports may draw only on commercial gas. Without this the free reserved
+        # gas would flow straight to the trains -- they are ordinary demand nodes
+        # and cannot tell one molecule from another -- and the reservation would
+        # achieve nothing. Exact, not an approximation: the trains have no feed
+        # other than these pipes.
+        #
+        # "Commercial gas" is everything reaching the source node EXCEPT the
+        # reserved tranche, which includes gas that transited in from elsewhere.
+        # Surat has inflows from Moomba (SWQP) and Silver Springs, and LNG demand
+        # exceeds Surat's own deliverability on ~30 days a year, so restricting
+        # exports to Surat's own production would wrongly strand the trains on
+        # those days and change the no-reservation base case.
+        # With the node balance, this is equivalent to requiring the reserved gas
+        # to be absorbed by demand at the source or to leave on a non-LNG route.
+        commercial_at_source = [s_ for s_ in m.Supply if s_[0] in lng_source and not s_[1]]
+        inflows_to_source = [a for n in lng_source for a in arcs_to[n]]
+        m.export_eligibility = pyo.Constraint(m.T, rule=lambda m, t:
+            sum(m.flow[a, t] for a in lng_arcs) <=
+            sum(m.production[s_[0], s_[1], t] for s_ in commercial_at_source)
+            + sum(m.flow[a, t] for a in inflows_to_source))
 
         def storage_cont_rule(m, sn, t):
             cap = storage_caps.get(sn, 0)
@@ -527,6 +587,7 @@ class GasMarketModel:
         mm_cv = m.mm_curtail.get_values()
         ind_ev = m.ind_expand.get_values()
         gpg_ev = m.gpg_expand.get_values()
+        rp = m.reserved_prod.get_values()
 
         # Nodes whose balance dual is a meaningful price. A node that never has
         # demand and never carries gas has a degenerate dual -- the constraint is
@@ -552,6 +613,13 @@ class GasMarketModel:
                 if sv[n, t] > 0.1: res['shortage'].append({'Day': t, 'Node': n, 'Value': float(sv[n, t])})
             for s in m.Supply:
                 if pv[s[0], s[1], t] > 0.01: res['production'].append({'Day': t, 'Node': s[0], 'Potential': s[1], 'Value': float(pv[s[0], s[1], t])})
+            # The reserved tranche is real gas out of the same field, so it belongs
+            # in production totals -- tagged 'Reserved' rather than merged into the
+            # commercial rows, so the two can still be told apart.
+            if (rp[t] or 0) > 0.01:
+                for n in self.lng_source:
+                    res['production'].append({'Day': t, 'Node': n, 'Potential': 'Reserved',
+                                              'Value': float(rp[t])})
             for a in m.Arcs:
                 if fv[a, t] > 0.01:
                     row = self.arcs[self.arcs['Name'] == a].iloc[0]
@@ -591,6 +659,9 @@ class GasMarketModel:
                     if v > 0.001:
                         res['demand_raise'].append({'Day': t, 'Node': n, 'Tier': 'GPG',
                                                     'Block': b, 'Value': v})
+
+        res['reserved_served_tj'] = float(sum(rp[t] or 0 for t in m.T))
+        res['reserved_offered_tj'] = float(sum(self.reserved_by_day.values()))
 
         for e in m.Expansion:
             if pyo.value(m.build[e]) > 0.5: res['builds'].append(e)
