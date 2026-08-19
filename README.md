@@ -203,23 +203,27 @@ the southern market that would pay for it.
 
 **Demand that can also rise changes it, but only at the margin.** Once GPG and
 industrial demand can expand when gas is cheap, the same 20% reservation leaves
-239,989 TJ in the ground rather than 263,018 TJ, and 23,178 TJ of domestic demand is
-taken up — **8.7% of the reserved volume**. So a reservation is no longer a *pure*
-export cap, but **91% of the reserved gas still stays in the ground**.
+247,136 TJ in the ground rather than 263,018 TJ, and 15,101 TJ of domestic demand is
+taken up — **5.7% of the reserved volume**. So a reservation is no longer a *pure*
+export cap, but **94% of the reserved gas still stays in the ground**.
 
 What absorbs it is worth reading closely:
 
 | | |
 | --- | --- |
-| gas-powered generation | 22,631 TJ (97.6%) |
-| industrial uptake | 548 TJ (2.4%) |
-| in Queensland/NT | 72.9% |
-| in the southern states | 27.1% |
+| gas-powered generation | 14,553 TJ (96.4%) |
+| industrial uptake | 548 TJ (3.6%) |
+| Surat | 10,895 TJ (72.1%) |
+| Brisbane | 2,108 TJ (14.0%) |
+| Sydney | 1,549 TJ (10.3%) |
+| Gladstone | 548 TJ (3.6%) |
 
 Almost all of it is Queensland GPG burning cheap gas *because it is stranded there* —
-QLD nodal prices fall to $4.17/GJ, below the $6.43/GJ a CCGT can pay to displace coal.
-That is the transport constraint showing up again from the other side: the gas is
-absorbed where it is trapped, not where it is wanted.
+QLD nodal prices fall to $4.17/GJ, below the $6.43/GJ a CCGT can pay to displace black
+coal. That is the transport constraint showing up again from the other side: the gas is
+absorbed where it is trapped, not where it is wanted. Nothing at all is absorbed in
+Victoria, South Australia or the Northern Territory, because gas cannot outbid
+mine-mouth brown coal and the NT has no coal to displace in the first place.
 
 > **System Cost is not comparable across reservation levels.** The objective carries
 > no export revenue, so removing export demand always lowers it — the figure is the
@@ -269,7 +273,7 @@ the curves calibrated against a stale number.
 | `ELASTICITY` (shed) | −0.180 short run | Labandeira, Labeaga & López-Otero (2017), "A meta-analysis on the price elasticity of energy demand", *Energy Policy* 102, 549–568, Table 6 — significant at 1%; long-run −0.684, 230-estimate sample mean −0.184 |
 | `ASYMMETRY` (raise) | 0.5 × shed | Direction from Gately & Huntington (2002), "The asymmetric effects of changes in price and income on energy and oil demand", *The Energy Journal* 23(1), 19–55 — efficiency investment and plant closure triggered by high prices do not reverse when prices fall. **The ratio is a judgement, not a measurement** |
 | `HEAT_RATES` | 7 / 10.64 / 13 GJ/MWh | CCGT, NEM capacity-weighted average, OCGT (AEMO 2021, via Griffith University 2022-08) |
-| `COAL_SRMC` | $45/MWh | NEM black coal SRMC was ~$26–28/MWh in 2020 and rose sharply after 2022. **The single most influential assumption behind the GPG response** |
+| `DISPLACED_SRMC` | $/MWh **by jurisdiction** — see below | what extra gas generation actually pushes out at the margin. **The single most influential assumption behind the GPG response** |
 
 ### Elasticities — every value in one place
 
@@ -330,7 +334,7 @@ literature.
 | Industrial | shed | flat $120/GJ strike (unchanged) | existing tier |
 | Industrial | raise | $4.67 / $3.84 / $3.02 for 1.5% / 1.8% / 2.3% | asymmetric elasticity at 0.85×, 0.70×, 0.55× reference |
 | GPG | shed | flat $22/GJ strike (unchanged) | existing tier |
-| GPG | raise | $6.43 / $4.23 / $3.46, a third of node headroom each | `COAL_SRMC / heat_rate` |
+| GPG | raise | **per jurisdiction** — see below, a third of node headroom each | `DISPLACED_SRMC[state] / heat_rate` |
 
 **Mass-market demand does not rise when gas gets cheap.** Victoria
 [banned gas connections in new homes from 1 January 2024](https://www.abc.net.au/news/2023-07-28/victoria-bans-gas-new-homes-housing-developments-emissions/102659636)
@@ -338,11 +342,37 @@ and ~80% of Victorian homes were on gas; the sector is in policy-driven structur
 decline and a lower commodity price does not reverse a connection ban. Households
 shed but never expand (`MASSMARKET_RAISES = False` to revisit).
 
-**The GPG ladder is engineering, not econometrics.** A generator's willingness to pay
-per GJ is the cost of the generation it displaces divided by its heat rate. Volume is
-bounded by nameplate capacity from the Gas Bulletin Board register (36 of 37 modelled
-facilities matched) — but GARY models gas, **not the NEM**, and the fleet runs at
-**8.9% of nameplate** (321 TJ/d against 3,619 TJ/d). Unbounded expansion would let an
+**The GPG ladder is engineering, not econometrics, and it is regional.** A generator's
+willingness to pay per GJ is the cost of the generation it displaces divided by its
+heat rate. What it displaces differs by jurisdiction, so a single national coal figure
+is wrong — it priced SA and NT gas off a coal fleet that does not exist and put 27.9%
+of the GPG response at nodes with nothing to displace.
+
+| | displaced | $/MWh | resulting WTP (CCGT / avg / OCGT) | nodes |
+| --- | --- | --- | --- | --- |
+| QLD | black coal | 45 | $6.43 / $4.23 / $3.46 | Surat, Brisbane, Gladstone |
+| NSW | black coal | 45 | $6.43 / $4.23 / $3.46 | Sydney |
+| VIC | brown coal, mine-mouth | 10 | $1.43 / $0.94 / $0.77 | Melbourne, Gippsland |
+| SA | imports over Heywood / Project EnergyConnect | 10 | $1.43 / $0.94 / $0.77 | Adelaide |
+| NT | **nothing** | 0 | **no expansion blocks at all** | Darwin, Amadeus |
+
+- **VIC** burns *brown* coal, which is mine-mouth and far cheaper to run than black:
+  Hazelwood's private SRMC was put at ~$3/MWh. Gas essentially cannot displace brown
+  coal on running cost, and the model now says so instead of pretending otherwise.
+- **SA** has had no coal since Northern (784 MW, Port Augusta)
+  [ceased generation on 9 May 2016](https://www.abc.net.au/news/2016-05-09/port-augustas-coal-fired-power-station-closes/7394854).
+  Gas there competes against imports, so it is priced off the exporting region's coal.
+- **NT** gets nothing at all. Darwin–Katherine is a small isolated system outside the
+  NEM, with no interconnection and already >80% gas, so extra gas generation displaces
+  nothing and has nowhere to sell it. GARY does not model that system; **zero is an
+  honest "cannot say", not an estimate.**
+
+In practice the VIC and SA thresholds sit below every price the model produces, so
+expansion happens only in QLD and NSW.
+
+Volume is bounded by nameplate capacity from the Gas Bulletin Board register (36 of 37
+modelled facilities matched) — but GARY models gas, **not the NEM**, and the fleet runs
+at **8.9% of nameplate** (321 TJ/d against 3,619 TJ/d). Unbounded expansion would let an
 unmodelled electricity market set gas demand, so `GPG_EXPANSION_CAP` also limits
 expansion to a multiple of baseline GPG demand (default 1.0 — GPG may at most double).
 That is a modelling guardrail, not a finding.

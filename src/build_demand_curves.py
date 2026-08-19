@@ -78,11 +78,29 @@ Heat rates   CCGT ~7 GJ/MWh, OCGT ~13 GJ/MWh, NEM capacity-weighted average
              10.64 GJ/MWh (AEMO 2021, via Griffith University, "The role of gas
              price in wholesale electricity price", 2022-08).
 
-COAL_SRMC    Short-run marginal cost of the black coal generation that gas would
-             displace. A parameter: NEM coal SRMCs were ~$26-28/MWh in 2020 and
-             rose sharply after 2022 with coal costs and the end of the price
-             cap. $45/MWh is a mid-range post-2022 figure and is the single
-             most influential assumption behind the GPG response -- vary it.
+DISPLACED_SRMC
+             What extra gas generation actually pushes out at the margin, $/MWh,
+             BY JURISDICTION. A single national coal figure was wrong: it priced
+             SA and NT gas off a coal fleet that does not exist, and put 27.9% of
+             the GPG response at nodes with nothing to displace.
+               QLD, NSW  black coal. ~$26-28/MWh in 2020, sharply higher after
+                         2022 with coal costs and the end of the price cap.
+                         $45/MWh is a mid-range post-2022 figure and remains the
+                         single most influential assumption here -- vary it.
+               VIC       BROWN coal, mine-mouth and far cheaper than black:
+                         Hazelwood's private SRMC was put at ~$3/MWh (Environment
+                         Victoria, Hazelwood Mine Fire Inquiry). Gas essentially
+                         cannot displace brown coal on running cost, and the
+                         model should say so rather than pretend otherwise.
+               SA        No coal since Northern (784 MW, Port Augusta) ceased
+                         generation on 9 May 2016. Gas competes against imports
+                         over Heywood and Project EnergyConnect, so it is priced
+                         off the exporting region's cheap brown coal.
+               NT        Nothing. Darwin-Katherine is a small isolated system
+                         outside the NEM with no interconnection and >80% gas
+                         already, so extra gas generation displaces nothing and
+                         has nowhere to sell. GARY does not model that system;
+                         zero is an honest "cannot say", not an estimate.
 ------------------------------------------------------------------------------
 """
 import os
@@ -119,11 +137,20 @@ MASSMARKET_RAISES = False
 # --- gas-powered generation --------------------------------------------------
 # GPG has NO elasticity. A generator's willingness to pay per GJ of gas is an
 # engineering substitution threshold: the cost of the generation it displaces
-# divided by its heat rate, WTP = COAL_SRMC / heat_rate. Efficient plant can pay
-# the most for gas, peakers the least. This is the largest demand response in the
+# divided by its heat rate, WTP = DISPLACED_SRMC[state] / heat_rate. Efficient
+# plant can pay the most for gas, peakers the least. This is the largest demand response in the
 # model and none of it comes from the elasticity literature -- do not read the
 # GPG blocks as an elasticity estimate.
-COAL_SRMC = 45.0                        # $/MWh displaced
+# $/MWh of generation displaced, and what it is, by jurisdiction. See the
+# DISPLACED_SRMC note above -- a single national figure priced SA and NT gas off
+# a coal fleet neither has.
+DISPLACED_SRMC = {
+    'QLD': (45.0, 'Black coal'),
+    'NSW': (45.0, 'Black coal'),
+    'VIC': (10.0, 'Brown coal, mine-mouth'),
+    'SA':  (10.0, 'Imports from VIC/NSW (Heywood, Project EnergyConnect)'),
+    'NT':  (0.0,  'Nothing - isolated gas-dominated system, no coal'),
+}
 HEAT_RATES = (7.0, 10.64, 13.0)         # GJ/MWh: CCGT, NEM average, OCGT
 
 # GARY models gas, not the NEM. Nameplate headroom is ~3,300 TJ/d against 321
@@ -137,6 +164,7 @@ GPG_EXPANSION_CAP = 1.0
 DATA = os.path.join(os.path.dirname(__file__), "data")
 PARAMS_FILE = os.path.join(DATA, "curtailment_params.csv")
 GPG_CAPACITY_FILE = os.path.join(DATA, "gpg_capacity.csv")
+GPG_RAISE_FILE = os.path.join(DATA, "gpg_raise_blocks.csv")
 
 
 def shed_blocks(prefix, reference_price=REFERENCE_PRICE, elasticity=ELASTICITY,
@@ -167,16 +195,34 @@ def raise_blocks(prefix, reference_price=REFERENCE_PRICE, elasticity=ELASTICITY,
     return out
 
 
-def gpg_raise_blocks(coal_srmc=COAL_SRMC, heat_rates=HEAT_RATES):
-    """GPG expansion ladder. Value is engineering, not econometrics: what a
-    generator can pay per GJ to displace coal at its own heat rate. Share is the
-    fraction of that node's nameplate headroom each rung may call on -- split
-    evenly, because GARY carries no CCGT/OCGT split for the fleet. That even
-    split is the weakest assumption in this file."""
+def gpg_raise_blocks(heat_rates=HEAT_RATES, displaced=None):
+    """Per-node GPG expansion ladder.
+
+    Value is engineering, not econometrics: what a generator can pay per GJ to
+    displace the marginal generation IN ITS OWN JURISDICTION, at its own heat
+    rate -- ``DISPLACED_SRMC[state] / heat_rate``. A node whose jurisdiction has
+    nothing cheaper to displace gets no expansion blocks at all.
+
+    Share is the fraction of that node's nameplate headroom each rung may call
+    on, split evenly because GARY carries no CCGT/OCGT split for the fleet. That
+    even split is the weakest assumption in this file.
+    """
+    displaced = DISPLACED_SRMC if displaced is None else displaced
+    fac = pd.read_csv(os.path.join(DATA, "gpg_facilities.csv"))
+    state_of = (fac.groupby('Node')['State']
+                   .agg(lambda x: x.mode().iat[0]).to_dict())
     n = len(heat_rates)
-    return [{'Tier': f"GPG_U{i}", 'StrikePrice': round(coal_srmc / hr, 2),
-             'Share': round(1.0 / n, 6), 'WinterScale': 1.0, 'Direction': 'raise'}
-            for i, hr in enumerate(sorted(heat_rates), start=1)]
+    rows = []
+    for node, state in sorted(state_of.items()):
+        srmc, tech = displaced.get(state, (0.0, 'Unknown jurisdiction'))
+        for i, hr in enumerate(sorted(heat_rates), start=1):
+            value = srmc / hr
+            if value <= 0:
+                continue
+            rows.append({'Node': node, 'State': state, 'Block': f"GPG_U{i}",
+                         'HeatRate': hr, 'DisplacedSRMC': srmc, 'DisplacedTech': tech,
+                         'ValuePerGJ': round(value, 3), 'Share': round(1.0 / n, 6)})
+    return pd.DataFrame(rows)
 
 
 def build_gpg_capacity():
@@ -230,7 +276,6 @@ def main():
     if MASSMARKET_RAISES:
         rows += raise_blocks("MassMarket")
     rows += raise_blocks("Industrial")
-    rows += gpg_raise_blocks()
 
     try:
         df = pd.read_csv(PARAMS_FILE)
@@ -245,6 +290,8 @@ def main():
     df = df[~df['Tier'].astype(str).str.match(r'^(MassMarket|Industrial|GPG)_[BU]\d+$')]
     pd.concat([df, pd.DataFrame(rows)], ignore_index=True).to_csv(PARAMS_FILE, index=False)
 
+    gpg = gpg_raise_blocks()
+    gpg.to_csv(GPG_RAISE_FILE, index=False)
     caps, matched, total = build_gpg_capacity()
 
     print(f"Reference price ${REFERENCE_PRICE}/GJ (model baseline dual), "
@@ -256,6 +303,19 @@ def main():
     shed_total = sum(r['Share'] for r in rows if r['Direction'] == 'shed')
     print(f"  mass-market inelastic core {(1 - shed_total)*100:.3f}% "
           f"(served or shed at the value of lost load)")
+
+    print("\nGPG raise ladder, by jurisdiction (value = displaced $/MWh / heat rate):")
+    for state, (srmc, tech) in sorted(DISPLACED_SRMC.items()):
+        nodes = sorted(gpg[gpg['State'] == state]['Node'].unique()) if len(gpg) else []
+        if srmc <= 0:
+            allnodes = sorted(pd.read_csv(os.path.join(DATA, "gpg_facilities.csv"))
+                              .query("State == @state")['Node'].unique())
+            print(f"  {state:4s} ${srmc:5.1f}/MWh  {tech:52s} NO EXPANSION at {', '.join(allnodes)}")
+            continue
+        vals = sorted(gpg[gpg['State'] == state]['ValuePerGJ'].unique(), reverse=True)
+        print(f"  {state:4s} ${srmc:5.1f}/MWh  {tech:52s} "
+              f"${'/$'.join(f'{v:.2f}' for v in vals)}/GJ  at {', '.join(nodes)}")
+
     print(f"\nGPG capacity: matched {matched}/{total} facilities, "
           f"{caps['Nameplate'].sum():,.0f} TJ/d nameplate vs "
           f"{caps['MeanDemand'].sum():,.0f} TJ/d baseline "
@@ -270,7 +330,7 @@ def main():
               f"calibrated against a stale price -- update REFERENCE_PRICE and rerun.")
     else:
         print(f"\nReference price check: cached baseline implies ${implied:.2f}/GJ (ok).")
-    print(f"-> {PARAMS_FILE}\n-> {GPG_CAPACITY_FILE}")
+    print(f"-> {PARAMS_FILE}\n-> {GPG_CAPACITY_FILE}\n-> {GPG_RAISE_FILE}")
 
 
 if __name__ == "__main__":

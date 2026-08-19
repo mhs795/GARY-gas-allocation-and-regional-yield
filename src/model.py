@@ -120,6 +120,24 @@ def load_demand_blocks(data_dir):
     return out
 
 
+def load_gpg_raise_blocks(data_dir):
+    """Per-node GPG expansion ladder, as ``{(node, block): (value $/GJ, share)}``.
+
+    Value is what a generator at that node can pay per GJ to displace the marginal
+    generation IN ITS OWN JURISDICTION, at its own heat rate. Nodes whose
+    jurisdiction has nothing cheaper to displace -- the NT's isolated gas-only
+    system, and effectively SA and VIC, where the alternative is mine-mouth brown
+    coal at a running cost gas cannot beat -- get no blocks and so cannot expand.
+    Written by build_demand_curves.py.
+    """
+    try:
+        df = pd.read_csv(os.path.join(data_dir, "gpg_raise_blocks.csv"))
+    except FileNotFoundError:
+        return {}
+    return {(str(r['Node']), str(r['Block'])): (float(r['ValuePerGJ']), float(r['Share']))
+            for _, r in df.iterrows() if float(r['ValuePerGJ']) > 0}
+
+
 def load_gpg_capacity(data_dir):
     """Per-node GPG expansion ceiling, as ``{node: (nameplate TJ/d, cap multiple)}``.
 
@@ -239,7 +257,9 @@ class GasMarketModel:
         self.mm_blocks = blocks.get(('MassMarket', 'shed'), [])
         self.mm_raise = blocks.get(('MassMarket', 'raise'), [])
         self.ind_raise = blocks.get(('Industrial', 'raise'), [])
-        self.gpg_raise = blocks.get(('GPG', 'raise'), [])
+        # GPG's ladder is per-node (regional displacement), so it lives in its own
+        # file rather than the national block table.
+        self.gpg_raise = load_gpg_raise_blocks(data_dir) if self.elastic_demand else {}
         self.gpg_capacity = load_gpg_capacity(data_dir) if self.elastic_demand else {}
         if self.elastic_demand and not blocks:
             # Silently falling back to fixed demand would look like the lever
@@ -310,8 +330,8 @@ class GasMarketModel:
         # that drove Perth prices negative in the removed WA build.
         ind_raise_val = {b[0]: b[1] for b in self.ind_raise}
         ind_raise_share = {b[0]: b[2] for b in self.ind_raise}
-        gpg_raise_val = {b[0]: b[1] for b in self.gpg_raise}
-        gpg_raise_share = {b[0]: b[2] for b in self.gpg_raise}
+        gpg_raise_val = {k: v[0] for k, v in self.gpg_raise.items()}
+        gpg_raise_share = {k: v[1] for k, v in self.gpg_raise.items()}
 
         def ind_raise_available(n, blk, t):
             return ind_dem.get((n, t), 0) * ind_raise_share[blk]
@@ -319,16 +339,20 @@ class GasMarketModel:
         def gpg_raise_available(n, blk, t):
             """Headroom for extra GPG: physical nameplate less what already runs,
             and never more than the cap multiple of baseline demand."""
+            share = gpg_raise_share.get((n, blk))
+            if share is None:
+                return 0.0
             base = gpg_dem.get((n, t), 0)
             nameplate, cap_mult = self.gpg_capacity.get(n, (0.0, 0.0))
             headroom = max(0.0, min(nameplate - base, cap_mult * base))
-            return headroom * gpg_raise_share[blk]
+            return headroom * share
         self._ind_raise_available = ind_raise_available
         self._gpg_raise_available = gpg_raise_available
 
         m.INDRaise = pyo.Set(initialize=[b[0] for b in self.ind_raise])
-        m.GPGRaise = pyo.Set(initialize=[b[0] for b in self.gpg_raise])
-        gpg_raise_nodes = sorted({n for n in m.GPGNodes if n in self.gpg_capacity})
+        m.GPGRaise = pyo.Set(initialize=sorted({b for _, b in self.gpg_raise}))
+        gpg_raise_nodes = sorted({n for (n, _) in self.gpg_raise
+                                  if n in m.GPGNodes and n in self.gpg_capacity})
         m.GPGRaiseNodes = pyo.Set(initialize=gpg_raise_nodes)
         m.ind_expand = pyo.Var(m.INDNodes, m.INDRaise, m.T, domain=pyo.NonNegativeReals)
         m.gpg_expand = pyo.Var(m.GPGRaiseNodes, m.GPGRaise, m.T, domain=pyo.NonNegativeReals)
@@ -359,8 +383,9 @@ class GasMarketModel:
             # value. This makes total_cost NOT comparable with an inelastic run.
             ind_benefit = sum(m.ind_expand[n, b, t] * ind_raise_val[b] * 1000
                               for n in m.INDNodes for b in m.INDRaise for t in m.T)
-            gpg_benefit = sum(m.gpg_expand[n, b, t] * gpg_raise_val[b] * 1000
-                              for n in m.GPGRaiseNodes for b in m.GPGRaise for t in m.T)
+            gpg_benefit = sum(m.gpg_expand[n, b, t] * gpg_raise_val[n, b] * 1000
+                              for n in m.GPGRaiseNodes for b in m.GPGRaise for t in m.T
+                              if (n, b) in gpg_raise_val)
             return (prod_cost + trans_cost + shortage_penalty + storage_cost + exp_capex
                     + gpg_pen + ind_pen + mm_pen - ind_benefit - gpg_benefit)
         m.obj = pyo.Objective(rule=obj_rule, sense=pyo.minimize)

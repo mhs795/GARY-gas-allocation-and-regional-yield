@@ -107,7 +107,9 @@ class CapacityExpansionModel:
         # headroom is a share of rd['ind'] and GPG headroom is nameplate less
         # rd['gpg'], both already carried on the representative day.
         self.ind_raise = list(ind_raise)
-        self.gpg_raise = list(gpg_raise)
+        # Per-node: {(node, block): (value $/GJ, share of headroom)}. GPG's ladder
+        # is regional because what gas displaces differs by jurisdiction.
+        self.gpg_raise = dict(gpg_raise)
         self.gpg_capacity = dict(gpg_capacity or {})
         self.terminal_earliest = terminal_earliest
         self.base_year = base_year
@@ -149,11 +151,12 @@ class CapacityExpansionModel:
 
         ind_raise_val = {b[0]: b[1] for b in self.ind_raise}
         ind_raise_share = {b[0]: b[2] for b in self.ind_raise}
-        gpg_raise_val = {b[0]: b[1] for b in self.gpg_raise}
-        gpg_raise_share = {b[0]: b[2] for b in self.gpg_raise}
+        gpg_raise_val = {k: v[0] for k, v in self.gpg_raise.items()}
+        gpg_raise_share = {k: v[1] for k, v in self.gpg_raise.items()}
         m.INDRaise = pyo.Set(initialize=list(ind_raise_val))
-        m.GPGRaise = pyo.Set(initialize=list(gpg_raise_val))
-        m.GPGRaiseNodes = pyo.Set(initialize=[n for n in m.GPGNodes if n in self.gpg_capacity])
+        m.GPGRaise = pyo.Set(initialize=sorted({b for _, b in gpg_raise_val}))
+        m.GPGRaiseNodes = pyo.Set(initialize=sorted(
+            {n for (n, _) in gpg_raise_val if n in m.GPGNodes and n in self.gpg_capacity}))
         m.ind_expand = pyo.Var(m.INDNodes, m.INDRaise, m.YR, domain=pyo.NonNegativeReals)
         m.gpg_expand = pyo.Var(m.GPGRaiseNodes, m.GPGRaise, m.YR, domain=pyo.NonNegativeReals)
 
@@ -161,9 +164,12 @@ class CapacityExpansionModel:
             return self.rep[y][i]['ind'].get(n, 0) * ind_raise_share[b]
 
         def gpg_raise_avail(n, b, y, i):
+            share = gpg_raise_share.get((n, b))
+            if share is None:
+                return 0.0
             base = self.rep[y][i]['gpg'].get(n, 0)
             nameplate, cap_mult = self.gpg_capacity.get(n, (0.0, 0.0))
-            return max(0.0, min(nameplate - base, cap_mult * base)) * gpg_raise_share[b]
+            return max(0.0, min(nameplate - base, cap_mult * base)) * share
         m.build = pyo.Var(m.Expansion, Y, domain=pyo.Binary)   # build project e in year y
 
         arc_data = self.arcs.set_index('Name').to_dict('index')
@@ -203,8 +209,9 @@ class CapacityExpansionModel:
                     # Negative: benefit of demand taken up while gas is cheap.
                     - pyo.quicksum(m.ind_expand[n, b, y, i] * ind_raise_val[b] * 1000
                                    for n in m.INDNodes for b in m.INDRaise)
-                    - pyo.quicksum(m.gpg_expand[n, b, y, i] * gpg_raise_val[b] * 1000
-                                   for n in m.GPGRaiseNodes for b in m.GPGRaise))
+                    - pyo.quicksum(m.gpg_expand[n, b, y, i] * gpg_raise_val[n, b] * 1000
+                                   for n in m.GPGRaiseNodes for b in m.GPGRaise
+                                   if (n, b) in gpg_raise_val))
                 for (y, i) in YR)
             capex = pyo.quicksum(m.build[e, y] * exp_data[e]['CapEx'] * df[y] for e in m.Expansion for y in Y)
             return ops + capex
