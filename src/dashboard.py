@@ -26,6 +26,10 @@ CHART_DL = [
     ('dl-storage',       'storage-inventory-graph', 'storage_inventory'),
     ('dl-price-high',    'price-high-graph',       'prices_high_demand'),
     ('dl-price-low',     'price-low-graph',        'prices_low_demand'),
+    ('dl-price-q-high',  'price-q-high-graph',     'prices_high_demand_quarterly'),
+    ('dl-price-q-low',   'price-q-low-graph',      'prices_low_demand_quarterly'),
+    ('dl-price-a-high',  'price-a-high-graph',     'prices_high_demand_annual'),
+    ('dl-price-a-low',   'price-a-low-graph',      'prices_low_demand_annual'),
     ('dl-ind',           'ind-graph',              'gpg_large_users'),
 ]
 
@@ -1128,8 +1132,16 @@ main = html.Div(className='md-main', children=[
             html.Div(id='tab-price-content', style={'display': 'none'}, children=[
                 dcc.Graph(id='price-high-graph',  style={'marginBottom': '4px'}),
                 _dl_btn('dl-price-high'),
-                dcc.Graph(id='price-low-graph'),
+                dcc.Graph(id='price-low-graph', style={'marginBottom': '4px'}),
                 _dl_btn('dl-price-low'),
+                dcc.Graph(id='price-q-high-graph', style={'marginBottom': '4px'}),
+                _dl_btn('dl-price-q-high'),
+                dcc.Graph(id='price-q-low-graph', style={'marginBottom': '4px'}),
+                _dl_btn('dl-price-q-low'),
+                dcc.Graph(id='price-a-high-graph', style={'marginBottom': '4px'}),
+                _dl_btn('dl-price-a-high'),
+                dcc.Graph(id='price-a-low-graph'),
+                _dl_btn('dl-price-a-low'),
             ]),
 
             # Expansions
@@ -1996,8 +2008,12 @@ def update_storage(key, end_year, active_tab, theme):
 # Prices
 # ---------------------------------------------------------------------------
 @app.callback(
-    Output('price-high-graph', 'figure'),
-    Output('price-low-graph',  'figure'),
+    Output('price-high-graph',   'figure'),
+    Output('price-low-graph',    'figure'),
+    Output('price-q-high-graph', 'figure'),
+    Output('price-q-low-graph',  'figure'),
+    Output('price-a-high-graph', 'figure'),
+    Output('price-a-low-graph',  'figure'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
     Input('main-tabs',       'active_tab'),
@@ -2005,49 +2021,68 @@ def update_storage(key, end_year, active_tab, theme):
 )
 def update_prices(key, end_year, active_tab, theme):
     if active_tab != 'tab-price':
-        return no_update, no_update
+        return (no_update,) * 6
     tmpl = 'gary_dark' if theme == 'dark' else CHART_TEMPLATE
     b = blank_fig(tmpl)
     if not key:
-        return b, b
+        return (b,) * 6
     filtered = get_filtered(key, end_year)
     if not filtered:
-        return b, b
+        return (b,) * 6
 
     # Daily nodal prices for the demand centres over the selected horizon.
     frames = [r['prices'].assign(Year=r['Year']) for r in filtered if not r['prices'].empty]
     if not frames:
-        return b, b
+        return (b,) * 6
     price_nodes = static_data['nodes'][static_data['nodes']['Type'].isin(['Demand', 'LNG'])]['Name'].tolist()
     dpr = pd.concat(frames)
     dpr = dpr[dpr['Node'].isin(price_nodes)].copy()
     dpr['Date'] = pd.to_datetime(dpr['Year'].astype(str) + dpr['Day'].astype(int).astype(str).str.zfill(3),
                                  format='%Y%j')
     # Monthly-average price (~12 points/year): smooths daily noise while keeping
-    # the seasonal (winter) signal.
-    dpr['Month'] = dpr['Date'].dt.to_period('M').dt.to_timestamp()
-    q = dpr.groupby(['Month', 'Node'])['Price'].mean().reset_index()
-    # Split centres by the highest quarterly price they reach (cap-bound vs low)
-    # so each chart auto-scales to its own group.
+    # the seasonal (winter) signal. Quarterly (~4 points/year) and annual (1 point)
+    # sit underneath for the longer-run trend, where the winter spike is averaged
+    # into its period and only the trajectory is left.
+    dpr['Month']   = dpr['Date'].dt.to_period('M').dt.to_timestamp()
+    dpr['Quarter'] = dpr['Date'].dt.to_period('Q').dt.to_timestamp()
+    dpr['Annual']  = dpr['Date'].dt.to_period('Y').dt.to_timestamp()
+    q  = dpr.groupby(['Month',   'Node'])['Price'].mean().reset_index()
+    qq = dpr.groupby(['Quarter', 'Node'])['Price'].mean().reset_index()
+    qa = dpr.groupby(['Annual',  'Node'])['Price'].mean().reset_index()
+    # Split centres by the highest monthly price they reach (cap-bound vs low)
+    # so each chart auto-scales to its own group. The MONTHLY maxima drive the
+    # split for all three: averaging over a quarter or a year pulls a spike down,
+    # so splitting each chart on its own maxima would move nodes between groups
+    # and the charts would no longer show the same node sets.
     ann    = q.groupby('Node')['Price'].max()
     hit    = [n for n in price_nodes if ann.get(n, 0) >= 150]
     no_hit = [n for n in price_nodes if n not in hit]
 
-    def _price_fig(nodes, title):
-        sub = q[q['Node'].isin(nodes)].sort_values('Month')
+    def _price_fig(df, period, nodes, title):
+        sub = df[df['Node'].isin(nodes)].sort_values(period)
         if sub.empty:
             f = blank_fig(tmpl)
             f.update_layout(title=title)
             return f
-        f = px.line(sub, x='Month', y='Price', color='Node', title=title,
-                    template=tmpl, labels={'Price': '$/GJ', 'Month': ''},
+        f = px.line(sub, x=period, y='Price', color='Node', title=title,
+                    template=tmpl, labels={'Price': '$/GJ', period: ''},
                     render_mode='svg')
         f.update_yaxes(rangemode='tozero')
         return f
 
-    fig_high = _price_fig(hit, 'Demand & LNG nodes reaching the $300 cap — monthly avg ($/GJ)')
-    fig_low  = _price_fig(no_hit, 'Demand & LNG nodes staying below the cap — monthly avg ($/GJ)')
-    return fig_high, fig_low
+    fig_high = _price_fig(q, 'Month', hit,
+                          'Demand & LNG nodes reaching the $300 cap — monthly avg ($/GJ)')
+    fig_low  = _price_fig(q, 'Month', no_hit,
+                          'Demand & LNG nodes staying below the cap — monthly avg ($/GJ)')
+    fig_q_high = _price_fig(qq, 'Quarter', hit,
+                            'Demand & LNG nodes reaching the $300 cap — quarterly avg ($/GJ)')
+    fig_q_low  = _price_fig(qq, 'Quarter', no_hit,
+                            'Demand & LNG nodes staying below the cap — quarterly avg ($/GJ)')
+    fig_a_high = _price_fig(qa, 'Annual', hit,
+                            'Demand & LNG nodes reaching the $300 cap — annual avg ($/GJ)')
+    fig_a_low  = _price_fig(qa, 'Annual', no_hit,
+                            'Demand & LNG nodes staying below the cap — annual avg ($/GJ)')
+    return fig_high, fig_low, fig_q_high, fig_q_low, fig_a_high, fig_a_low
 
 # ---------------------------------------------------------------------------
 # Expansions
