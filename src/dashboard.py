@@ -1414,7 +1414,6 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     State('winter-slider', 'value'),
     State('lng-slider',    'value'),
     State('gap-slider',    'value'),
-    State('baseline-selector', 'value'),
     State('dunkelflaute-toggle', 'value'),
     State('discount-slider', 'value'),
     State('foresight-toggle', 'value'),
@@ -1432,48 +1431,57 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
     prevent_initial_call=True,
 )
-def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, baseline, dunkel,
+def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
                           discount, foresight_v, elastic_v, refresh):
-    """Every reservation level at the Winter/LNG case currently selected.
+    """Every reservation level x every GSOO baseline, at the selected Winter/LNG case.
 
-    The reservation sidebar toggle is deliberately ignored — this button sweeps the
-    levels itself. It always includes the 0% run: a reservation is only readable
-    against the same case without one, and that comparison is the whole point of
-    the sweep (production forgone, take-up, where the price relief lands).
+    Two sidebar controls are deliberately ignored, because this button sweeps both
+    of them itself: the reservation toggle and the GSOO baseline dropdown. Winter
+    and LNG come from the sliders as selected — that is the case being studied —
+    and the rest (dunkelflaute, elastic demand, foresight, discount) follow the
+    sidebar exactly as a single run does.
+
+    Every baseline gets its own 0% run. A reservation is only readable against the
+    same case without one, and "the same case" includes the demand trajectory, so
+    the three baselines cannot share one comparison run.
     """
     w, l = LEVELS[wi], LEVELS[li]
-    baseline = baseline or 'StepChange'
     dunkelflaute = bool(dunkel) and 'on' in dunkel
     foresight = 'on' in (foresight_v or [])
     elastic = 'on' in (elastic_v or [])
     dr = 0.07 if discount is None else float(discount)
     levels = [0.0] + list(RESERVATION_LEVELS)
+    # Baseline outer, reservation inner: an interrupted sweep then leaves whole
+    # readable ladders behind rather than a 0% run for each of three baselines.
+    jobs = [(b['value'], share) for b in BASELINES for share in levels]
 
     data = load_results()
     solved = 0
-    for i, share in enumerate(levels):
-        key = scenario_key(baseline, w, l, dunkelflaute, share, elastic, foresight, dr)
-        # Cached levels are skipped, so a re-run after adding a level costs one
-        # solve rather than the whole sweep. Clear Results to force a rebuild.
+    for i, (base, share) in enumerate(jobs):
+        key = scenario_key(base, w, l, dunkelflaute, share, elastic, foresight, dr)
+        # Cached combinations are skipped, so a re-run after adding a level costs
+        # one solve rather than the whole sweep. Clear Results to force a rebuild.
         if key not in data['all_scenarios']:
-            def _cb(yr, p, _i=i, _n=len(levels), _s=share):
+            def _cb(yr, p, _i=i, _n=len(jobs), _s=share, _b=base):
                 overall = int((_i + p) / _n * 100)
                 tag = f'{round(_s * 100)}% reservation' if _s else 'no reservation'
-                set_progress((overall, f'{tag} · Year {yr} — {overall}%'))
+                set_progress((overall, f'{BASELINE_LABEL.get(_b, _b)} · {tag} · '
+                                       f'Year {yr} — {overall}%'))
             data['all_scenarios'][key] = solve_scenario(
-                w, l, mip_gap=gap, callback=_cb, baseline=baseline,
+                w, l, mip_gap=gap, callback=_cb, baseline=base,
                 dunkelflaute=dunkelflaute, discount_rate=dr, foresight=foresight,
                 reservation=share, elastic_demand=elastic,
-                title=f'[{i + 1}/{len(levels)}]  {pretty_key(key)}')
+                title=f'[{i + 1}/{len(jobs)}]  {pretty_key(key)}')
             data['current_key'] = key
             save_results(data)
             solved += 1
-        pct = int((i + 1) / len(levels) * 100)
-        set_progress((pct, f'Level {i + 1}/{len(levels)} complete — {pct}%'))
+        pct = int((i + 1) / len(jobs) * 100)
+        set_progress((pct, f'Run {i + 1}/{len(jobs)} complete — {pct}%'))
     shares = ' / '.join(f'{round(x * 100)}%' for x in levels)
-    skipped = len(levels) - solved
+    skipped = len(jobs) - solved
     note = f' ({skipped} already cached)' if skipped else ''
-    return (refresh or 0) + 1, f'✓  Reservation sweep — Winter {w} · LNG {l} at {shares}{note}'
+    return (refresh or 0) + 1, (f'✓  Reservation sweep — {len(jobs)} runs: {shares} '
+                                f'x {len(BASELINES)} baselines · Winter {w} · LNG {l}{note}')
 
 # ---------------------------------------------------------------------------
 # Clear
