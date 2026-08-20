@@ -42,17 +42,27 @@ The first run will take 2–3 minutes while dependencies install. After that, op
 
 > **First run on a fresh clone:** the model's generated data files are not committed
 > (only source inputs are). Click **Regenerate All Data** once to rebuild every
-> derived data file from source, then **Run All Scenarios** to populate the results
+> derived data file from source, then **Run Scenarios** to populate the results
 > cache. After that the two-button workflow only needs repeating when source inputs change.
 
 1. Pick a **GSOO Baseline** scenario — **Step Change**, **Accelerated Transition**, or **Slower Growth** — in the sidebar
 2. Set **Winter Stress** and **LNG Demand** levels (these layer on top of the chosen baseline)
 2. Optionally switch on **Gas reservation** and pick the share of LNG exports to reserve (5/10/20/30%),
    and/or **Price-responsive demand**
-3. Click **Run Scenario** to solve one combination (~1–2 min)
-4. Click **Run All Scenarios** to pre-calculate **every combination** — all 3 baselines × 3 Winter × 3 LNG = 27 scenarios (~45 min)
-5. Click **Regenerate All Data** to rebuild all derived demand data from source (GBB + GSOO, all three baselines)
-6. Explore results across 6 tabs: Network Map, Production, Storage, Prices, Expansions, Industrial Use
+3. Click **Run Scenario** to solve one combination
+4. Click **Run Scenarios** to pre-calculate **every combination** — all 3 baselines × 3 Winter × 3 LNG = 27 scenarios, plus the SA dunkelflaute case
+5. Click **Run Reservation Scenarios** to sweep **every reservation level × every GSOO baseline** — 5 levels (0/5/10/20/30%) × 3 baselines = 15 runs — at the Winter and LNG levels currently selected. This button sweeps the baseline dropdown and the reservation toggle itself, so both are ignored while it runs; every other sidebar setting is honoured. Each baseline gets its own 0% run, because a reservation is only readable against the same case without one
+6. Click **Regenerate All Data** to rebuild all derived demand data from source (GBB + GSOO, all three baselines)
+7. Explore results across 6 tabs: Network Map, Production, Storage, Prices, Expansions, Industrial Use
+
+Both sweeps skip scenarios already in the cache and save each one as it finishes, so
+an interrupted sweep keeps everything that completed. **Clear Results** forces a
+full rebuild.
+
+### How long a sweep takes
+
+Sweeps run several scenarios at once, one process each — see
+[Parallel sweeps](#parallel-sweeps).
 
 ## Project Structure
 
@@ -62,6 +72,7 @@ The first run will take 2–3 minutes while dependencies install. After that, op
 | `src/model.py` | Pyomo optimisation model |
 | `src/solve.py` | Scenario solver |
 | `src/solvers.py` | Solver backend selection (HiGHS / GLPK) |
+| `src/sweep.py` | Runs independent scenarios across worker processes |
 | `src/results_io.py` | Compressed, column-oriented scenario-results cache |
 | `src/regenerate_data.py` | One-button rebuild of all derived data from source |
 | `src/build_*.py` | GSOO/GBB demand-build pipeline (see below) |
@@ -130,6 +141,49 @@ Medium winter / Medium LNG, full 2025–2050 two-stage solve:
 | Capacity-expansion MILP | 5.1 s | 5.7 s |
 | Single-year dispatch (2030) | 10.8 s | 13.5 s |
 | Full 26-year run | 302 s | 328 s |
+
+## Parallel sweeps
+
+A sweep is a set of scenarios that share nothing — each loads its own data, solves
+its own capacity model and dispatches its own 26 years — so the scenario is the unit
+of parallelism. `src/sweep.py` runs them in worker processes, one solve per worker,
+and the dashboard's **Run Scenarios** and **Run Reservation Scenarios** buttons both
+go through it. A single **Run Scenario** is unaffected: it stays in-process, with its
+per-year progress and terminal log.
+
+Workers default to **half the logical CPUs** (the physical core count on a normal
+machine). Override it:
+
+```
+GARY_WORKERS=6 ./gas
+```
+
+Threads inside the solver are deliberately *not* the lever, and workers pin
+`GARY_SOLVER_THREADS=1`. HiGHS's simplex is serial in practice, and the duals GARY
+needs for nodal prices come from simplex, so handing one dispatch solve four threads
+measures no faster than handing it one — on a 2030 dispatch LP, 9.9 s at one thread
+against 14.5 s at four. Only the capacity MIP parallelises at all (26.5 s → 21.6 s on
+two physical cores), and it is under 10% of a scenario. Several single-threaded
+solves at once is the win; oversubscribing the box makes both slower.
+
+Where a scenario's time actually goes, measured on a 2-core i5-5257U:
+
+| stage | time |
+|---|---|
+| build 26 year-models + representative days + capacity MIP | ~28 s (under 10%) |
+| 26 × dispatch solve (HiGHS) | ~10 s each |
+| 26 × `get_results()` (pure Python, no solver) | ~10–12 s each |
+
+Two consequences. Memory, not cores, sets the ceiling on a small machine: each worker
+peaks around 0.5 GB. And roughly half of stage 2 is result extraction, which no
+solver setting touches — the obvious target if single-scenario speed ever matters
+more than sweep throughput.
+
+**Writing a script that calls `run_jobs`?** Guard the entry point with
+`if __name__ == '__main__':`. Workers are spawned, not forked (the caller is a Dash
+background process holding sqlite handles), and a spawned worker re-imports the
+caller's `__main__`; without the guard the children re-run the sweep on import and
+the pool dies during bootstrap.
 
 ## Gas reservation
 

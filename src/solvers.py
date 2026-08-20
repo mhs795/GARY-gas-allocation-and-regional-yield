@@ -92,12 +92,31 @@ def require_available(name=None):
         "with:  pip install highspy")
 
 
-def make_solver(rel_gap=None, threads=4, time_limit=None, name=None):
+def solver_threads():
+    """HiGHS threads per solve, from GARY_SOLVER_THREADS (default 4).
+
+    Sweeps set this to 1 in their worker processes: HiGHS's simplex is serial in
+    practice, so several single-threaded solves in parallel beat one solve given
+    several threads, and oversubscribing the box makes both slower.
+    """
+    raw = os.environ.get("GARY_SOLVER_THREADS", "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return 4
+
+
+def make_solver(rel_gap=None, threads=None, time_limit=None, name=None):
     """Build a configured Pyomo solver for the selected backend.
 
     ``rel_gap`` is the relative MIP gap; pass None for a pure-LP solve (the
     option is simply not set, which matters for GLPK because glpsol rejects
     MIP-only flags on an LP).
+
+    ``threads`` defaults to :func:`solver_threads` (the GARY_SOLVER_THREADS
+    environment variable, else 4).
 
     A fresh instance is returned every call. The appsi_highs persistent
     interface caches the model between solves, so reusing one across calls
@@ -107,7 +126,7 @@ def make_solver(rel_gap=None, threads=4, time_limit=None, name=None):
     opt = pyo.SolverFactory(_PYOMO_NAME[key])
 
     if key == "highs":
-        opt.options['threads'] = threads
+        opt.options['threads'] = solver_threads() if threads is None else threads
         if rel_gap is not None:
             opt.options['mip_rel_gap'] = rel_gap
         if time_limit is not None:

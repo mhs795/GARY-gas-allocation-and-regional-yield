@@ -18,6 +18,7 @@ import results_io
 from model import RESERVATION_LEVELS
 from solve import solve_scenario
 from regenerate_data import regenerate_all
+from sweep import run_jobs, default_workers
 
 # ---------------------------------------------------------------------------
 # Chart-data download (Excel)
@@ -1340,6 +1341,35 @@ def toggle_reservation_slider(v):
     return {'display': 'block'} if v and 'on' in v else {'display': 'none'}
 
 
+def _run_sweep(jobs, data, set_progress):
+    """Solve a list of (key, title, kwargs) scenarios and cache each as it lands.
+
+    Saving inside the completion callback rather than at the end means an
+    interrupted sweep keeps every scenario that finished, and the dropdown fills
+    up as it goes. Scenarios finish out of order once there is more than one
+    worker, so each is filed under the key that came back with it.
+    """
+    if not jobs:
+        set_progress((100, 'Nothing to solve — every scenario already cached'))
+        return
+    workers = min(default_workers(), len(jobs))
+    note = f' on {workers} workers' if workers > 1 else ''
+
+    def _done(i, n, key, results, secs):
+        data['all_scenarios'][key] = results
+        data['current_key'] = key
+        save_results(data)
+        pct = int(i / n * 100)
+        set_progress((pct, f'{i}/{n} scenarios complete{note} — {pct}%'))
+
+    def _year(i, n, yr, frac):
+        pct = int((i - 1 + frac) / n * 100)
+        set_progress((pct, f'Scenario {i}/{n} · Year {yr} — {pct}%'))
+
+    set_progress((0, f'Solving {len(jobs)} scenarios{note}…'))
+    run_jobs(jobs, workers=workers, on_done=_done, on_year=_year)
+
+
 # ---------------------------------------------------------------------------
 # Run All Scenarios (background)
 # ---------------------------------------------------------------------------
@@ -1380,29 +1410,22 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     foresight = 'on' in (foresight_v or [])
     reservation = reservation_share(resv_on, resv_i)
     dr = 0.07 if discount is None else float(discount)
-    jobs = [(b['value'], w, l, False) for b in BASELINES for w in LEVELS for l in LEVELS]
-    jobs.append(('StepChange', 'Medium', 'Medium', True))
+    combos = [(b['value'], w, l, False) for b in BASELINES for w in LEVELS for l in LEVELS]
+    combos.append(('StepChange', 'Medium', 'Medium', True))
     data = load_results()
-    for i, (b, w, l, dunkel) in enumerate(jobs):
+    jobs = []
+    for b, w, l, dunkel in combos:
         key = scenario_key(b, w, l, dunkel, reservation, False, foresight, dr)
         # Skip already-computed base combos, but always recompute the dunkelflaute
         # case so edits to the event flow through on a re-run.
         if dunkel or key not in data['all_scenarios']:
-            def _cb(yr, p, _i=i, _n=len(jobs), _b=b, _w=w, _l=l, _d=dunkel):
-                overall = int((_i + p) / _n * 100)
-                tag = ' · SA Dunkelflaute 2027' if _d else ''
-                tag += f' · {round(reservation * 100)}% reservation' if reservation else ''
-                set_progress((overall, f'{BASELINE_LABEL.get(_b, _b)} · Winter {_w} · LNG {_l}{tag} · Year {yr} — {overall}%'))
-            data['all_scenarios'][key] = solve_scenario(
-                w, l, mip_gap=gap, callback=_cb, baseline=b, dunkelflaute=dunkel,
-                discount_rate=dr, foresight=foresight, reservation=reservation,
-                title=f'[{i + 1}/{len(jobs)}]  {pretty_key(key)}')
-            data['current_key'] = key
-            save_results(data)
-        pct = int((i + 1) / len(jobs) * 100)
-        set_progress((pct, f'Scenario {i+1}/{len(jobs)} complete — {pct}%'))
+            jobs.append((key, pretty_key(key),
+                         dict(winter=w, lng=l, mip_gap=gap, baseline=b,
+                              dunkelflaute=dunkel, discount_rate=dr,
+                              foresight=foresight, reservation=reservation)))
+    _run_sweep(jobs, data, set_progress)
     resv_note = f' at {round(reservation * 100)}% reservation' if reservation else ''
-    return (refresh or 0) + 1, f'✓  Batch complete — {len(jobs)} scenarios (all baselines + SA dunkelflaute){resv_note}'
+    return (refresh or 0) + 1, f'✓  Batch complete — {len(combos)} scenarios (all baselines + SA dunkelflaute){resv_note}'
 
 # ---------------------------------------------------------------------------
 # Run Reservation Scenarios (background)
@@ -1453,34 +1476,25 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     levels = [0.0] + list(RESERVATION_LEVELS)
     # Baseline outer, reservation inner: an interrupted sweep then leaves whole
     # readable ladders behind rather than a 0% run for each of three baselines.
-    jobs = [(b['value'], share) for b in BASELINES for share in levels]
+    combos = [(b['value'], share) for b in BASELINES for share in levels]
 
     data = load_results()
-    solved = 0
-    for i, (base, share) in enumerate(jobs):
+    jobs = []
+    for base, share in combos:
         key = scenario_key(base, w, l, dunkelflaute, share, elastic, foresight, dr)
         # Cached combinations are skipped, so a re-run after adding a level costs
         # one solve rather than the whole sweep. Clear Results to force a rebuild.
         if key not in data['all_scenarios']:
-            def _cb(yr, p, _i=i, _n=len(jobs), _s=share, _b=base):
-                overall = int((_i + p) / _n * 100)
-                tag = f'{round(_s * 100)}% reservation' if _s else 'no reservation'
-                set_progress((overall, f'{BASELINE_LABEL.get(_b, _b)} · {tag} · '
-                                       f'Year {yr} — {overall}%'))
-            data['all_scenarios'][key] = solve_scenario(
-                w, l, mip_gap=gap, callback=_cb, baseline=base,
-                dunkelflaute=dunkelflaute, discount_rate=dr, foresight=foresight,
-                reservation=share, elastic_demand=elastic,
-                title=f'[{i + 1}/{len(jobs)}]  {pretty_key(key)}')
-            data['current_key'] = key
-            save_results(data)
-            solved += 1
-        pct = int((i + 1) / len(jobs) * 100)
-        set_progress((pct, f'Run {i + 1}/{len(jobs)} complete — {pct}%'))
+            jobs.append((key, pretty_key(key),
+                         dict(winter=w, lng=l, mip_gap=gap, baseline=base,
+                              dunkelflaute=dunkelflaute, discount_rate=dr,
+                              foresight=foresight, reservation=share,
+                              elastic_demand=elastic)))
+    _run_sweep(jobs, data, set_progress)
     shares = ' / '.join(f'{round(x * 100)}%' for x in levels)
-    skipped = len(jobs) - solved
+    skipped = len(combos) - len(jobs)
     note = f' ({skipped} already cached)' if skipped else ''
-    return (refresh or 0) + 1, (f'✓  Reservation sweep — {len(jobs)} runs: {shares} '
+    return (refresh or 0) + 1, (f'✓  Reservation sweep — {len(combos)} runs: {shares} '
                                 f'x {len(BASELINES)} baselines · Winter {w} · LNG {l}{note}')
 
 # ---------------------------------------------------------------------------

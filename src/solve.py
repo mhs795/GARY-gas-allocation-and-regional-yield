@@ -76,7 +76,8 @@ def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservatio
 
 def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
                    baseline="StepChange", dunkelflaute=False, discount_rate=0.07,
-                   foresight=True, reservation=0.0, elastic_demand=False, title=None):
+                   foresight=True, reservation=0.0, elastic_demand=False, title=None,
+                   log=True):
     """Solve a scenario over 2025-2050.
 
     ``foresight=True`` (default) uses the two-stage full-horizon method: a
@@ -95,26 +96,29 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     reservation runs, so the inelastic case stays the comparison baseline.
 
     Prints a one-line scenario header followed by one line per solved year;
-    ``title`` overrides the header text.
+    ``title`` overrides the header text and ``log=False`` silences both, which is
+    what parallel sweeps use — year lines from several workers at once interleave
+    into noise, so the parent process reports one line per finished scenario.
     """
     # One header per scenario, then one line per year: with the batch solving 28
     # scenarios x 26 years, the year lines are meaningless without it. Callers that
     # already have a nicer label (the dashboard passes its scenario key) override it.
-    print(f"\n{title or run_title(winter, lng, baseline, dunkelflaute, reservation, elastic_demand, foresight)}",
-          flush=True)
+    if log:
+        print(f"\n{title or run_title(winter, lng, baseline, dunkelflaute, reservation, elastic_demand, foresight)}",
+              flush=True)
     data = load_data(baseline)
     years = list(range(2025, 2051))
     if foresight:
         return _solve_foresight(data, years, winter, lng, baseline,
                                 dunkelflaute, mip_gap, discount_rate, callback,
-                                reservation, elastic_demand)
+                                reservation, elastic_demand, log)
     return _solve_myopic(data, years, winter, lng, baseline,
                          dunkelflaute, mip_gap, callback, reservation,
-                         elastic_demand)
+                         elastic_demand, log)
 
 
 def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
-                  mip_gap, callback, reservation=0.0, elastic_demand=False):
+                  mip_gap, callback, reservation=0.0, elastic_demand=False, log=True):
     """Reactive year-by-year solve: each year decides builds with no foresight."""
     contracts_all = data['contracts']
     built_projects, results = [], []
@@ -139,7 +143,8 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
         yr_res['elastic_demand'] = elastic_demand
         results.append(yr_res)
         built_projects.extend([b for b in yr_res['builds'] if b not in built_projects])
-        print(f"    Year {year} complete", flush=True)
+        if log:
+            print(f"    Year {year} complete", flush=True)
     if callback:
         callback(years[-1], 1.0)
     return results
@@ -147,7 +152,7 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
 
 def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
                      mip_gap, discount_rate, callback, reservation=0.0,
-                     elastic_demand=False):
+                     elastic_demand=False, log=True):
     """Two-stage full-horizon solve: perfect-foresight capacity + 365-day dispatch."""
     from capacity_model import CapacityExpansionModel, build_representative_days
     contracts_all = data['contracts']
@@ -219,7 +224,8 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         yr_res['lng_reserved_tj'] = diverted_by_year[year]
         yr_res['elastic_demand'] = elastic_demand
         scenario_results.append(yr_res)
-        print(f"    Year {year} complete", flush=True)
+        if log:
+            print(f"    Year {year} complete", flush=True)
 
     if callback:
         callback(end_year, 1.0)
