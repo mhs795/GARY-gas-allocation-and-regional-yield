@@ -573,14 +573,25 @@ body, html {
   margin-bottom: 3px;
 }
 
+/* Qualifier under a KPI value (e.g. reservation take-up): its own line, quieter
+   than the number it belongs to, so the value never breaks mid-phrase. */
+.md-kpi-sub {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--md-text-low);
+  margin-top: 2px;
+}
+
 .md-kpi-value {
   font-size: 22px;
   font-weight: 700;
   color: var(--md-text);
-  line-height: 1.1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.2;
+  /* Wrap rather than ellipsis: the Gas Reserved value carries a "(x% taken up)"
+     suffix that was being cut off in the card. Cards stretch to equal height. */
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 /* ── Tabs ───────────────────────────────────────────────────────────────── */
@@ -1490,8 +1501,9 @@ def update_header_kpis(key, end_year):
         kpi_card('New Projects', str(len(builds_df))),
     ]
     if reserved_pj:
-        take_up = f" ({served_pj/reserved_pj*100:.0f}% taken up)" if reserved_pj else ""
-        chips.insert(3, kpi_card('Gas Reserved', f"{reserved_pj:,.0f} PJ{take_up}"))
+        take_up = html.Span(f"{served_pj/reserved_pj*100:.0f}% taken up",
+                            className='md-kpi-sub')
+        chips.insert(3, kpi_card('Gas Reserved', [f"{reserved_pj:,.0f} PJ", take_up]))
     if raised_pj:
         chips.insert(3, kpi_card('Demand Raised', f"{raised_pj:,.0f} PJ"))
     if mm_shed_pj:
