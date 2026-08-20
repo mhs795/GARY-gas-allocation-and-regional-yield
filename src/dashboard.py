@@ -967,7 +967,8 @@ sidebar = html.Div(className='md-sidebar', children=[
         html.P('Actions', className='md-section-label'),
 
         html.Button('▶  Run Scenario',       id='run-btn',   className='md-btn md-btn-filled'),
-        html.Button('⚡  Run All Scenarios',  id='batch-btn', className='md-btn md-btn-tonal'),
+        html.Button('⚡  Run Scenarios',      id='batch-btn', className='md-btn md-btn-tonal'),
+        html.Button('⛽  Run Reservation Scenarios', id='reserve-btn', className='md-btn md-btn-tonal'),
         html.Button('↺  Regenerate All Data', id='regen-btn', className='md-btn md-btn-text'),
         html.Button('✕  Clear Results',      id='clear-btn', className='md-btn md-btn-danger'),
 
@@ -1199,6 +1200,22 @@ def reservation_share(toggle_value, slider_index):
     return RESERVATION_LEVELS[max(0, min(i, len(RESERVATION_LEVELS) - 1))]
 
 
+def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
+                 elastic=False, foresight=True, discount=0.07):
+    """Cache key for one scenario.
+
+    Segment order is load-bearing — pretty_key parses it and the cached results on
+    disk are filed under it — so every caller builds its keys here rather than
+    inline, or a sweep silently writes keys the dropdown can't read back.
+    """
+    return (f'Base_{baseline}_Winter_{winter}_LNG_{lng}'
+            + ('_Dunkelflaute' if dunkelflaute else '')
+            + (f'_Reserve{round(reservation * 100)}' if reservation else '')
+            + ('_Elastic' if elastic else '')
+            + ('' if foresight else '_Myopic')
+            + (f'_DR{round(discount * 100)}' if foresight and abs(discount - 0.07) > 1e-9 else ''))
+
+
 def get_filtered(key, end_year):
     data = load_results()
     return [r for r in data['all_scenarios'].get(key, []) if r['Year'] <= end_year]
@@ -1282,6 +1299,7 @@ def show_tab(active):
     running=[
         (Output('run-btn',          'disabled'), True,  False),
         (Output('batch-btn',        'disabled'), True,  False),
+        (Output('reserve-btn',      'disabled'), True,  False),
         (Output('solver-progress',  'style'),
          {'display': 'block'}, {'display': 'none'}),
         (Output('run-status', 'children'), '⏳  Solving…', ''),
@@ -1302,12 +1320,7 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
         pct = int(p * 100)
         set_progress((pct, f'Solving {yr}… {pct}%'))
     # Built before the solve so it can also title the terminal log.
-    key = (f'Base_{baseline}_Winter_{w}_LNG_{l}'
-           + ('_Dunkelflaute' if dunkelflaute else '')
-           + (f'_Reserve{round(reservation * 100)}' if reservation else '')
-           + ('_Elastic' if elastic else '')
-           + ('' if foresight else '_Myopic')
-           + (f'_DR{round(dr*100)}' if foresight and abs(dr - 0.07) > 1e-9 else ''))
+    key = scenario_key(baseline, w, l, dunkelflaute, reservation, elastic, foresight, dr)
     result = solve_scenario(w, l, mip_gap=gap, callback=_cb,
                             baseline=baseline, dunkelflaute=dunkelflaute,
                             discount_rate=dr, foresight=foresight,
@@ -1345,6 +1358,7 @@ def toggle_reservation_slider(v):
     running=[
         (Output('run-btn',         'disabled'), True,  False),
         (Output('batch-btn',       'disabled'), True,  False),
+        (Output('reserve-btn',     'disabled'), True,  False),
         (Output('solver-progress', 'style'),
          {'display': 'block'}, {'display': 'none'}),
         (Output('run-status', 'children'), '⏳  Batch running…', ''),
@@ -1366,15 +1380,11 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     foresight = 'on' in (foresight_v or [])
     reservation = reservation_share(resv_on, resv_i)
     dr = 0.07 if discount is None else float(discount)
-    # Segment order must match the single-run key builder in run_scenario:
-    # Dunkelflaute, then Reserve, then Myopic/DR.
-    resv_suffix = f'_Reserve{round(reservation * 100)}' if reservation else ''
-    suffix = ('' if foresight else '_Myopic') + (f'_DR{round(dr * 100)}' if foresight and abs(dr - 0.07) > 1e-9 else '')
     jobs = [(b['value'], w, l, False) for b in BASELINES for w in LEVELS for l in LEVELS]
     jobs.append(('StepChange', 'Medium', 'Medium', True))
     data = load_results()
     for i, (b, w, l, dunkel) in enumerate(jobs):
-        key = f'Base_{b}_Winter_{w}_LNG_{l}' + ('_Dunkelflaute' if dunkel else '') + resv_suffix + suffix
+        key = scenario_key(b, w, l, dunkel, reservation, False, foresight, dr)
         # Skip already-computed base combos, but always recompute the dunkelflaute
         # case so edits to the event flow through on a re-run.
         if dunkel or key not in data['all_scenarios']:
@@ -1393,6 +1403,77 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
         set_progress((pct, f'Scenario {i+1}/{len(jobs)} complete — {pct}%'))
     resv_note = f' at {round(reservation * 100)}% reservation' if reservation else ''
     return (refresh or 0) + 1, f'✓  Batch complete — {len(jobs)} scenarios (all baselines + SA dunkelflaute){resv_note}'
+
+# ---------------------------------------------------------------------------
+# Run Reservation Scenarios (background)
+# ---------------------------------------------------------------------------
+@app.callback(
+    Output('refresh-counter', 'data',     allow_duplicate=True),
+    Output('run-status',      'children', allow_duplicate=True),
+    Input('reserve-btn', 'n_clicks'),
+    State('winter-slider', 'value'),
+    State('lng-slider',    'value'),
+    State('gap-slider',    'value'),
+    State('baseline-selector', 'value'),
+    State('dunkelflaute-toggle', 'value'),
+    State('discount-slider', 'value'),
+    State('foresight-toggle', 'value'),
+    State('elastic-toggle', 'value'),
+    State('refresh-counter', 'data'),
+    background=True,
+    running=[
+        (Output('run-btn',     'disabled'), True,  False),
+        (Output('batch-btn',   'disabled'), True,  False),
+        (Output('reserve-btn', 'disabled'), True,  False),
+        (Output('solver-progress', 'style'),
+         {'display': 'block'}, {'display': 'none'}),
+        (Output('run-status', 'children'), '⏳  Reservation sweep running…', ''),
+    ],
+    progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
+    prevent_initial_call=True,
+)
+def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, baseline, dunkel,
+                          discount, foresight_v, elastic_v, refresh):
+    """Every reservation level at the Winter/LNG case currently selected.
+
+    The reservation sidebar toggle is deliberately ignored — this button sweeps the
+    levels itself. It always includes the 0% run: a reservation is only readable
+    against the same case without one, and that comparison is the whole point of
+    the sweep (production forgone, take-up, where the price relief lands).
+    """
+    w, l = LEVELS[wi], LEVELS[li]
+    baseline = baseline or 'StepChange'
+    dunkelflaute = bool(dunkel) and 'on' in dunkel
+    foresight = 'on' in (foresight_v or [])
+    elastic = 'on' in (elastic_v or [])
+    dr = 0.07 if discount is None else float(discount)
+    levels = [0.0] + list(RESERVATION_LEVELS)
+
+    data = load_results()
+    solved = 0
+    for i, share in enumerate(levels):
+        key = scenario_key(baseline, w, l, dunkelflaute, share, elastic, foresight, dr)
+        # Cached levels are skipped, so a re-run after adding a level costs one
+        # solve rather than the whole sweep. Clear Results to force a rebuild.
+        if key not in data['all_scenarios']:
+            def _cb(yr, p, _i=i, _n=len(levels), _s=share):
+                overall = int((_i + p) / _n * 100)
+                tag = f'{round(_s * 100)}% reservation' if _s else 'no reservation'
+                set_progress((overall, f'{tag} · Year {yr} — {overall}%'))
+            data['all_scenarios'][key] = solve_scenario(
+                w, l, mip_gap=gap, callback=_cb, baseline=baseline,
+                dunkelflaute=dunkelflaute, discount_rate=dr, foresight=foresight,
+                reservation=share, elastic_demand=elastic,
+                title=f'[{i + 1}/{len(levels)}]  {pretty_key(key)}')
+            data['current_key'] = key
+            save_results(data)
+            solved += 1
+        pct = int((i + 1) / len(levels) * 100)
+        set_progress((pct, f'Level {i + 1}/{len(levels)} complete — {pct}%'))
+    shares = ' / '.join(f'{round(x * 100)}%' for x in levels)
+    skipped = len(levels) - solved
+    note = f' ({skipped} already cached)' if skipped else ''
+    return (refresh or 0) + 1, f'✓  Reservation sweep — Winter {w} · LNG {l} at {shares}{note}'
 
 # ---------------------------------------------------------------------------
 # Clear
@@ -1417,9 +1498,10 @@ def clear_results(n, refresh):
     Input('regen-btn', 'n_clicks'),
     background=True,
     running=[
-        (Output('run-btn',   'disabled'), True, False),
-        (Output('batch-btn', 'disabled'), True, False),
-        (Output('regen-btn', 'disabled'), True, False),
+        (Output('run-btn',     'disabled'), True, False),
+        (Output('batch-btn',   'disabled'), True, False),
+        (Output('reserve-btn', 'disabled'), True, False),
+        (Output('regen-btn',   'disabled'), True, False),
         (Output('solver-progress', 'style'),
          {'display': 'block'}, {'display': 'none'}),
         (Output('run-status', 'children'), '⏳  Regenerating data…', ''),
