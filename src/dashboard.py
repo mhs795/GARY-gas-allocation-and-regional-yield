@@ -1,4 +1,8 @@
 import os, re, sys
+import logging
+# Background callbacks poll the server twice a second while a solve runs, so
+# werkzeug's per-request line buries the solve output. Errors still get through.
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -1297,16 +1301,18 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
     def _cb(yr, p):
         pct = int(p * 100)
         set_progress((pct, f'Solving {yr}… {pct}%'))
-    result = solve_scenario(w, l, mip_gap=gap, callback=_cb,
-                            baseline=baseline, dunkelflaute=dunkelflaute,
-                            discount_rate=dr, foresight=foresight,
-                            reservation=reservation, elastic_demand=elastic)
+    # Built before the solve so it can also title the terminal log.
     key = (f'Base_{baseline}_Winter_{w}_LNG_{l}'
            + ('_Dunkelflaute' if dunkelflaute else '')
            + (f'_Reserve{round(reservation * 100)}' if reservation else '')
            + ('_Elastic' if elastic else '')
            + ('' if foresight else '_Myopic')
            + (f'_DR{round(dr*100)}' if foresight and abs(dr - 0.07) > 1e-9 else ''))
+    result = solve_scenario(w, l, mip_gap=gap, callback=_cb,
+                            baseline=baseline, dunkelflaute=dunkelflaute,
+                            discount_rate=dr, foresight=foresight,
+                            reservation=reservation, elastic_demand=elastic,
+                            title=pretty_key(key))
     data = load_results()
     data['all_scenarios'][key] = result
     data['current_key'] = key
@@ -1377,7 +1383,10 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
                 tag = ' · SA Dunkelflaute 2027' if _d else ''
                 tag += f' · {round(reservation * 100)}% reservation' if reservation else ''
                 set_progress((overall, f'{BASELINE_LABEL.get(_b, _b)} · Winter {_w} · LNG {_l}{tag} · Year {yr} — {overall}%'))
-            data['all_scenarios'][key] = solve_scenario(w, l, mip_gap=gap, callback=_cb, baseline=b, dunkelflaute=dunkel, discount_rate=dr, foresight=foresight, reservation=reservation)
+            data['all_scenarios'][key] = solve_scenario(
+                w, l, mip_gap=gap, callback=_cb, baseline=b, dunkelflaute=dunkel,
+                discount_rate=dr, foresight=foresight, reservation=reservation,
+                title=f'[{i + 1}/{len(jobs)}]  {pretty_key(key)}')
             data['current_key'] = key
             save_results(data)
         pct = int((i + 1) / len(jobs) * 100)

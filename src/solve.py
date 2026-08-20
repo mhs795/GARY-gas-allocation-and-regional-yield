@@ -53,9 +53,30 @@ def _year_demand(data, year, winter, lng, reservation=0.0):
     return apply_lng_reservation(dm[dm['Year'] == year].copy(), reservation)
 
 
+# Long-form baseline names for the one-line run header; the dashboard's dropdown
+# labels are its own (BASELINE_LABEL), these only ever go to the terminal.
+BASELINE_LABELS = {'StepChange': 'Step Change', 'Accelerated': 'Accelerated Transition',
+                   'SlowerGrowth': 'Slower Growth'}
+
+
+def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservation=0.0,
+              elastic_demand=False, foresight=True):
+    """One-line description of a scenario, for the terminal header."""
+    bits = [BASELINE_LABELS.get(baseline, baseline), f"Winter {winter}", f"LNG {lng}"]
+    if dunkelflaute:
+        bits.append("SA Dunkelflaute 2027")
+    if reservation:
+        bits.append(f"{round(reservation * 100)}% reservation")
+    if elastic_demand:
+        bits.append("elastic demand")
+    if not foresight:
+        bits.append("myopic")
+    return "  ·  ".join(bits)
+
+
 def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
                    baseline="StepChange", dunkelflaute=False, discount_rate=0.07,
-                   foresight=True, reservation=0.0, elastic_demand=False):
+                   foresight=True, reservation=0.0, elastic_demand=False, title=None):
     """Solve a scenario over 2025-2050.
 
     ``foresight=True`` (default) uses the two-stage full-horizon method: a
@@ -72,7 +93,15 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     sheds when the nodal price exceeds its willingness to pay instead of being
     served at any cost. Off by default: it changes every scenario, not just
     reservation runs, so the inelastic case stays the comparison baseline.
+
+    Prints a one-line scenario header followed by one line per solved year;
+    ``title`` overrides the header text.
     """
+    # One header per scenario, then one line per year: with the batch solving 28
+    # scenarios x 26 years, the year lines are meaningless without it. Callers that
+    # already have a nicer label (the dashboard passes its scenario key) override it.
+    print(f"\n{title or run_title(winter, lng, baseline, dunkelflaute, reservation, elastic_demand, foresight)}",
+          flush=True)
     data = load_data(baseline)
     years = list(range(2025, 2051))
     if foresight:
@@ -110,7 +139,7 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
         yr_res['elastic_demand'] = elastic_demand
         results.append(yr_res)
         built_projects.extend([b for b in yr_res['builds'] if b not in built_projects])
-        print(f"Year {year} complete")
+        print(f"    Year {year} complete", flush=True)
     if callback:
         callback(years[-1], 1.0)
     return results
@@ -190,7 +219,7 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         yr_res['lng_reserved_tj'] = diverted_by_year[year]
         yr_res['elastic_demand'] = elastic_demand
         scenario_results.append(yr_res)
-        print(f"Year {year} complete")
+        print(f"    Year {year} complete", flush=True)
 
     if callback:
         callback(end_year, 1.0)
