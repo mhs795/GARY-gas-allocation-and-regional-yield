@@ -1,3 +1,26 @@
+"""GARY's optimisation core: one linear program per year of the horizon.
+
+HOW A PRICE IS FORMED HERE, since nothing in this file sets one directly:
+
+  1. Every way of getting or not getting gas is given a dollar value in
+     ``obj_rule`` -- production, transport, storage cycling, capex, and the
+     penalty for shedding each tier of demand.
+  2. ``balance_rule`` requires supply to equal demand at every node on every day.
+  3. The solver minimises (1) subject to (2).
+  4. The nodal price is the DUAL of (2): what it would cost the system to push one
+     more TJ into that node that day. It is read off in ``get_results``.
+
+So a price is never assumed -- it falls out of whichever option is marginal. In an
+easy year that is a field cost plus a pipeline tariff, and Melbourne sits a
+transport differential above Surat. In a tight year it is whichever tier is next
+to be shed, and the node settles at that tier's strike price.
+
+Three levers change what "marginal" can mean, and each has its own header block
+below: the LNG NETBACK (exports become a bounded willingness-to-pay block instead
+of must-serve demand, so an export price can discipline a domestic one), DATA
+CENTRE load (firm demand that neither expands when gas is cheap nor sheds when it
+is dear), and DOMESTIC RESERVATION (export volume withheld and offered at $0).
+"""
 import pyomo.environ as pyo
 import pandas as pd
 import os
@@ -177,10 +200,11 @@ RESERVATION_LEVELS = P.get_list('reservation_levels', [0.05, 0.10, 0.20, 0.30], 
 # It enters as LARGE INDUSTRIAL demand. That is what a data centre's gas call is
 # -- a firm, round-the-clock load at a handful of large sites, not
 # distribution-level household gas -- and it has two consequences worth knowing
-# when reading a result: the load curtails at the industrial strike price
-# (strike_ind, $120/GJ) rather than at mass-market willingness to pay, and it
-# reaches the capacity layer through the same industrial series, so the
-# investment model sizes pipe and storage for it.
+# when reading a result: it does NOT curtail with the rest of that tier (see the
+# ind_curtail_cap constraint -- the load is firm, and reaches the shortage
+# variable at VOLL rather than standing down at strike_ind), and it reaches the
+# capacity layer through the same industrial series, so the investment model
+# sizes pipe and storage for it.
 #
 # The annual volume is spread across the year on the NODE'S OWN GPG DAILY SHAPE,
 # not evenly and not on the industrial shape it sits inside. A data centre's gas
@@ -208,9 +232,11 @@ RESERVATION_LEVELS = P.get_list('reservation_levels', [0.05, 0.10, 0.20, 0.30], 
 # demand trajectory, not in a sensitivity lever.
 #
 # The volume is also kept as its own series (``GasMarketModel.dc_demand``) so it
-# can be netted out of the industrial *expansion* headroom: the raise blocks
-# represent industrial load that takes up more gas when it is cheap, and a data
-# centre's consumption is set by its compute, not by the gas price.
+# can be netted out of the industrial tier in both directions. Its consumption is
+# set by its compute, not by the gas price, so it neither takes up more gas when
+# gas is cheap (netted out of the *expansion* headroom the raise blocks are a
+# share of) nor stands down when gas is dear (netted out of the *curtailment*
+# cap). Everything else about it is ordinary industrial load.
 DATACENTRE_STATE_NODE = P.get_pairs('datacentre_state_node',
                                     [('NSW', 'Sydney'), ('VIC', 'Melbourne')])
 
@@ -226,19 +252,24 @@ def datacentre_profile(spec, year, gpg_demand):
     that node's GPG demand, so the shape follows gas-fired generation rather than
     heating load. The daily figures sum to the annual volume by construction.
     """
-    if not spec:
+    if not spec:                                        # lever off entirely
         return {}
-    if int(year) < int(spec.get('start_year', 2025)):
+    if int(year) < int(spec.get('start_year', 2025)):   # not switched on yet
         return {}
     out = {}
-    for state, node in DATACENTRE_STATE_NODE:
-        pj = float(spec.get(state, 0) or 0)
+    for state, node in DATACENTRE_STATE_NODE:           # NSW->Sydney, VIC->Melbourne
+        pj = float(spec.get(state, 0) or 0)             # this state's annual volume
         if pj <= 0:
             continue
-        total_tj = pj * 1000.0
+        total_tj = pj * 1000.0                          # PJ/yr -> TJ/yr
+        # Take the node's own gas-fired generation profile as the daily shape.
         shape = {d: gpg_demand.get((node, d), 0.0) for d in range(1, 366)}
         gpg_total = sum(shape.values())
         if gpg_total > 0:
+            # Normalise the shape to 1.0 and scale by the annual volume, so the
+            # daily figures sum back to exactly total_tj. See the CAVEAT above:
+            # this shape is very peaky, and the peaks are what the capacity layer
+            # sizes the network against.
             for d, v in shape.items():
                 out[(node, d)] = total_tj * v / gpg_total
         else:
@@ -523,6 +554,12 @@ class GasMarketModel:
         # block). Held separately as well because the industrial raise blocks are
         # a share of price-responsive industrial load and this load is firm.
         self.dc_demand = datacentre_profile(self.datacentre, self.year, self.gpg_demand)
+        # ADDED to the industrial tier, not substituted into it: the data centre is
+        # new load on top of the refineries and smelters already there. Keeping
+        # dc_demand as its own series alongside is what lets the two nettings later
+        # in build_model() find it again -- out of the raise headroom (it will not
+        # consume more when gas is cheap) and out of the curtailment cap (it will
+        # not stand down when gas is dear).
         for _key, _tj in self.dc_demand.items():
             self.ind_demand[_key] = self.ind_demand.get(_key, 0.0) + _tj
 
@@ -537,6 +574,12 @@ class GasMarketModel:
             raise RuntimeError(
                 "netback_pricing=True but no price series was found in "
                 "data/lng_prices.csv. Run: python src/build_lng_prices.py")
+        # The number the whole methodology reduces to: what a Queensland train can
+        # net per GJ after liquefaction and shipping are deducted from the Asian
+        # LNG price. Everything upstream of this (oil path -> oil-linked contract
+        # formula -> blended Asian price -> deduction) happens in
+        # build_lng_prices.py; by the time the model sees it, it is one $/GJ figure
+        # for the year, and it functions as the reserve price at the export door.
         self.netback = float(self.lng_prices.get('Netback_AUD_GJ', 0.0))
         # Physical liquefaction capacity and the take-or-pay share of planned
         # volume: together these replace the old export_headroom multiple with the
@@ -560,6 +603,24 @@ class GasMarketModel:
                                   ).set_index('Tier')['StrikePrice'].to_dict()
         except FileNotFoundError:
             strikes = {}
+        # THE MERIT ORDER OF SHEDDING, and with it the ladder domestic prices climb
+        # in a tight year. Each strike is what that tier is assumed to be willing to
+        # pay before it stops taking gas, so it is both a penalty in the objective
+        # and the price a scarce node settles at once that tier is the marginal one:
+        #
+        #   $22/GJ   GPG          -- switches to another fuel or another generator
+        #   $120/GJ  industrial   -- stops the process line
+        #   mass-market            -- NOT one strike but a ladder of blocks, each
+        #                            with its own willingness to pay, fitted to a
+        #                            constant-elasticity curve anchored at $13.56/GJ
+        #                            (see load_demand_blocks). Blocks drop out one
+        #                            at a time as the price climbs, which is what
+        #                            makes this a demand curve rather than a switch.
+        #   $300/GJ  VOLL         -- nothing left to shed, load simply goes unserved
+        #
+        # Firm load has no rung on this ladder: data centres and foundation LNG
+        # cargoes cannot shed at a strike and go straight to VOLL, which is what
+        # makes them outbid everything else for scarce gas.
         self.strike_gpg = float(strikes.get('GPG', P.get('strike_gpg_default', 22.0)))
         self.strike_ind = float(strikes.get('Industrial', P.get('strike_ind_default', 120.0)))
         blocks = load_demand_blocks(data_dir) if self.elastic_demand else {}
@@ -642,10 +703,18 @@ class GasMarketModel:
         # reserved gas is gas the trains may not liquefy. It comes out of the
         # uncontracted tail first; only with respect_contracts=False can the excess
         # beyond the uncontracted share cut into the foundation leg as well.
+        # lng_planned  : what the demand frame said each train would export, kept
+        #                for reporting (the "planned" denominator on the dashboard).
+        # lng_spot_cap : the ceiling on the contestable block, per train per day.
         lng_planned, lng_spot_cap = {}, {}
         from_foundation = 0.0
         if self.netback_pricing:
+            # Share of export volume the reservation actually withholds. May be
+            # less than the slider asked for -- see reservation_applied.
             applied = self.reservation_applied
+            # The portion of planned volume NOT under take-or-pay, i.e. the part a
+            # reservation can take without breaking a contract. At a 93% foundation
+            # share this is 7%, which is why a 20% slider can only deliver 7%.
             uncontracted = max(0.0, 1.0 - self.foundation_share)
             # How much of the PLANNED volume comes out of the foundation leg. The
             # rest comes out of the tail -- but note the TOTAL export ceiling below
@@ -654,13 +723,25 @@ class GasMarketModel:
             from_foundation = (0.0 if self.respect_contracts
                                else max(0.0, applied - uncontracted))
             for n in LNG_NODES:
+                # Physical liquefaction ceiling for this train, TJ/day.
                 nameplate = self.lng_nameplate.get(n, 0.0)
                 for t in range(1, 366):
+                    # Whatever the demand frame has this train exporting today.
                     planned = node_demand.get((n, t))
                     if planned is None:
                         continue
                     lng_planned[(n, t)] = planned
+                    # The take-or-pay leg: sold years ago, lifted regardless of
+                    # today's netback. Reduced only if respect_contracts=False has
+                    # let the reservation cut into contracted volume.
                     foundation = max(0.0, planned * (self.foundation_share - from_foundation))
+                    # OVERWRITE the train's entry in node_demand with just the
+                    # foundation leg. This is the pivot of the whole methodology:
+                    # what stays in node_demand is must-serve and is taken at any
+                    # price, and what has been removed becomes the price-responsive
+                    # lng_export block below. Before this lever existed the full
+                    # planned volume sat here, which is why exports could never
+                    # lose a bidding war to a domestic buyer.
                     node_demand[(n, t)] = foundation
                     # Total export ceiling is nameplate less the reserved
                     # volume; the spot block gets whatever is left after the
@@ -672,9 +753,16 @@ class GasMarketModel:
         m.LNGNodes = pyo.Set(initialize=[n for n in LNG_NODES
                                          if n in self.nodes['Name'].tolist()]
                              if self.netback_pricing else [])
+        # The contestable spot tail: how much each train chooses to liquefy today.
+        # Free to sit at zero -- nothing forces uptake, which is what keeps this
+        # from repeating the WA negative-price trap described in the header.
         m.lng_export = pyo.Var(m.LNGNodes, m.T, domain=pyo.NonNegativeReals)
+        # Bounded above by spare liquefaction capacity. Bounded, plus optional, plus
+        # paid at a finite price = a well-behaved willingness-to-pay block.
         m.lng_export_cap = pyo.Constraint(m.LNGNodes, m.T,
             rule=lambda m, n, t: m.lng_export[n, t] <= lng_spot_cap.get((n, t), 0.0))
+        # $/GJ the export block bids. One number for the whole year, from ACIL
+        # Allen's oil-linked series; it is the price a domestic buyer must beat.
         netback = self.netback
         self._lng_planned = lng_planned
         # The foundation leg AFTER any contract-breaking reservation, so the
@@ -753,10 +841,34 @@ class GasMarketModel:
         storage_caps = self.nodes.set_index('Name')['StorageCapacity'].to_dict()
 
         def obj_rule(m):
+            # THE OBJECTIVE IS WHERE EVERY PRICE IN GARY COMES FROM. Nothing sets a
+            # price directly. The solver minimises this expression subject to the
+            # balance constraint, and the nodal price reported for (node, day) is
+            # that constraint's DUAL -- the cost of forcing one more TJ into that
+            # node on that day. So each term below is really a statement about what
+            # gas is worth to somebody, and the price is whatever the marginal one
+            # turns out to be.
+            #
+            # Every term is in DOLLARS. Volumes are TJ and prices are $/GJ, hence
+            # the * 1000 (GJ per TJ) on almost every line; the dual therefore comes
+            # out in $/TJ and is divided by 1000 again in get_results().
+            #
+            # Cost of getting gas out of the ground, per field, per day.
             prod_cost = sum(m.production[s[0], s[1], t] * supply_dict[s]['Cost'] * 1000 for s in m.Supply for t in m.T)
+            # Cost of moving it: each arc's tariff x what flows down it. This is the
+            # term that makes a Melbourne price differ from a Surat price.
             trans_cost = sum(m.flow[a, t] * arc_data[a]['Cost'] * 1000 for a in m.Arcs for t in m.T)
+            # Unserved demand, valued at the value of lost load ($300/GJ). This is
+            # the backstop that keeps the LP feasible: there is always the option of
+            # simply not serving a node, at a price nobody wants to pay. It is also
+            # what firm load (data centres, foundation LNG cargoes) falls through to
+            # when it cannot be shed -- see ind_curtail_cap.
             shortage_penalty = sum(m.shortage[n, t] * VOLL_PER_GJ * 1000 for n in m.Nodes for t in m.T)
+            # A small ($0.50/GJ) round-trip charge on storage, so the solver cycles
+            # inventory only when the seasonal price spread justifies it.
             storage_cost = sum((m.injection[sn, t] + m.withdrawal[sn, t]) * 0.5 * 1000 for sn in m.StorageNodes for t in m.T)
+            # Annualised capex for anything built, at 8%/yr. build[e] is binary,
+            # which is what makes the capacity layer a MILP rather than an LP.
             exp_capex = sum(m.build[e] * exp_data[e]['CapEx'] * 0.08 for e in m.Expansion)
             # Curtailment penalties = strike price ($/GJ) x 1000 (GJ/TJ). Shedding a
             # tier costs its strike price, so a tier only sheds when the marginal
@@ -783,6 +895,14 @@ class GasMarketModel:
             # which is what separates it from the WA formulation.
             lng_benefit = sum(m.lng_export[n, t] * netback * 1000
                               for n in m.LNGNodes for t in m.T)
+            # Costs are added, benefits subtracted. Read the sign as "what would
+            # the system pay to avoid this": it pays to produce and to ship, it
+            # pays dearly to shed, and it is paid by an export cargo or by an
+            # industrial user taking up cheap gas. Minimising the whole thing is
+            # equivalent to maximising producer plus consumer surplus, which is the
+            # same objective GasMark solves -- the point of the netback section
+            # above. Because benefits are bounded above (every raise and export
+            # block has a cap), the sum cannot run away negative.
             return (prod_cost + trans_cost + shortage_penalty + storage_cost + exp_capex
                     + gpg_pen + ind_pen + mm_pen - ind_benefit - gpg_benefit
                     - lng_benefit)
@@ -793,28 +913,74 @@ class GasMarketModel:
         supply_at = {n: [s for s in m.Supply if s[0] == n] for n in m.Nodes}
 
         def balance_rule(m, n, t):
-            # Total demand at the node = distribution (mass-market) + GPG + large
-            # industrial. GPG/industrial may be shed via their curtail variables.
-            return (sum(m.production[s[0], s[1], t] for s in supply_at[n]) +
+            # ONE CONSTRAINT PER NODE PER DAY, and the single most important line in
+            # the model: everything arriving must equal everything leaving. Its DUAL
+            # is the nodal price -- the marginal cost of one more TJ here today --
+            # so every price on the dashboard is read off this equation.
+            #
+            # A shed variable appears on the SUPPLY side, which looks odd until you
+            # read it as "demand I did not have to meet counts the same as gas I
+            # found". That is exactly why shedding has to be priced in the objective:
+            # otherwise the solver would shed everything for free.
+            return (
+                    # --- gas arriving ---------------------------------------
+                    # Produced from fields at this node.
+                    sum(m.production[s[0], s[1], t] for s in supply_at[n]) +
+                    # The reserved tranche, if a domestic reservation is running and
+                    # this is the field it is carved out of.
                     (m.reserved_prod[t] if n in lng_source else 0) +
+                    # Piped in from elsewhere.
                     sum(m.flow[a, t] for a in arcs_to[n]) +
+                    # Net storage withdrawal (negative when injecting).
                     (m.withdrawal[n, t] - m.injection[n, t] if n in m.StorageNodes else 0) +
+                    # --- demand not actually met -----------------------------
+                    # Unserved, at VOLL. The backstop of last resort.
                     m.shortage[n, t] +
+                    # Gas-powered generation stood down, at strike_gpg.
                     (m.gpg_curtail[n, t] if n in m.GPGNodes else 0) +
+                    # Large industrial stood down, at strike_ind. Capped BELOW the
+                    # tier's demand by ind_curtail_cap so firm data centre load
+                    # cannot be shed here -- it must find gas or go to shortage.
                     (m.ind_curtail[n, t] if n in m.INDNodes else 0) +
+                    # Mass-market blocks that priced themselves out, each at its own
+                    # willingness to pay.
                     (sum(m.mm_curtail[n, b, t] for b in m.MMBlocks) if n in m.MMNodes else 0) ==
+                    # --- gas leaving -----------------------------------------
+                    # Distribution/mass-market load, GPG load, industrial load
+                    # (data centre volume already folded into the last of these).
                     node_demand.get((n, t), 0) + gpg_dem.get((n, t), 0) + ind_dem.get((n, t), 0) +
+                    # The contestable LNG spot tail, bid at the netback. Unlike the
+                    # foundation volume sitting inside node_demand above, this is a
+                    # CHOICE: the solver liquefies only while gas costs less than
+                    # the netback, which is the mechanism that lets an export price
+                    # discipline a domestic one.
                     (m.lng_export[n, t] if n in m.LNGNodes else 0) +
+                    # Extra demand taken up because gas turned out cheap.
                     (sum(m.ind_expand[n, b, t] for b in m.INDRaise) if n in m.INDNodes else 0) +
                     (sum(m.gpg_expand[n, b, t] for b in m.GPGRaise) if n in m.GPGRaiseNodes else 0) +
+                    # Piped onward to somewhere else.
                     sum(m.flow[a, t] for a in arcs_from[n]))
         m.balance = pyo.Constraint(m.Nodes, m.T, rule=balance_rule)
 
         # A tier can shed at most its own demand.
         m.gpg_curtail_cap = pyo.Constraint(m.GPGNodes, m.T,
             rule=lambda m, n, t: m.gpg_curtail[n, t] <= gpg_dem.get((n, t), 0))
+        # Data centre load is FIRM and is netted out of what the industrial tier is
+        # allowed to shed. It rides inside ind_demand so that it is transported and
+        # priced like any other large industrial load, but it is not price-responsive
+        # in either direction: it does not take up more gas when gas is cheap (see
+        # ind_raise_available) and it does not stand down when gas is dear, because
+        # its consumption is set by its compute.
+        #
+        # That does not make it unshortable. If gas physically cannot reach it the
+        # `shortage` variable still absorbs the volume, at VOLL rather than at the
+        # industrial strike -- which is the right price for load that had no choice
+        # but to keep running. The practical effect is that a data centre outbids
+        # the refinery next to it for scarce winter gas instead of being shed
+        # alongside it at the same strike.
         m.ind_curtail_cap = pyo.Constraint(m.INDNodes, m.T,
-            rule=lambda m, n, t: m.ind_curtail[n, t] <= ind_dem.get((n, t), 0))
+            rule=lambda m, n, t: m.ind_curtail[n, t] <= max(
+                0.0, ind_dem.get((n, t), 0) - dc_dem.get((n, t), 0)))
         # A mass-market block can shed at most its own slice of that node's load.
         m.mm_curtail_cap = pyo.Constraint(m.MMNodes, m.MMBlocks, m.T,
             rule=lambda m, n, b, t: m.mm_curtail[n, b, t] <= mm_available(n, b, t))
@@ -976,6 +1142,18 @@ class GasMarketModel:
             for n in m.Nodes:
                 if n not in priced_nodes:
                     continue
+                # THE PRICE. m.dual[...] is the shadow price of this node-day's
+                # balance constraint: the change in total system cost from forcing
+                # one more unit of gas into this node today. Volumes are TJ and the
+                # objective is dollars, so the dual is $/TJ -- divide by 1000 for
+                # the $/GJ everything downstream reports.
+                #
+                # It equals the marginal cost of whatever the system would do to
+                # find that extra TJ: run a dearer field, pay a pipeline tariff,
+                # pull from storage, outbid an export cargo at the netback, or, when
+                # nothing physical is left, shed a tier at its strike or fall to
+                # VOLL. That is why nodal prices differ by transport cost in an easy
+                # year and converge on a strike price in a tight one.
                 p = (m.dual[m.balance[n, t]]/1000 ) if hasattr(m, 'dual') and m.balance[n, t] in m.dual else 0.0
                 res['prices'].append({'Day': t, 'Node': n, 'Price': float(p)})
                 if sv[n, t] > 0.1: res['shortage'].append({'Day': t, 'Node': n, 'Value': float(sv[n, t])})

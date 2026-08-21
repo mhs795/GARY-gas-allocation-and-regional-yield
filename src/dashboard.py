@@ -2095,11 +2095,18 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
         dc_s, dc_c = dc_pj_node, 0.0
         ind_tot = ind_s + ind_c
         if dc_pj_node > 0.01 and ind_tot > 0.01:
-            # Data centres shed LAST: curtailment is charged against the existing
-            # facilities until they are fully off, and only the remainder reaches
-            # the data centres. This is a display attribution only -- the solver
-            # prices both as one curtailable industrial tier and never decides
-            # between them, so the tier's totals are unchanged either way.
+            # Data centre load is firm in the model: ind_curtail_cap bars the
+            # industrial tier from shedding more than its non-data-centre demand.
+            # So this is not the dashboard picking a shed order -- it reads back
+            # what the solver did. Whatever was curtailed belongs to the
+            # facilities, and the data centre line carries no shed.
+            #
+            # The exception is a result cached before that constraint existed,
+            # where the solver COULD shed the data centre along with the rest of
+            # the tier. Those are reported as they were solved rather than quietly
+            # re-read as firm: curtailment beyond the facilities' own demand shows
+            # against the data centres and is labelled, so an old number on screen
+            # cannot be mistaken for what the model does now.
             shed_tot = ind_c
             ind_dem  = max(0.0, ind_tot - dc_pj_node)
             ind_c    = min(shed_tot, ind_dem)
@@ -2109,8 +2116,10 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
         tt += _fac_block(static_data.get('ind_bbg'), 'Large industrial', '🏭', ind_s, ind_c)
         # A bulk state volume, not a facility list, so nothing to itemise under it.
         if dc_pj_node > 0.01:
-            note = (f"{dc_c:.1f} shed · " if dc_c > 0.01 else "") + "scenario lever"
-            tt += f"🖥️ Data centres: {dc_s + dc_c:.1f} PJ/yr <i>({note})</i><br>"
+            note = ('firm' if dc_c <= 0.01 else
+                    f"{dc_c:.1f} shed \u2014 solved before data centres were firm")
+            tt += (f"🖥️ Data centres: {dc_s + dc_c:.1f} PJ/yr "
+                   f"<i>({note} · scenario lever)</i><br>")
 
         map_nodes.append({'Node': node, 'Lat': c[0], 'Lon': c[1],
                           'Type': n_t, 'Price': p_v, 'Supply': s_v, 'Tooltip': tt,
