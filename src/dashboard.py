@@ -2095,12 +2095,17 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
         dc_s, dc_c = dc_pj_node, 0.0
         ind_tot = ind_s + ind_c
         if dc_pj_node > 0.01 and ind_tot > 0.01:
-            # The solver does not record which industrial load a curtailment fell
-            # on, so shedding is apportioned by volume. Attributing it all to one
-            # side would assert something the model never decided.
-            keep = max(0.0, 1 - dc_pj_node / ind_tot)
-            dc_s, dc_c = ind_s * (1 - keep), ind_c * (1 - keep)
-            ind_s, ind_c = ind_s * keep, ind_c * keep
+            # Data centres shed LAST: curtailment is charged against the existing
+            # facilities until they are fully off, and only the remainder reaches
+            # the data centres. This is a display attribution only -- the solver
+            # prices both as one curtailable industrial tier and never decides
+            # between them, so the tier's totals are unchanged either way.
+            shed_tot = ind_c
+            ind_dem  = max(0.0, ind_tot - dc_pj_node)
+            ind_c    = min(shed_tot, ind_dem)
+            dc_c     = shed_tot - ind_c
+            ind_s    = ind_dem - ind_c
+            dc_s     = dc_pj_node - dc_c
         tt += _fac_block(static_data.get('ind_bbg'), 'Large industrial', '🏭', ind_s, ind_c)
         # A bulk state volume, not a facility list, so nothing to itemise under it.
         if dc_pj_node > 0.01:
