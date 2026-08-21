@@ -578,6 +578,15 @@ body, html {
   margin-bottom: 3px;
 }
 
+/* Caption under a sidebar input (e.g. which node a data centre volume lands on). */
+.md-input-hint {
+  font-size: 10px;
+  color: var(--sb-text-med);
+  opacity: 0.8;
+  margin-top: 3px;
+  letter-spacing: 0.02em;
+}
+
 /* Qualifier under a KPI value (e.g. reservation take-up): its own line, quieter
    than the number it belongs to, so the value never breaks mid-phrase. */
 .md-kpi-sub {
@@ -792,6 +801,7 @@ body, html {
 .dark .md-map-controls .rc-slider-track  { background-color: var(--md-primary) !important; }
 .dark .md-map-controls .rc-slider-handle { border-color: var(--md-primary) !important; background-color: var(--md-surface) !important; }
 .dark .md-input-label                        { color: var(--md-text-med) !important; }
+.dark .md-input-hint                         { color: var(--md-text-med) !important; }
 .theme-toggle {
   display: flex; align-items: center; justify-content: center;
   gap: 8px; margin: 12px 0 4px; padding: 8px 12px;
@@ -842,6 +852,11 @@ _BASE_SHORT = {'StepChange': 'SC', 'Accelerated': 'Acc', 'SlowerGrowth': 'SG'}
 _LVL_SHORT = {'Low': 'L', 'Medium': 'M', 'High': 'H'}
 
 
+# Data centre segment of a scenario key: _DC<nsw>N<vic>V<startyear>, e.g.
+# _DC50N30V2030. Both readers below parse it with this one pattern.
+_DC_RE = r'_DC([\d.]+)N([\d.]+)V(\d{4})'
+
+
 def _base_of(k):
     """Baseline name out of a scenario key."""
     if 'Base_' not in k:
@@ -861,6 +876,9 @@ def short_key(k):
         parts.append('Dunk27')
     if '_Reserve' in k:
         parts.append('Res' + k.split('_Reserve', 1)[1].split('_', 1)[0] + '%')
+    dc = re.search(_DC_RE, k)
+    if dc:
+        parts.append(f'DC {dc.group(1)}/{dc.group(2)} PJ @{dc.group(3)}')
     if '_Elastic' in k:
         parts.append('Elastic')
     if '_Myopic' in k:
@@ -877,6 +895,9 @@ def pretty_key(k):
     # Before the chained replaces below, which would otherwise rewrite a trailing
     # _Myopic/_DR into the middle of the reservation percentage.
     rest = re.sub(r'_Reserve(\d+)', r'  ·  \1% reservation', rest)
+    rest = re.sub(_DC_RE,
+                  lambda mo: f'  ·  Data centres {mo.group(1)} PJ NSW / '
+                             f'{mo.group(2)} PJ VIC from {mo.group(3)}', rest)
     rest = (rest.replace('_Winter_', 'Winter ').replace('_LNG_', '  ·  LNG ')
                 .replace('_Dunkelflaute', '  ·  SA Dunkelflaute 2027')
                 .replace('_Elastic', '  ·  Elastic demand')
@@ -1019,6 +1040,33 @@ sidebar = html.Div(className='md-sidebar', children=[
                            marks={i: f'{v}%' for i, v in enumerate(RESERVATION_PCTS)},
                            value=1)),
         ]),
+
+        # Data centre load. Two volumes rather than one national figure because
+        # the whole point is where it lands: Sydney and Melbourne sit at opposite
+        # ends of the southbound corridor that binds in every stressed run.
+        html.Span('Data centre gas demand (PJ/yr)', className='md-input-label'),
+        html.Div(style={'display': 'flex', 'gap': '8px', 'marginBottom': '6px'}, children=[
+            html.Div(style={'flex': '1'}, children=[
+                dbc.Input(id='dc-nsw-input', type='number', min=0, step=1, value=0,
+                          debounce=True, style={'fontSize': '12px'}),
+                html.Div('NSW · Sydney', className='md-input-hint'),
+            ]),
+            html.Div(style={'flex': '1'}, children=[
+                dbc.Input(id='dc-vic-input', type='number', min=0, step=1, value=0,
+                          debounce=True, style={'fontSize': '12px'}),
+                html.Div('VIC · Melbourne', className='md-input-hint'),
+            ]),
+        ]),
+        html.Div('Added to large-industrial demand at Sydney and Melbourne from '
+                 'the start year on, spread across the year on each node\'s own '
+                 'gas-powered generation shape. Leave at 0 for none.',
+                 style={'marginBottom': '14px', 'fontSize': '10px',
+                        'color': '#888', 'lineHeight': '1.35'}),
+
+        slider_group('Data centre demand starts',
+            dcc.Slider(id='dc-start-slider', min=2025, max=2050, step=1, value=2030,
+                       marks={y: str(y) for y in range(2025, 2051, 5)},
+                       tooltip={'placement': 'bottom', 'always_visible': True})),
 
         # Covers every tier and both directions now, not just mass-market shedding,
         # so the label says "demand" rather than naming one tier.
@@ -1201,17 +1249,34 @@ def reservation_share(toggle_value, slider_index):
     return RESERVATION_LEVELS[max(0, min(i, len(RESERVATION_LEVELS) - 1))]
 
 
+def datacentre_spec(nsw_pj, vic_pj, start_year):
+    """Sidebar inputs -> the data centre lever, or None when both volumes are 0.
+
+    None rather than a zero-volume dict on purpose: it is what keeps the scenario
+    key (and therefore every cached result solved before this lever existed)
+    unchanged whenever the boxes are left empty.
+    """
+    nsw = float(nsw_pj or 0)
+    vic = float(vic_pj or 0)
+    if nsw <= 0 and vic <= 0:
+        return None
+    return {'NSW': nsw, 'VIC': vic, 'start_year': int(start_year or 2030)}
+
+
 def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
-                 elastic=False, foresight=True, discount=0.07):
+                 elastic=False, foresight=True, discount=0.07, datacentre=None):
     """Cache key for one scenario.
 
     Segment order is load-bearing — pretty_key parses it and the cached results on
     disk are filed under it — so every caller builds its keys here rather than
     inline, or a sweep silently writes keys the dropdown can't read back.
     """
+    dc = (f"_DC{datacentre.get('NSW', 0):g}N{datacentre.get('VIC', 0):g}"
+          f"V{datacentre['start_year']}") if datacentre else ''
     return (f'Base_{baseline}_Winter_{winter}_LNG_{lng}'
             + ('_Dunkelflaute' if dunkelflaute else '')
             + (f'_Reserve{round(reservation * 100)}' if reservation else '')
+            + dc
             + ('_Elastic' if elastic else '')
             + ('' if foresight else '_Myopic')
             + (f'_DR{round(discount * 100)}' if foresight and abs(discount - 0.07) > 1e-9 else ''))
@@ -1295,6 +1360,9 @@ def show_tab(active):
     State('discount-slider', 'value'),
     State('foresight-toggle', 'value'),
     State('elastic-toggle', 'value'),
+    State('dc-nsw-input', 'value'),
+    State('dc-vic-input', 'value'),
+    State('dc-start-slider', 'value'),
     State('refresh-counter', 'data'),
     background=True,
     running=[
@@ -1309,7 +1377,7 @@ def show_tab(active):
     prevent_initial_call=True,
 )
 def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on, resv_i,
-                 discount, foresight_v, elastic_v, refresh):
+                 discount, foresight_v, elastic_v, dc_nsw, dc_vic, dc_start, refresh):
     w, l = LEVELS[wi], LEVELS[li]
     baseline = baseline or 'StepChange'
     dunkelflaute = bool(dunkel) and 'on' in dunkel
@@ -1317,16 +1385,18 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
     foresight = 'on' in (foresight_v or [])
     elastic = 'on' in (elastic_v or [])
     dr = 0.07 if discount is None else float(discount)
+    datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
     def _cb(yr, p):
         pct = int(p * 100)
         set_progress((pct, f'Solving {yr}… {pct}%'))
     # Built before the solve so it can also title the terminal log.
-    key = scenario_key(baseline, w, l, dunkelflaute, reservation, elastic, foresight, dr)
+    key = scenario_key(baseline, w, l, dunkelflaute, reservation, elastic, foresight, dr,
+                       datacentre)
     result = solve_scenario(w, l, mip_gap=gap, callback=_cb,
                             baseline=baseline, dunkelflaute=dunkelflaute,
                             discount_rate=dr, foresight=foresight,
                             reservation=reservation, elastic_demand=elastic,
-                            title=pretty_key(key))
+                            datacentre=datacentre, title=pretty_key(key))
     data = load_results()
     data['all_scenarios'][key] = result
     data['current_key'] = key
@@ -1383,6 +1453,9 @@ def _run_sweep(jobs, data, set_progress):
     State('foresight-toggle', 'value'),
     State('reservation-toggle', 'value'),
     State('reservation-slider', 'value'),
+    State('dc-nsw-input', 'value'),
+    State('dc-vic-input', 'value'),
+    State('dc-start-slider', 'value'),
     State('refresh-counter', 'data'),
     background=True,
     running=[
@@ -1397,7 +1470,7 @@ def _run_sweep(jobs, data, set_progress):
     prevent_initial_call=True,
 )
 def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
-              resv_on, resv_i, refresh):
+              resv_on, resv_i, dc_nsw, dc_vic, dc_start, refresh):
     # Every combination: all GSOO baselines x Winter x LNG (dunkelflaute
     # off) -> 27 runs, plus one Step Change + SA Dunkelflaute (2027) case at the
     # central Winter/LNG so it sits alongside its plain Step Change counterpart.
@@ -1409,20 +1482,24 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     # one batch, one share, deliberately (the full cross-product is ~12 h).
     foresight = 'on' in (foresight_v or [])
     reservation = reservation_share(resv_on, resv_i)
+    # The data centre lever rides along the same way the reservation does: the
+    # whole sweep is solved with it, under its own keys, alongside the plain runs.
+    datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
     dr = 0.07 if discount is None else float(discount)
     combos = [(b['value'], w, l, False) for b in BASELINES for w in LEVELS for l in LEVELS]
     combos.append(('StepChange', 'Medium', 'Medium', True))
     data = load_results()
     jobs = []
     for b, w, l, dunkel in combos:
-        key = scenario_key(b, w, l, dunkel, reservation, False, foresight, dr)
+        key = scenario_key(b, w, l, dunkel, reservation, False, foresight, dr, datacentre)
         # Skip already-computed base combos, but always recompute the dunkelflaute
         # case so edits to the event flow through on a re-run.
         if dunkel or key not in data['all_scenarios']:
             jobs.append((key, pretty_key(key),
                          dict(winter=w, lng=l, mip_gap=gap, baseline=b,
                               dunkelflaute=dunkel, discount_rate=dr,
-                              foresight=foresight, reservation=reservation)))
+                              foresight=foresight, reservation=reservation,
+                              datacentre=datacentre)))
     _run_sweep(jobs, data, set_progress)
     resv_note = f' at {round(reservation * 100)}% reservation' if reservation else ''
     return (refresh or 0) + 1, f'✓  Batch complete — {len(combos)} scenarios (all baselines + SA dunkelflaute){resv_note}'
@@ -1441,6 +1518,9 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     State('discount-slider', 'value'),
     State('foresight-toggle', 'value'),
     State('elastic-toggle', 'value'),
+    State('dc-nsw-input', 'value'),
+    State('dc-vic-input', 'value'),
+    State('dc-start-slider', 'value'),
     State('refresh-counter', 'data'),
     background=True,
     running=[
@@ -1455,14 +1535,15 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     prevent_initial_call=True,
 )
 def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
-                          discount, foresight_v, elastic_v, refresh):
+                          discount, foresight_v, elastic_v,
+                          dc_nsw, dc_vic, dc_start, refresh):
     """Every reservation level x every GSOO baseline, at the selected Winter/LNG case.
 
     Two sidebar controls are deliberately ignored, because this button sweeps both
     of them itself: the reservation toggle and the GSOO baseline dropdown. Winter
     and LNG come from the sliders as selected — that is the case being studied —
-    and the rest (dunkelflaute, elastic demand, foresight, discount) follow the
-    sidebar exactly as a single run does.
+    and the rest (dunkelflaute, elastic demand, data centre load, foresight,
+    discount) follow the sidebar exactly as a single run does.
 
     Every baseline gets its own 0% run. A reservation is only readable against the
     same case without one, and "the same case" includes the demand trajectory, so
@@ -1472,6 +1553,7 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     dunkelflaute = bool(dunkel) and 'on' in dunkel
     foresight = 'on' in (foresight_v or [])
     elastic = 'on' in (elastic_v or [])
+    datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
     dr = 0.07 if discount is None else float(discount)
     levels = [0.0] + list(RESERVATION_LEVELS)
     # Baseline outer, reservation inner: an interrupted sweep then leaves whole
@@ -1481,7 +1563,8 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     data = load_results()
     jobs = []
     for base, share in combos:
-        key = scenario_key(base, w, l, dunkelflaute, share, elastic, foresight, dr)
+        key = scenario_key(base, w, l, dunkelflaute, share, elastic, foresight, dr,
+                           datacentre)
         # Cached combinations are skipped, so a re-run after adding a level costs
         # one solve rather than the whole sweep. Clear Results to force a rebuild.
         if key not in data['all_scenarios']:
@@ -1489,7 +1572,7 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
                          dict(winter=w, lng=l, mip_gap=gap, baseline=base,
                               dunkelflaute=dunkelflaute, discount_rate=dr,
                               foresight=foresight, reservation=share,
-                              elastic_demand=elastic)))
+                              elastic_demand=elastic, datacentre=datacentre)))
     _run_sweep(jobs, data, set_progress)
     shares = ' / '.join(f'{round(x * 100)}%' for x in levels)
     skipped = len(combos) - len(jobs)
@@ -1617,6 +1700,11 @@ def update_header_kpis(key, end_year):
         take_up = html.Span(f"{served_pj/reserved_pj*100:.0f}% taken up",
                             className='md-kpi-sub')
         chips.insert(3, kpi_card('Gas Reserved', [f"{reserved_pj:,.0f} PJ", take_up]))
+    # Data centre load carried over the horizon. Absent from any run solved
+    # before this lever existed, and from any run with both boxes at zero.
+    dc_pj = sum(r.get('datacentre_tj', 0) for r in filtered) / 1000
+    if dc_pj:
+        chips.insert(3, kpi_card('Data Centre Load', f"{dc_pj:,.0f} PJ"))
     if raised_pj:
         chips.insert(3, kpi_card('Demand Raised', f"{raised_pj:,.0f} PJ"))
     if mm_shed_pj:

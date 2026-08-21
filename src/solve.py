@@ -60,13 +60,16 @@ BASELINE_LABELS = {'StepChange': 'Step Change', 'Accelerated': 'Accelerated Tran
 
 
 def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservation=0.0,
-              elastic_demand=False, foresight=True):
+              elastic_demand=False, foresight=True, datacentre=None):
     """One-line description of a scenario, for the terminal header."""
     bits = [BASELINE_LABELS.get(baseline, baseline), f"Winter {winter}", f"LNG {lng}"]
     if dunkelflaute:
         bits.append("SA Dunkelflaute 2027")
     if reservation:
         bits.append(f"{round(reservation * 100)}% reservation")
+    if datacentre:
+        bits.append(f"data centres {datacentre.get('NSW', 0):g} PJ NSW / "
+                    f"{datacentre.get('VIC', 0):g} PJ VIC from {datacentre['start_year']}")
     if elastic_demand:
         bits.append("elastic demand")
     if not foresight:
@@ -76,8 +79,8 @@ def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservatio
 
 def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
                    baseline="StepChange", dunkelflaute=False, discount_rate=0.07,
-                   foresight=True, reservation=0.0, elastic_demand=False, title=None,
-                   log=True):
+                   foresight=True, reservation=0.0, elastic_demand=False,
+                   datacentre=None, title=None, log=True):
     """Solve a scenario over 2025-2050.
 
     ``foresight=True`` (default) uses the two-stage full-horizon method: a
@@ -88,6 +91,13 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     own builds reactively (no knowledge of future years), carrying built projects
     forward. Preferred for *unanticipated* shocks (e.g. a price-shock or dunkelflaute
     scenario) where perfect foresight would unrealistically pre-build ahead of it.
+
+    ``datacentre`` is the data centre load lever:
+    ``{'NSW': PJ/yr, 'VIC': PJ/yr, 'start_year': yyyy}``, or None for off. From
+    the start year on, the volume is added to LARGE INDUSTRIAL demand at Sydney
+    and Melbourne, spread across the year on each node's own GPG daily shape —
+    see the header block in model.py for what that choice does and does not
+    assume.
 
     ``elastic_demand=True`` replaces must-serve mass-market demand with the step
     demand curves calibrated in build_demand_curves.py, so distribution load
@@ -104,21 +114,22 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     # scenarios x 26 years, the year lines are meaningless without it. Callers that
     # already have a nicer label (the dashboard passes its scenario key) override it.
     if log:
-        print(f"\n{title or run_title(winter, lng, baseline, dunkelflaute, reservation, elastic_demand, foresight)}",
+        print(f"\n{title or run_title(winter, lng, baseline, dunkelflaute, reservation, elastic_demand, foresight, datacentre)}",
               flush=True)
     data = load_data(baseline)
     years = list(range(2025, 2051))
     if foresight:
         return _solve_foresight(data, years, winter, lng, baseline,
                                 dunkelflaute, mip_gap, discount_rate, callback,
-                                reservation, elastic_demand, log)
+                                reservation, elastic_demand, log, datacentre)
     return _solve_myopic(data, years, winter, lng, baseline,
                          dunkelflaute, mip_gap, callback, reservation,
-                         elastic_demand, log)
+                         elastic_demand, log, datacentre)
 
 
 def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
-                  mip_gap, callback, reservation=0.0, elastic_demand=False, log=True):
+                  mip_gap, callback, reservation=0.0, elastic_demand=False, log=True,
+                  datacentre=None):
     """Reactive year-by-year solve: each year decides builds with no foresight."""
     contracts_all = data['contracts']
     built_projects, results = [], []
@@ -131,7 +142,8 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
             contracts_df=contracts_all if year <= 2040 else None, year=year,
             already_built=built_projects,
             baseline=baseline, dunkelflaute=dunkelflaute,
-            elastic_demand=elastic_demand, reserved_by_day=reserved_day)
+            elastic_demand=elastic_demand, reserved_by_day=reserved_day,
+            datacentre=datacentre)
         gm.build_model()
         status = gm.solve(mip_gap=mip_gap)
         if status != "ok":
@@ -152,7 +164,7 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
 
 def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
                      mip_gap, discount_rate, callback, reservation=0.0,
-                     elastic_demand=False, log=True):
+                     elastic_demand=False, log=True, datacentre=None):
     """Two-stage full-horizon solve: perfect-foresight capacity + 365-day dispatch."""
     from capacity_model import CapacityExpansionModel, build_representative_days
     contracts_all = data['contracts']
@@ -160,7 +172,7 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
 
     # --- Pass 1: assemble every year's demand + GPG/industrial (events applied) ---
     dispatch_models, demand_all, gpg_all, ind_all = {}, {}, {}, {}
-    diverted_by_year, reserved_all = {}, {}
+    diverted_by_year, reserved_all, dc_all = {}, {}, {}
     for year in years:
         # Applied here, before the representative days are built, so the capacity
         # layer sizes the network against the same post-reservation demand the
@@ -173,7 +185,8 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
             contracts_df=contracts_all if year <= 2040 else None, year=year,
             baseline=baseline, dunkelflaute=dunkelflaute,
-            elastic_demand=elastic_demand, reserved_by_day=reserved_day)
+            elastic_demand=elastic_demand, reserved_by_day=reserved_day,
+            datacentre=datacentre)
         dispatch_models[year] = gm
         for (n, d), v in demand_yr.set_index(['Node', 'Day'])['Demand'].to_dict().items():
             demand_all[(n, year, d)] = v
@@ -181,6 +194,10 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
             gpg_all[(n, year, d)] = v
         for (n, d), v in gm.ind_demand.items():
             ind_all[(n, year, d)] = v
+        # Already inside ind_all; carried separately only so the capacity layer
+        # can keep firm data centre load out of the industrial raise headroom.
+        for (n, d), v in gm.dc_demand.items():
+            dc_all[(n, year, d)] = v
 
     # --- Pass 2: capacity expansion, perfect foresight over the horizon ----------
     if callback:
@@ -188,7 +205,7 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
     mm_blocks = dispatch_models[start_year].mm_blocks
     rep = build_representative_days(years, demand_all, gpg_all, ind_all,
                                     data['nodes'], mm_blocks=mm_blocks,
-                                    reserved_all=reserved_all)
+                                    reserved_all=reserved_all, dc_all=dc_all)
     cap = CapacityExpansionModel(
         data['nodes'], data['arcs'], data['supply'], data['expansion'], years, rep,
         discount_rate=discount_rate,
@@ -242,6 +259,14 @@ def main():
     parser.add_argument("--reservation", type=float, default=0.0, metavar="PCT",
                         help="Domestic gas reservation: %% of LNG export volume "
                              "diverted to the domestic market (e.g. 20 for 20%%)")
+    parser.add_argument("--dc-nsw", type=float, default=0.0, metavar="PJ",
+                        help="Extra data centre gas demand in NSW, PJ/yr, added to "
+                             "Sydney industrial demand on the GPG daily shape")
+    parser.add_argument("--dc-vic", type=float, default=0.0, metavar="PJ",
+                        help="Extra data centre gas demand in VIC, PJ/yr, added to "
+                             "Melbourne industrial demand on the GPG daily shape")
+    parser.add_argument("--dc-start", type=int, default=2030, metavar="YEAR",
+                        help="First year the data centre demand appears (default 2030)")
     parser.add_argument("--elastic-demand", action="store_true",
                         help="Price-responsive mass-market demand: use the step "
                              "demand curve in curtailment_params.csv instead of "
@@ -257,12 +282,17 @@ def main():
     print(f"Solver: {solvers.describe()}")
     solvers.require_available()
 
+    datacentre = None
+    if args.dc_nsw > 0 or args.dc_vic > 0:
+        datacentre = {'NSW': args.dc_nsw, 'VIC': args.dc_vic,
+                      'start_year': args.dc_start}
+
     t0 = time.time()
     results = solve_scenario(
         args.winter, args.lng, mip_gap=args.mip_gap,
         baseline=args.baseline, dunkelflaute=args.dunkelflaute,
         foresight=not args.myopic, reservation=args.reservation / 100.0,
-        elastic_demand=args.elastic_demand)
+        elastic_demand=args.elastic_demand, datacentre=datacentre)
     print(f"\nSolved {len(results)} years in {time.time() - t0:.1f}s "
           f"using {solvers.describe()}")
     builds = sorted({b for yr in results for b in yr['builds']})

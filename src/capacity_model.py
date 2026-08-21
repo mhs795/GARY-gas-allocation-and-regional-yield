@@ -29,7 +29,7 @@ PEAK_DAY_WEIGHT = 5.0        # days represented by the annual peak day (adequacy
 
 
 def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
-                              mm_blocks=(), reserved_all=None):
+                              mm_blocks=(), reserved_all=None, dc_all=None):
     """Reduce each year's 365 daily profiles to representative days.
 
     Returns {year: [ {weight, demand{node:v}, gpg{node:v}, ind{node:v}} ]} — 12
@@ -41,10 +41,16 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
     averaged over the bucket's real days rather than derived from the averaged
     demand, so the winter damping — which applies to some days of a month and not
     others — survives the reduction intact.
+
+    ``dc_all`` is the data centre slice of ``ind_all`` — already inside it, not on
+    top of it. It rides along as ``dc{node: TJ}`` purely so the investment layer
+    can net it out of the industrial expansion headroom, exactly as the dispatch
+    layer does: the load is firm, so it must not enlarge the raise blocks.
     """
     node_names = nodes_df['Name'].tolist()
     mm_node_names = [n for n in node_names if n not in LNG_NODES]
     reserved_all = reserved_all or {}
+    dc_all = dc_all or {}
 
     def mm_avail(n, y, d, share, winter_scale):
         """TJ of one mass-market block available at node n on day d."""
@@ -69,12 +75,13 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
             dem = {n: sum(demand_all.get((n, y, d), 0) for d in days) / w for n in node_names}
             gpg = {n: sum(gpg_all.get((n, y, d), 0) for d in days) / w for n in node_names}
             ind = {n: sum(ind_all.get((n, y, d), 0) for d in days) / w for n in node_names}
+            dc = {n: sum(dc_all.get((n, y, d), 0) for d in days) / w for n in node_names}
             mm = {blk: {n: sum(mm_avail(n, y, d, share, ws) for d in days) / w
                         for n in mm_node_names}
                   for blk, _strike, share, ws in mm_blocks}
             reserved = sum(reserved_all.get((y, d), 0.0) for d in days) / w
             days_reps.append({'weight': w, 'demand': dem, 'gpg': gpg, 'ind': ind,
-                              'mm': mm, 'reserved': reserved})
+                              'dc': dc, 'mm': mm, 'reserved': reserved})
         # annual peak day (actual profile) for adequacy
         dpk = max(day_total, key=day_total.get)
         days_reps.append({
@@ -82,6 +89,7 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
             'demand': {n: demand_all.get((n, y, dpk), 0) for n in node_names},
             'gpg':    {n: gpg_all.get((n, y, dpk), 0) for n in node_names},
             'ind':    {n: ind_all.get((n, y, dpk), 0) for n in node_names},
+            'dc':     {n: dc_all.get((n, y, dpk), 0) for n in node_names},
             'mm':     {blk: {n: mm_avail(n, y, dpk, share, ws) for n in mm_node_names}
                        for blk, _strike, share, ws in mm_blocks},
             'reserved': reserved_all.get((y, dpk), 0.0),
@@ -170,7 +178,11 @@ class CapacityExpansionModel:
         m.gpg_expand = pyo.Var(m.GPGRaiseNodes, m.GPGRaise, m.YR, domain=pyo.NonNegativeReals)
 
         def ind_raise_avail(n, b, y, i):
-            return self.rep[y][i]['ind'].get(n, 0) * ind_raise_share[b]
+            # Firm data centre load is inside rd['ind'] but does not respond to
+            # price, so it is netted out here just as it is in the dispatch model.
+            base = (self.rep[y][i]['ind'].get(n, 0)
+                    - self.rep[y][i].get('dc', {}).get(n, 0))
+            return max(0.0, base) * ind_raise_share[b]
 
         def gpg_raise_avail(n, b, y, i):
             share = gpg_raise_share.get((n, b))

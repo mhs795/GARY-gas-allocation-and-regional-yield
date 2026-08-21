@@ -56,6 +56,87 @@ LNG_NODES = ['APLNG', 'GLNG', 'QCLNG']
 RESERVATION_LEVELS = [0.05, 0.10, 0.20, 0.30]
 
 
+# --- Data centre gas demand --------------------------------------------------
+# A "what if" lever for hyperscale data centre load: an annual volume in PJ for
+# NSW and for VIC, switched on in a chosen year and held for the rest of the
+# horizon. It answers "what would N PJ/yr of new data centre gas demand in these
+# two states do to the east coast market", nothing finer.
+#
+# It enters as LARGE INDUSTRIAL demand. That is what a data centre's gas call is
+# -- a firm, round-the-clock load at a handful of large sites, not
+# distribution-level household gas -- and it has two consequences worth knowing
+# when reading a result: the load curtails at the industrial strike price
+# (strike_ind, $120/GJ) rather than at mass-market willingness to pay, and it
+# reaches the capacity layer through the same industrial series, so the
+# investment model sizes pipe and storage for it.
+#
+# The annual volume is spread across the year on the NODE'S OWN GPG DAILY SHAPE,
+# not evenly and not on the industrial shape it sits inside. A data centre's gas
+# call tracks electricity system conditions -- it is there to firm a load whose
+# cost and availability follow the power market -- so the gas-powered generation
+# profile at the same node is the closest shape GARY carries. Concretely, day d
+# gets ``PJ * 1000 * gpg[node, d] / sum(gpg[node, :])``, which preserves the
+# annual total exactly whatever the shape.
+#
+# A node with no GPG demand in that year falls back to a flat spread; there is no
+# such node today (Sydney and Melbourne both carry GPG in every GSOO baseline),
+# but the fallback keeps the lever from silently dropping volume if that changes.
+#
+# CAVEAT: the GPG shape is VERY peaky, because gas generation runs intermittently.
+# 50 PJ/yr at Sydney arrives as anything from ~0.05 to ~580 TJ on a given day,
+# against ~137 TJ/d spread evenly. That is the right shape if the load is read as
+# gas generation firming a data centre; it materially overstates day-to-day
+# variation if it is meant to be the site's own boilers or fuel cells. The peak
+# days are what the capacity layer sizes the network against, so this choice
+# shows up in builds, not just in dispatch.
+#
+# It steps on IN FULL at the start year, with no ramp. The slider asks "what if
+# this much load is there from year X"; a built-in ramp would quietly answer a
+# different question, and a ramp that matters to a conclusion belongs in the
+# demand trajectory, not in a sensitivity lever.
+#
+# The volume is also kept as its own series (``GasMarketModel.dc_demand``) so it
+# can be netted out of the industrial *expansion* headroom: the raise blocks
+# represent industrial load that takes up more gas when it is cheap, and a data
+# centre's consumption is set by its compute, not by the gas price.
+DATACENTRE_STATE_NODE = [('NSW', 'Sydney'), ('VIC', 'Melbourne')]
+
+
+def datacentre_profile(spec, year, gpg_demand):
+    """Data centre load for one year, as ``{(node, day): TJ}``.
+
+    ``spec`` is ``{'NSW': PJ/yr, 'VIC': PJ/yr, 'start_year': yyyy}``. Returns an
+    empty dict when the lever is off, both volumes are zero, or the year is
+    before the start year.
+
+    Each state's annual volume is distributed over the 365 days in proportion to
+    that node's GPG demand, so the shape follows gas-fired generation rather than
+    heating load. The daily figures sum to the annual volume by construction.
+    """
+    if not spec:
+        return {}
+    if int(year) < int(spec.get('start_year', 2025)):
+        return {}
+    out = {}
+    for state, node in DATACENTRE_STATE_NODE:
+        pj = float(spec.get(state, 0) or 0)
+        if pj <= 0:
+            continue
+        total_tj = pj * 1000.0
+        shape = {d: gpg_demand.get((node, d), 0.0) for d in range(1, 366)}
+        gpg_total = sum(shape.values())
+        if gpg_total > 0:
+            for d, v in shape.items():
+                out[(node, d)] = total_tj * v / gpg_total
+        else:
+            # No GPG at this node this year: nothing to take a shape from, so
+            # spread it evenly rather than dropping the volume.
+            flat = total_tj / 365.0
+            for d in range(1, 366):
+                out[(node, d)] = flat
+    return out
+
+
 # --- Mass-market demand curve ------------------------------------------------
 # Distribution-level (residential/commercial) demand is not a fixed volume that
 # must be served at any price. It is represented as a STEP DEMAND CURVE: the load
@@ -188,7 +269,7 @@ def apply_lng_reservation(demand_df, share):
 
 
 class GasMarketModel:
-    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, baseline="StepChange", dunkelflaute=False, builds_fixed=None, elastic_demand=False, reserved_by_day=None):
+    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, baseline="StepChange", dunkelflaute=False, builds_fixed=None, elastic_demand=False, reserved_by_day=None, datacentre=None):
         self.nodes = nodes_df
         self.arcs = arcs_df
         self.supply = supply_df
@@ -206,6 +287,8 @@ class GasMarketModel:
         self.elastic_demand = elastic_demand
         # {day: TJ} of export volume withheld and offered domestically at $0.
         self.reserved_by_day = dict(reserved_by_day or {})
+        # Data centre lever: {'NSW': PJ/yr, 'VIC': PJ/yr, 'start_year': yyyy}.
+        self.datacentre = dict(datacentre) if datacentre else None
         # The LNG trains' only feed pipes, and the node behind them. Resolved here
         # rather than in build_model so the capacity layer can read them before any
         # dispatch model has been built.
@@ -269,6 +352,12 @@ class GasMarketModel:
                 key = (DUNKELFLAUTE_NODE, d)
                 if key in self.gpg_demand:
                     self.gpg_demand[key] *= DUNKELFLAUTE_MULT
+        # Data centre load, added to the large-industrial tier (see the header
+        # block). Held separately as well because the industrial raise blocks are
+        # a share of price-responsive industrial load and this load is firm.
+        self.dc_demand = datacentre_profile(self.datacentre, self.year, self.gpg_demand)
+        for _key, _tj in self.dc_demand.items():
+            self.ind_demand[_key] = self.ind_demand.get(_key, 0.0) + _tj
         try:
             strikes = pd.read_csv(os.path.join(data_dir, "curtailment_params.csv")
                                   ).set_index('Tier')['StrikePrice'].to_dict()
@@ -350,6 +439,7 @@ class GasMarketModel:
         self._mm_available = mm_available
         gpg_dem = self.gpg_demand
         ind_dem = self.ind_demand
+        dc_dem = self.dc_demand
 
         # --- Demand that RISES when gas is cheap -----------------------------
         # Shedding is penalised, so serving is implicitly worth the strike price.
@@ -366,7 +456,11 @@ class GasMarketModel:
         gpg_raise_share = {k: v[1] for k, v in self.gpg_raise.items()}
 
         def ind_raise_available(n, blk, t):
-            return ind_dem.get((n, t), 0) * ind_raise_share[blk]
+            # Data centre load is firm: it is served or it is curtailed, it does
+            # not take up more gas because gas got cheap, so it is netted out of
+            # the headroom the raise blocks are a share of.
+            base = ind_dem.get((n, t), 0) - dc_dem.get((n, t), 0)
+            return max(0.0, base) * ind_raise_share[blk]
 
         def gpg_raise_available(n, blk, t):
             """Headroom for extra GPG: physical nameplate less what already runs,
@@ -660,6 +754,9 @@ class GasMarketModel:
                         res['demand_raise'].append({'Day': t, 'Node': n, 'Tier': 'GPG',
                                                     'Block': b, 'Value': v})
 
+        # Data centre load carried this year, TJ. Zero when the lever is off or
+        # the year is before its start year.
+        res['datacentre_tj'] = float(sum(self.dc_demand.values()))
         res['reserved_served_tj'] = float(sum(rp[t] or 0 for t in m.T))
         res['reserved_offered_tj'] = float(sum(self.reserved_by_day.values()))
 

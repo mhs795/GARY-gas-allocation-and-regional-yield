@@ -49,6 +49,7 @@ The first run will take 2–3 minutes while dependencies install. After that, op
 2. Set **Winter Stress** and **LNG Demand** levels (these layer on top of the chosen baseline)
 2. Optionally switch on **Gas reservation** and pick the share of LNG exports to reserve (5/10/20/30%),
    and/or **Price-responsive demand**
+2b. Optionally enter **Data centre gas demand** in PJ/yr for NSW and VIC and set the year it starts
 3. Click **Run Scenario** to solve one combination
 4. Click **Run Scenarios** to pre-calculate **every combination** — all 3 baselines × 3 Winter × 3 LNG = 27 scenarios, plus the SA dunkelflaute case
 5. Click **Run Reservation Scenarios** to sweep **every reservation level × every GSOO baseline** — 5 levels (0/5/10/20/30%) × 3 baselines = 15 runs — at the Winter and LNG levels currently selected. This button sweeps the baseline dropdown and the reservation toggle itself, so both are ignored while it runs; every other sidebar setting is honoured. Each baseline gets its own 0% run, because a reservation is only readable against the same case without one
@@ -275,6 +276,50 @@ which the export cap never did, but it cannot put it where the shortage is.
 > and reserving more always lower it — the figure is the cost of serving what is left,
 > not a welfare measure. The dashboard relabels the KPI **System Cost (served gas
 > only)** and shows **Gas Reserved** with the percentage actually taken up.
+
+## Data centre gas demand
+
+A "what if" lever for hyperscale data centre load. Enter an annual volume in PJ for
+**NSW** and for **VIC** and set the year it starts; from that year on the volume is
+added to **large-industrial** demand at **Sydney** and **Melbourne** and held for the
+rest of the horizon.
+
+```bash
+python src/solve.py --dc-nsw 50 --dc-vic 30 --dc-start 2030
+```
+
+Two states rather than one national figure because where the load lands is the whole
+point: Sydney and Melbourne sit at opposite ends of the southbound corridor that binds
+in every stressed GARY run.
+
+**It enters as industrial demand**, which is what a data centre's gas call is — a firm,
+round-the-clock load at a handful of large sites, not distribution-level household gas.
+Two consequences worth knowing when reading a result:
+
+- it curtails at the **industrial strike price** ($120/GJ), not at mass-market
+  willingness to pay, so it outbids households and outranks GPG;
+- it reaches the **capacity layer** through the same industrial series, so the
+  investment model sizes pipe and storage for it rather than discovering it in dispatch.
+
+It is netted out of the industrial **raise** blocks under price-responsive demand: those
+blocks represent industrial load that takes up more gas when gas is cheap, and a data
+centre's consumption is set by its compute, not by the gas price.
+
+**Daily shape follows GPG.** The annual volume is spread across the year in proportion
+to that node's own gas-powered generation profile — day *d* gets
+`PJ × 1000 × gpg[node, d] / Σ gpg[node, ·]`, which preserves the annual total exactly.
+
+> **Caveat — the GPG shape is very peaky.** GPG runs intermittently, so 50 PJ/yr at
+> Sydney arrives as anything from ~0.05 to ~580 TJ on a given day, against ~137 TJ/d if
+> it were spread evenly. A real facility's own gas draw is far flatter than that. This
+> shape is the right one if the load is understood as *gas generation firming a data
+> centre*; it materially overstates day-to-day variation if it is meant to be the data
+> centre's own boilers or fuel cells, and the peak days are what the capacity layer
+> sizes against.
+
+Runs are cached separately — scenario keys gain a `_DC<nsw>N<vic>V<year>` segment — so a
+data centre case sits alongside its counterpart without one. Leaving both boxes at 0
+produces the same key as before the lever existed, so every cached scenario stays valid.
 
 ## Endogenous demand
 
@@ -521,5 +566,5 @@ python src/migrate_results.py            # rewrites in place, keeps a .bak
 - **Horizon:** 2025–2050 (annual dispatch, 365 days/year)
 - **Solve method:** two-stage full-horizon — a perfect-foresight capacity-expansion layer (NPV over representative days) sets the build schedule, then each year is dispatched at 365-day resolution as a pure LP for nodal prices; a myopic year-by-year mode is also available as a toggle
 - **Baselines:** selectable AEMO **2026 GSOO** scenario — **Step Change** (central), **Accelerated Transition**, or **Slower Growth** (demand re-based on the GSOO; daily shapes from GBB actuals)
-- **Scenario levers:** Winter stress × LNG demand (9 combinations) layered on the chosen baseline, plus the SA Dunkelflaute event, the gas reservation and price-responsive demand; the batch runs all 3 baselines × 9 = 27 scenarios
+- **Scenario levers:** Winter stress × LNG demand (9 combinations) layered on the chosen baseline, plus the SA Dunkelflaute event, the gas reservation, data centre gas demand in NSW/VIC and price-responsive demand; the batch runs all 3 baselines × 9 = 27 scenarios
 
