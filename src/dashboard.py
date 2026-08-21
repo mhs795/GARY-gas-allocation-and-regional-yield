@@ -1329,16 +1329,68 @@ def get_filtered(key, end_year):
     return [r for r in data['all_scenarios'].get(key, []) if r['Year'] <= end_year]
 
 
+def delivered_price(res):
+    """Volume-weighted delivered price across the demand centres, $/GJ.
+
+    The headline price has to be the one buyers face, so it is taken at the
+    Demand nodes -- the same node set the Price Outcomes charts plot -- not at
+    the fields. Weighting an average price by *production* instead answers a
+    different question: it lands on the wellhead, where Surat's volume swamps
+    everything and the transport differential to Melbourne (~$10/GJ in a tight
+    year) never appears at all.
+
+    The weight is what physically arrived at the node each day, net of gas that
+    only passed through on its way somewhere else (Melbourne -> Sydney, Sydney ->
+    Port Kembla). Demand nodes carry no production and no storage, so net inflow
+    is exactly the gas consumed there. Weighting per node-DAY rather than per
+    node is what lets winter count properly: that is when both the volumes and
+    the prices are high, and a flat average over days would wash it out.
+
+    Returns None when a year has no priced delivery at all, so the caller can
+    fall back rather than divide by zero.
+    """
+    _prices, _flow = res['prices'], res['flow']
+    if _prices.empty or _flow.empty:
+        return None
+    demand_nodes = set(static_data['nodes']
+                       .loc[static_data['nodes']['Type'] == 'Demand', 'Name'])
+    # Names are stored as categoricals with per-frame category sets, so From/To
+    # and Node do not align as indexes. Compare and group on plain strings.
+    f = _flow[['From', 'To', 'Day', 'Value']].astype({'From': str, 'To': str})
+    inflow  = (f[f['To'].isin(demand_nodes)]
+               .groupby(['To', 'Day'])['Value'].sum())
+    outflow = (f[f['From'].isin(demand_nodes)]
+               .groupby(['From', 'Day'])['Value'].sum())
+    inflow.index.names = outflow.index.names = ['Node', 'Day']
+    served = inflow.sub(outflow, fill_value=0.0).clip(lower=0).rename('Vol')
+    if served.empty:
+        return None
+    merged = (_prices.astype({'Node': str})
+              .merge(served.reset_index(), on=['Node', 'Day']))
+    total = merged['Vol'].sum()
+    if merged.empty or total <= 0:
+        return None
+    return float((merged['Price'] * merged['Vol']).sum() / total)
+
+
 def build_summary(filtered_results):
     rows, prices_trend, builds_timeline, total_cost = [], [], [], 0
     exp_lookup = static_data['expansion'].set_index('Name').to_dict('index')
+    demand_names = static_data['nodes'].loc[
+        static_data['nodes']['Type'] == 'Demand', 'Name'].tolist()
     for res in filtered_results:
         y = res['Year']
         _prices = res['prices']
         _prod   = res['production']
-        merged  = pd.merge(_prices, _prod, on=['Node', 'Day'])
-        p_avg   = ((merged['Price'] * merged['Value']).sum() / merged['Value'].sum()
-                   if not merged.empty else _prices['Price'].mean())
+        # Fallback for a year that priced nothing at a demand centre: the mean
+        # over the demand nodes that do have a price. A plain mean over ALL
+        # nodes would sweep in undeveloped ones, whose nodal dual sits at the
+        # $300 value-of-lost-load and is not a market price.
+        p_avg = delivered_price(res)
+        if p_avg is None:
+            _dem_p = _prices[_prices['Node'].astype(str).isin(demand_names)]
+            p_avg = (_dem_p['Price'].mean() if not _dem_p.empty
+                     else _prices['Price'].mean())
         rows.append({'Year': y, 'Production_PJ': _prod['Value'].sum() / 1000,
                      'Shortage_TJ': res['shortage']['Value'].sum(),
                      'Avg_Price': p_avg})
@@ -1731,6 +1783,7 @@ def update_header_kpis(key, end_year):
         return key, empty
     summary, _, builds_df, total_cost = build_summary(filtered)
     final_price = f"${summary['Avg_Price'].iloc[-1]:.2f}/GJ" if not summary.empty else '—'
+    final_year = int(summary['Year'].iloc[-1]) if not summary.empty else end_year
     reserved_pj = sum(r.get('lng_reserved_tj', 0) for r in filtered) / 1000
     # How much of the reserved volume the domestic market actually absorbed. It is
     # offered at $0 so it is taken up wherever it can physically reach a buyer;
@@ -1745,7 +1798,9 @@ def update_header_kpis(key, end_year):
                     for r in filtered if len(r.get('demand_raise', ()))) / 1000
     elastic_run = any(r.get('elastic_demand') for r in filtered)
     chips = [
-        kpi_card('Final Price',  final_price),
+        kpi_card('Final Price', [final_price,
+                                 html.Span(f'demand-weighted, {final_year}',
+                                           className='md-kpi-sub')]),
         # Not comparable across runs in two separate ways. Under a reservation the
         # objective carries no export revenue, and the reserved gas is costed at
         # zero, so both removing export demand and reserving more always lower it.
