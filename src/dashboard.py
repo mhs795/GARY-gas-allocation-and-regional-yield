@@ -15,7 +15,7 @@ import dash_bootstrap_components as dbc
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import results_io
-from model import RESERVATION_LEVELS
+from model import RESERVATION_LEVELS, lng_foundation_share
 from solve import solve_scenario
 from regenerate_data import regenerate_all
 from sweep import run_jobs, default_workers
@@ -837,6 +837,10 @@ app.index_string = f"""<!DOCTYPE html>
 LEVELS = ['Low', 'Medium', 'High']
 # Domestic gas reservation shares offered by the slider, as whole percents.
 RESERVATION_PCTS = [int(round(x * 100)) for x in RESERVATION_LEVELS]
+# Uncontracted share of export volume: the ceiling on a reservation that respects
+# foundation SPAs. Shown in the sidebar so the cap is visible before a run rather
+# than discovered afterwards.
+UNCONTRACTED_PCT = (1.0 - lng_foundation_share()) * 100
 
 # AEMO 2026 GSOO baseline scenarios (label -> slug). The baseline sets the
 # underlying demand trajectory; the Winter/LNG levers then layer on top of it.
@@ -874,8 +878,9 @@ def short_key(k):
         parts.append(f"W-{_LVL_SHORT.get(winter, winter[:1])} L-{_LVL_SHORT.get(lng, lng[:1])}")
     if '_Dunkelflaute' in k:
         parts.append('Dunk27')
-    if '_Reserve' in k:
-        parts.append('Res' + k.split('_Reserve', 1)[1].split('_', 1)[0] + '%')
+    mo = re.search(r'_Reserve(\d+)(incl)?', k)
+    if mo:
+        parts.append(f'Res{mo.group(1)}%' + ('+contract' if mo.group(2) else ''))
     dc = re.search(_DC_RE, k)
     if dc:
         parts.append(f'DC {dc.group(1)}/{dc.group(2)} PJ @{dc.group(3)}')
@@ -896,7 +901,9 @@ def pretty_key(k):
     rest = k.split(base, 1)[-1] if base else k
     # Before the chained replaces below, which would otherwise rewrite a trailing
     # _Myopic/_DR into the middle of the reservation percentage.
-    rest = re.sub(r'_Reserve(\d+)', r'  ·  \1% reservation', rest)
+    rest = re.sub(r'_Reserve(\d+)(incl)?',
+                  lambda mo: f'  ·  {mo.group(1)}% reservation'
+                             + (' incl. contracted' if mo.group(2) else ''), rest)
     rest = re.sub(_DC_RE,
                   lambda mo: f'  ·  Data centres {mo.group(1)} PJ NSW / '
                              f'{mo.group(2)} PJ VIC from {mo.group(3)}', rest)
@@ -1022,9 +1029,14 @@ sidebar = html.Div(className='md-sidebar', children=[
             dcc.Slider(id='winter-slider', min=0, max=2, step=1,
                        marks={i: l for i, l in enumerate(LEVELS)}, value=1)),
 
-        slider_group('Global LNG Demand',
+        slider_group('Global LNG Market',
             dcc.Slider(id='lng-slider', min=0, max=2, step=1,
                        marks={i: l for i, l in enumerate(LEVELS)}, value=1)),
+        html.Div('Scales export volume when netback pricing is off. With it on, '
+                 'it selects the netback price path instead \u2014 Low = Accelerated '
+                 'Transition, Medium = this run\'s baseline, High = Slower Growth.',
+                 style={'marginTop': '-14px', 'marginBottom': '18px',
+                        'fontSize': '10px', 'color': '#888', 'lineHeight': '1.35'}),
 
         dbc.Checklist(id='dunkelflaute-toggle',
                       options=[{'label': ' SA Dunkelflaute (2027)', 'value': 'on'}],
@@ -1042,6 +1054,19 @@ sidebar = html.Div(className='md-sidebar', children=[
                            step=None,
                            marks={i: f'{v}%' for i, v in enumerate(RESERVATION_PCTS)},
                            value=1)),
+            dbc.Checklist(id='contracts-toggle',
+                          options=[{'label': ' Respect LNG foundation contracts',
+                                    'value': 'on'}],
+                          value=['on'], switch=True,
+                          style={'marginBottom': '2px', 'fontSize': '12px'}),
+            html.Div(f'On: the reservation may only take UNCONTRACTED export gas, '
+                     f'so it is capped at {UNCONTRACTED_PCT:.0f}% however high the '
+                     f'slider goes \u2014 which is how the Heads of Agreement works. '
+                     f'Off: it takes its share of all export volume, breaking '
+                     f'take-or-pay SPAs.',
+                     style={'marginBottom': '16px', 'fontSize': '10px',
+                            'color': '#888', 'lineHeight': '1.35',
+                            'paddingLeft': '38px'}),
         ]),
 
         # Data centre load. Two volumes rather than one national figure because
@@ -1279,7 +1304,7 @@ def datacentre_spec(nsw_pj, vic_pj, start_year):
 
 def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
                  elastic=False, foresight=True, discount=0.07, datacentre=None,
-                 netback=False):
+                 netback=False, respect_contracts=True):
     """Cache key for one scenario.
 
     Segment order is load-bearing — pretty_key parses it and the cached results on
@@ -1290,7 +1315,8 @@ def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
           f"V{datacentre['start_year']}") if datacentre else ''
     return (f'Base_{baseline}_Winter_{winter}_LNG_{lng}'
             + ('_Dunkelflaute' if dunkelflaute else '')
-            + (f'_Reserve{round(reservation * 100)}' if reservation else '')
+            + ((f'_Reserve{round(reservation * 100)}'
+                + ('' if respect_contracts else 'incl')) if reservation else '')
             + dc
             + ('_Netback' if netback else '')
             + ('_Elastic' if elastic else '')
@@ -1377,6 +1403,7 @@ def show_tab(active):
     State('foresight-toggle', 'value'),
     State('elastic-toggle', 'value'),
     State('netback-toggle', 'value'),
+    State('contracts-toggle', 'value'),
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
     State('dc-start-slider', 'value'),
@@ -1394,7 +1421,8 @@ def show_tab(active):
     prevent_initial_call=True,
 )
 def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on, resv_i,
-                 discount, foresight_v, elastic_v, netback_v, dc_nsw, dc_vic, dc_start, refresh):
+                 discount, foresight_v, elastic_v, netback_v, contracts_v,
+                 dc_nsw, dc_vic, dc_start, refresh):
     w, l = LEVELS[wi], LEVELS[li]
     baseline = baseline or 'StepChange'
     dunkelflaute = bool(dunkel) and 'on' in dunkel
@@ -1403,18 +1431,20 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
     elastic = 'on' in (elastic_v or [])
     dr = 0.07 if discount is None else float(discount)
     netback = 'on' in (netback_v or [])
+    respect_contracts = 'on' in (contracts_v or [])
     datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
     def _cb(yr, p):
         pct = int(p * 100)
         set_progress((pct, f'Solving {yr}… {pct}%'))
     # Built before the solve so it can also title the terminal log.
     key = scenario_key(baseline, w, l, dunkelflaute, reservation, elastic, foresight, dr,
-                       datacentre, netback)
+                       datacentre, netback, respect_contracts)
     result = solve_scenario(w, l, mip_gap=gap, callback=_cb,
                             baseline=baseline, dunkelflaute=dunkelflaute,
                             discount_rate=dr, foresight=foresight,
                             reservation=reservation, elastic_demand=elastic,
                             datacentre=datacentre, netback_pricing=netback,
+                            respect_contracts=respect_contracts,
                             title=pretty_key(key))
     data = load_results()
     data['all_scenarios'][key] = result
@@ -1473,6 +1503,7 @@ def _run_sweep(jobs, data, set_progress):
     State('reservation-toggle', 'value'),
     State('reservation-slider', 'value'),
     State('netback-toggle', 'value'),
+    State('contracts-toggle', 'value'),
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
     State('dc-start-slider', 'value'),
@@ -1490,7 +1521,8 @@ def _run_sweep(jobs, data, set_progress):
     prevent_initial_call=True,
 )
 def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
-              resv_on, resv_i, netback_v, dc_nsw, dc_vic, dc_start, refresh):
+              resv_on, resv_i, netback_v, contracts_v,
+              dc_nsw, dc_vic, dc_start, refresh):
     # Every combination: all GSOO baselines x Winter x LNG (dunkelflaute
     # off) -> 27 runs, plus one Step Change + SA Dunkelflaute (2027) case at the
     # central Winter/LNG so it sits alongside its plain Step Change counterpart.
@@ -1506,6 +1538,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     # whole sweep is solved with it, under its own keys, alongside the plain runs.
     datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
     netback = 'on' in (netback_v or [])
+    respect_contracts = 'on' in (contracts_v or [])
     dr = 0.07 if discount is None else float(discount)
     combos = [(b['value'], w, l, False) for b in BASELINES for w in LEVELS for l in LEVELS]
     combos.append(('StepChange', 'Medium', 'Medium', True))
@@ -1513,7 +1546,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     jobs = []
     for b, w, l, dunkel in combos:
         key = scenario_key(b, w, l, dunkel, reservation, False, foresight, dr, datacentre,
-                           netback)
+                           netback, respect_contracts)
         # Skip already-computed base combos, but always recompute the dunkelflaute
         # case so edits to the event flow through on a re-run.
         if dunkel or key not in data['all_scenarios']:
@@ -1521,7 +1554,8 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
                          dict(winter=w, lng=l, mip_gap=gap, baseline=b,
                               dunkelflaute=dunkel, discount_rate=dr,
                               foresight=foresight, reservation=reservation,
-                              datacentre=datacentre, netback_pricing=netback)))
+                              datacentre=datacentre, netback_pricing=netback,
+                              respect_contracts=respect_contracts)))
     _run_sweep(jobs, data, set_progress)
     resv_note = f' at {round(reservation * 100)}% reservation' if reservation else ''
     return (refresh or 0) + 1, f'✓  Batch complete — {len(combos)} scenarios (all baselines + SA dunkelflaute){resv_note}'
@@ -1541,6 +1575,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     State('foresight-toggle', 'value'),
     State('elastic-toggle', 'value'),
     State('netback-toggle', 'value'),
+    State('contracts-toggle', 'value'),
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
     State('dc-start-slider', 'value'),
@@ -1558,7 +1593,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     prevent_initial_call=True,
 )
 def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
-                          discount, foresight_v, elastic_v, netback_v,
+                          discount, foresight_v, elastic_v, netback_v, contracts_v,
                           dc_nsw, dc_vic, dc_start, refresh):
     """Every reservation level x every GSOO baseline, at the selected Winter/LNG case.
 
@@ -1577,6 +1612,7 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     foresight = 'on' in (foresight_v or [])
     elastic = 'on' in (elastic_v or [])
     netback = 'on' in (netback_v or [])
+    respect_contracts = 'on' in (contracts_v or [])
     datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
     dr = 0.07 if discount is None else float(discount)
     levels = [0.0] + list(RESERVATION_LEVELS)
@@ -1588,7 +1624,7 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     jobs = []
     for base, share in combos:
         key = scenario_key(base, w, l, dunkelflaute, share, elastic, foresight, dr,
-                           datacentre, netback)
+                           datacentre, netback, respect_contracts)
         # Cached combinations are skipped, so a re-run after adding a level costs
         # one solve rather than the whole sweep. Clear Results to force a rebuild.
         if key not in data['all_scenarios']:
@@ -1597,7 +1633,8 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
                               dunkelflaute=dunkelflaute, discount_rate=dr,
                               foresight=foresight, reservation=share,
                               elastic_demand=elastic, datacentre=datacentre,
-                              netback_pricing=netback)))
+                              netback_pricing=netback,
+                              respect_contracts=respect_contracts)))
     _run_sweep(jobs, data, set_progress)
     shares = ' / '.join(f'{round(x * 100)}%' for x in levels)
     skipped = len(combos) - len(jobs)
@@ -1722,9 +1759,18 @@ def update_header_kpis(key, end_year):
         kpi_card('New Projects', str(len(builds_df))),
     ]
     if reserved_pj:
-        take_up = html.Span(f"{served_pj/reserved_pj*100:.0f}% taken up",
-                            className='md-kpi-sub')
-        chips.insert(3, kpi_card('Gas Reserved', [f"{reserved_pj:,.0f} PJ", take_up]))
+        # Requested vs applied: with foundation contracts respected the applied
+        # share is capped at the uncontracted volume, so a 20% slider can deliver
+        # 7%. Showing only the volume would hide that entirely.
+        requested = next((r.get('reservation_share', 0) for r in filtered), 0)
+        applied = next((r.get('reservation_share_applied', requested)
+                        for r in filtered), requested)
+        note = f"{served_pj/reserved_pj*100:.0f}% taken up"
+        if applied and abs(applied - requested) > 1e-9:
+            note += f" \u00b7 {requested*100:.0f}% asked, {applied*100:.0f}% allowed"
+        chips.insert(3, kpi_card('Gas Reserved',
+                                 [f"{reserved_pj:,.0f} PJ",
+                                  html.Span(note, className='md-kpi-sub')]))
     # Data centre load carried over the horizon. Absent from any run solved
     # before this lever existed, and from any run with both boxes at zero.
     # LNG netback pricing: the export volume that priced itself out. Under
@@ -1735,8 +1781,10 @@ def update_header_kpis(key, end_year):
         exported_pj = sum(r.get('lng_exported_tj', 0) for r in filtered) / 1000
         last_nb = next((r.get('netback_aud_gj', 0) for r in reversed(filtered)
                         if r.get('netback_aud_gj')), 0)
-        sub = html.Span(f"{exported_pj/planned_pj*100:.0f}% of planned"
-                        if planned_pj else '', className='md-kpi-sub')
+        spot_pj = sum(r.get('lng_spot_tj', 0) for r in filtered) / 1000
+        sub = html.Span((f"{exported_pj/planned_pj*100:.0f}% of planned \u00b7 "
+                         f"{spot_pj:,.0f} PJ contestable spot") if planned_pj else '',
+                        className='md-kpi-sub')
         chips.insert(3, kpi_card('LNG Exported', [f"{exported_pj:,.0f} PJ", sub]))
         chips.insert(3, kpi_card('LNG Netback', f"${last_nb:.2f}/GJ"))
     dc_pj = sum(r.get('datacentre_tj', 0) for r in filtered) / 1000

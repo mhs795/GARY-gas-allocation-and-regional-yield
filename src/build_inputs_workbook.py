@@ -96,13 +96,36 @@ PARAMETERS = [
      "Gas Market Code cap, ACIL Allen (14 Nov 2025) 2.3.1; applied as a ceiling on "
      "the LNG netback per ACIL Allen (14 Jul 2023) 4.1. Self-terminating: once the "
      "netback falls below it the ceiling stops binding."),
-    ("ACIL Allen LNG price", "export_headroom", 1.0, "multiple",
-     "Ceiling on each train's liquefaction as a multiple of its planned export "
-     "volume. 1.0 = exports may only be DECLINED, never expanded (default). Above "
-     "1.0 lets spare liquefaction absorb cheap gas, which is what makes the netback "
-     "ANCHOR domestic prices rather than only cap them in scarcity - but GARY has "
-     "no reserves constraint, so a high value lets exports soak up field "
-     "deliverability indefinitely."),
+
+    ("LNG trains", "lng_nameplate_tj_day", 3680.0, "TJ/day",
+     "Total east coast liquefaction nameplate (100% utilisation). Mirrors "
+     "lng_daily_target in lng_parameters.csv. This is the PHYSICAL ceiling on "
+     "exports under netback pricing - a train cannot liquefy more than it can "
+     "liquefy, however attractive the netback."),
+    ("LNG trains", "lng_train_shares", "APLNG:0.357,GLNG:0.31,QCLNG:0.333",
+     "node:share", "Each train's share of nameplate. Mirrors the *_factor rows in "
+     "lng_parameters.csv."),
+    ("LNG trains", "lng_foundation_share", 0.93, "fraction",
+     "Share of planned export volume committed under long-term foundation SPAs: "
+     "take-or-pay, therefore price-insensitive, served whatever the netback. The "
+     "remainder is the uncontracted spot tail that bids at the netback and can be "
+     "outbid by a domestic buyer or taken by a reservation. DERIVED FROM PUBLIC "
+     "DATA: the ACCC publishes Queensland LNG producers' uncontracted gas each "
+     "quarter and reported 22 PJ available for Q1 2026 (ACCC, east coast gas "
+     "supply outlook, Q1 2026); against ~325-330 PJ of quarterly exports that is "
+     "~7% uncontracted, hence 0.93. Structure confirmed by ACIL Allen (14 Nov "
+     "2025) 2.3.2: 'the supply under foundation customers is untouched in our "
+     "modelling, LNG exporters then supply the domestic market and export further "
+     "gas via spot cargoes'. ONE QUARTER's figure, so treat as a KEY SENSITIVITY - "
+     "it sets how much export volume is contestable at all."),
+
+    ("Gas reservation", "reservation_respects_contracts", 1, "1=yes, 0=no",
+     "Default for whether a reservation may only take UNCONTRACTED export volume. "
+     "1: the reservation bites on the spot tail first and is capped at "
+     "(1 - lng_foundation_share) of planned volume, so foundation SPAs are not "
+     "broken - which is how the Heads of Agreement with the east coast LNG "
+     "exporters actually works. 0: the reservation takes its share of ALL export "
+     "volume, foundation contracts included. The dashboard toggle overrides this."),
 ]
 
 # Winter and LNG demand levers, currently coded in solve.py.
@@ -115,6 +138,19 @@ SCENARIO_LEVERS = [
      "demand; see get_lng_mult in solve.py for the piecewise path"),
     ("LNG", "Medium", 1.0, "", "", "Flat, no adjustment"),
     ("LNG", "High", 1.6, 2026, 2030, "Multiplier over the high window; 1.1 outside it"),
+    # Under netback pricing the LNG lever stops scaling export VOLUME and instead
+    # selects which of ACIL Allen's published price paths the netback is struck
+    # off. Values are scenario names, or 'baseline' for the run's own GSOO
+    # scenario. Using published paths rather than an invented percentage shift
+    # keeps every number in the chain sourced.
+    ("LNG_Netback", "Low", "Accelerated", "", "",
+     "Weak global LNG demand: ACIL Allen's Accelerated Transition price path "
+     "(netback $7.33/GJ in 2030, $3.94 by 2050)"),
+    ("LNG_Netback", "Medium", "baseline", "", "",
+     "The run's own GSOO scenario price path"),
+    ("LNG_Netback", "High", "SlowerGrowth", "", "",
+     "Strong global LNG demand: ACIL Allen's Slower Growth price path "
+     "(netback $10.39/GJ in 2030, at the $12 Code cap from 2040)"),
 ]
 
 

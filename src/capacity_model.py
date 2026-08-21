@@ -108,7 +108,8 @@ class CapacityExpansionModel:
                  terminal_earliest=None, base_year=None, mm_blocks=(),
                  ind_raise=(), gpg_raise=(), gpg_capacity=None,
                  lng_arcs=(), lng_source=(), netback_by_year=None,
-                 import_cost_by_year=None, export_headroom=1.0):
+                 import_cost_by_year=None, lng_nameplate=None, foundation_share=0.0,
+                 reservation_applied=0.0, respect_contracts=True):
         self.nodes, self.arcs, self.supply, self.expansion = nodes_df, arcs_df, supply_df, expansion_df
         self.years = list(years)
         self.rep = rep                      # {year: [rep-day dicts]}
@@ -143,7 +144,18 @@ class CapacityExpansionModel:
         # pricing. Year-varying because it tracks the international LNG price,
         # unlike a field cost, so it cannot live in the single supply frame.
         self.import_cost_by_year = dict(import_cost_by_year or {})
-        self.export_headroom = float(export_headroom)
+        # Physical liquefaction nameplate per train, and the take-or-pay share of
+        # planned volume. Same split the dispatch layer makes: foundation volume
+        # stays must-serve demand, the spot tail bids at the netback up to spare
+        # liquefaction capacity.
+        self.lng_nameplate = dict(lng_nameplate or {})
+        self.foundation_share = float(foundation_share)
+        # Same reservation treatment as dispatch: reserved gas comes off the export
+        # ceiling, tail first.
+        self.reserve_applied = float(reservation_applied or 0.0)
+        _uncontracted = max(0.0, 1.0 - self.foundation_share)
+        self.reserve_from_foundation = (0.0 if respect_contracts
+                                        else max(0.0, self.reserve_applied - _uncontracted))
         self.terminal_earliest = (P.get_int('terminal_earliest', 2028)
                                   if terminal_earliest is None else terminal_earliest)
         self.base_year = (P.get_int('capacity_base_year', 2025)
@@ -206,11 +218,11 @@ class CapacityExpansionModel:
                              if self.netback_on else [])
         m.lng_export = pyo.Var(m.LNGNodes, m.YR, domain=pyo.NonNegativeReals)
         m.lng_export_cap = pyo.Constraint(m.LNGNodes, m.YR, rule=lambda m, n, y, i:
-            m.lng_export[n, y, i]
-            <= self.rep[y][i]['demand'].get(n, 0) * self.export_headroom)
-        for n in m.LNGNodes:
-            for (y, i) in YR:
-                m.shortage[n, y, i].fix(0.0)
+            m.lng_export[n, y, i] <= max(
+                0.0, self.lng_nameplate.get(n, 0.0)
+                - self.rep[y][i]['demand'].get(n, 0)
+                * (self.foundation_share - self.reserve_from_foundation
+                   + self.reserve_applied)))
 
         def ind_raise_avail(n, b, y, i):
             # Firm data centre load is inside rd['ind'] but does not respond to
@@ -302,7 +314,9 @@ class CapacityExpansionModel:
                     + (m.ind_curtail[n, y, i] if n in m.INDNodes else 0)
                     + (pyo.quicksum(m.mm_curtail[n, b, y, i] for b in m.MMBlocks)
                        if n in m.MMNodes else 0)
-                    == (0 if n in m.LNGNodes else r['demand'].get(n, 0))
+                    == (r['demand'].get(n, 0)
+                        * max(0.0, self.foundation_share - self.reserve_from_foundation)
+                        if n in m.LNGNodes else r['demand'].get(n, 0))
                     + (m.lng_export[n, y, i] if n in m.LNGNodes else 0)
                     + r['gpg'].get(n, 0) + r['ind'].get(n, 0)
                     + (pyo.quicksum(m.ind_expand[n, b, y, i] for b in m.INDRaise)

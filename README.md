@@ -50,7 +50,8 @@ The first run will take 2–3 minutes while dependencies install. After that, op
 2. Optionally switch on **Gas reservation** and pick the share of LNG exports to reserve (5/10/20/30%),
    and/or **Price-responsive demand**
 2b. Optionally enter **Data centre gas demand** in PJ/yr for NSW and VIC and set the year it starts
-2c. Optionally switch on **LNG netback pricing (ACIL Allen)** to price exports and imports off the international market
+2c. Optionally switch on **LNG netback pricing (ACIL Allen)** to price exports and imports off the international market. With it on, **Global LNG Market** selects a netback price path rather than scaling export volume
+2d. With a reservation on, **Respect LNG foundation contracts** decides whether it may only take uncontracted export gas (capped at 7%) or may break take-or-pay SPAs
 3. Click **Run Scenario** to solve one combination
 4. Click **Run Scenarios** to pre-calculate **every combination** — all 3 baselines × 3 Winter × 3 LNG = 27 scenarios, plus the SA dunkelflaute case
 5. Click **Run Reservation Scenarios** to sweep **every reservation level × every GSOO baseline** — 5 levels (0/5/10/20/30%) × 3 baselines = 15 runs — at the Winter and LNG levels currently selected. This button sweeps the baseline dropdown and the reservation toggle itself, so both are ignored while it runs; every other sidebar setting is honoured. Each baseline gets its own 0% run, because a reservation is only readable against the same case without one
@@ -288,7 +289,7 @@ generated, and `regenerate_data.py` never rewrites it.
 | Sheet | Holds |
 |---|---|
 | `Parameters` | scalars and short lists: VOLL, curtailment strikes, the winter window, the SA dunkelflaute event, reservation levels, network roles, data centre nodes, capacity-model settings, and every ACIL Allen pricing assumption |
-| `Scenario_Levers` | the Winter and LNG demand multipliers |
+| `Scenario_Levers` | the Winter multipliers, the LNG volume multipliers used when netback pricing is off, and the `LNG_Netback` price-path mapping used when it is on |
 | `LNG_Anchors` | ACIL Allen's per-scenario Brent / LNG price / spot share anchors |
 | `Segment_Weights` | ACIL Allen's contract/spot weights per customer segment |
 
@@ -343,12 +344,14 @@ written in as demand that simply had to be met, like a hospital. They took their
 gas first, at any price, and if the pipes couldn't also serve Melbourne in a cold
 snap the model recorded that as households losing supply. Exports could never lose.
 
-**Now the trains bid like everyone else.** Each one may liquefy up to its planned
-volume and will pay up to the netback — no more. When gas is plentiful the trains
-get it, because nobody domestic is bidding higher. When a southern winter bites and
-Melbourne is worth more than the netback, **gas that would have been exported stays
-home instead**, and the export simply doesn't happen. That is a sale forgone, not a
-blackout, and the model now says so.
+**Now the trains bid like everyone else — for the part of their gas that is
+actually up for grabs.** Most export volume is locked into long-term take-or-pay
+contracts and goes whatever the price. The rest, roughly 7%, is the uncontracted
+spot tail, and *that* is what gets bid for. When gas is plentiful the trains take it,
+because nobody domestic is bidding higher. When a southern winter bites and
+Melbourne is worth more than the netback, **that gas stays home instead** and the
+cargo simply doesn't sail. A sale forgone, not a blackout — and the model now says
+so.
 
 Two consequences fall straight out of it:
 
@@ -406,10 +409,12 @@ flowchart LR
 
     subgraph ON["Netback pricing ON — ACIL Allen's mechanism"]
         direction TB
-        N1["Surat gas"] --> N2{"Who values<br/>this TJ more?"}
+        N1["Surat gas"] --> N0{"Committed under a<br/>foundation contract?"}
+        N0 -- "yes, ~93%<br/>take-or-pay" --> N6["<b>Exported regardless</b><br/>price-insensitive"]
+        N0 -- "no, ~7%<br/>uncontracted tail" --> N2{"Who values<br/>this TJ more?"}
         N5["Port Kembla import<br/>at the injection price"] --> N2
         N2 -- "netback wins" --> N3["<b>Exported</b>"]
-        N2 -- "domestic buyer<br/>bids above netback" --> N4["<b>Stays home</b><br/>export declined,<br/>a sale forgone"]
+        N2 -- "domestic buyer<br/>bids above netback" --> N4["<b>Stays home</b><br/>cargo doesn't sail,<br/>a sale forgone"]
     end
 
     %% Invisible link: pins OFF to the left of ON so the pair reads
@@ -420,6 +425,7 @@ flowchart LR
     style O4 fill:#cf222e,color:#fff
     style N3 fill:#1a7f37,color:#fff
     style N4 fill:#1a7f37,color:#fff
+    style N6 fill:#6e7781,color:#fff
 ```
 
 The switch is **off by default**, so the must-serve case stays the comparison
@@ -505,36 +511,113 @@ price floor"* (§2.3.1) — so the capped series is the conservative reading, no
 consensus one. `Netback_Uncapped_AUD_GJ` is emitted alongside so the difference is
 always visible.
 
+### Foundation contracts and the contestable tail
+
+Not all export volume is contestable, and treating it as if it were would overstate
+what any price signal — or any policy — can move. Planned export volume splits in
+two, the way the east coast actually sells gas:
+
+- **Foundation volume** — the take-or-pay share sold under long-term SPAs. It is
+  price-insensitive by construction: the cargo goes whatever the netback. It stays
+  in the model as ordinary must-serve demand.
+- **The spot tail** — everything else the train could liquefy. It bids at the
+  netback, and it is what a domestic buyer (or a reservation) can actually take.
+
+The split is set by `lng_foundation_share`, **0.93**, derived from public data: the
+ACCC publishes Queensland LNG producers' uncontracted gas each quarter and reported
+**22 PJ** available for Q1 2026, against ~325–330 PJ of quarterly exports — about
+7% uncontracted. ACIL Allen confirm the structure: *"the supply under foundation
+customers is untouched in our modelling, LNG exporters then supply the domestic
+market and export further gas via spot cargoes"* (§2.3.2). It is **one quarter's
+figure**, so treat it as a key sensitivity — it sets how much export volume is
+contestable at all.
+
+The spot block's ceiling is **physical liquefaction nameplate** less the foundation
+volume (3,680 TJ/d total, split APLNG/GLNG/QCLNG). That replaced an earlier
+`export_headroom` multiple, which was an arbitrary number standing in for a capacity
+the model already knew. It also means spare liquefaction can *absorb* cheap gas, so
+the netback **anchors** domestic prices in a well-supplied year rather than only
+capping them in scarcity.
+
 ### What the lever changes
 
-Stressed **2030, Winter High / LNG High**, Step Change:
+The old **Global LNG Demand** lever scaled export *volume* — High multiplied train
+demand by 1.6×. That was the only instrument available when no price existed in the
+model, and it produced an artefact: 1.6× pushed planned exports well above physical
+nameplate, and must-serve demand could only report the excess as **553,543 TJ of
+domestic lost load at VOLL**, with a domestic mean price of $115.79/GJ.
 
-| | must-serve exports | netback pricing |
+Under netback pricing the lever changes instrument. It no longer touches volume; it
+selects which of ACIL Allen's published price paths the netback is struck off:
+
+| Global LNG Market | Price path | Netback 2030 |
 |---|---|---|
-| LNG exported | 2,104 PJ (all of it) | 1,367 PJ — **737 PJ declined** |
-| Shortage | 553,543 TJ | **4,302 TJ** |
-| Domestic mean price | $115.79/GJ | **$14.87/GJ** |
-| Melbourne mean | $88.98/GJ | $53.64/GJ |
-| Minimum nodal price | $7.00 | $5.70 (no negatives) |
+| **Low** | Accelerated Transition — weak global demand | $7.33/GJ |
+| **Medium** | the run's own GSOO baseline | $8.40/GJ |
+| **High** | Slower Growth — strong global demand | $10.39/GJ |
 
-The huge shortage in the must-serve column is largely an **artefact** the lever
-fixes: the LNG High multiplier creates an export volume the network physically
-cannot serve alongside domestic load, and must-serve demand can only report that as
-lost load at VOLL. Priced at the netback it is correctly resolved as *exports that
-don't happen*.
+Mapping to published scenario paths rather than an invented percentage shift keeps
+every number in the chain sourced. It deliberately **decouples the price path from
+the demand baseline**, so "Step Change demand with Slower Growth LNG prices" is
+expressible — that is the sensitivity, not a mistake.
 
-This also bears directly on [the reservation finding](#gas-reservation): with the
-netback in the model, a stressed southern market **voluntarily** outbids
-one third of the export stream. The reservation was trying to force an outcome the
-priced market produces on its own — where transport allows it.
+Stressed **2030, Winter High**, Step Change demand:
 
-> **Known limitation — `export_headroom`.** At the default `1.0` a train may only
-> *decline* its planned volume, never expand. So the netback **caps** domestic
-> prices in scarcity but does not **anchor** them in a well-supplied year, which is
-> the stronger claim ACIL Allen make. Raising `export_headroom` in
-> `acil_lng_params.csv` lets spare liquefaction capacity absorb cheap gas and
-> restores that anchoring — but GARY has no reserves constraint, so a high value
-> lets exports soak up field deliverability indefinitely. Left at 1.0 deliberately.
+| Global LNG | Netback | LNG exported | of which spot | Shortage | Domestic mean |
+|---|---|---|---|---|---|
+| Low | $7.33 | 1,313 PJ | 90 PJ | 4,302 TJ | $13.90/GJ |
+| Medium | $8.40 | 1,315 PJ | 92 PJ | 4,302 TJ | $14.31/GJ |
+| High | $10.39 | 1,315 PJ | 92 PJ | 4,302 TJ | $14.71/GJ |
+
+The **shortage artefact is gone** — all three sit at the same 4,302 TJ as an
+unstressed run, because exports can no longer be asserted above what the trains can
+physically liquefy. Volume barely moves across the three because the netback beats
+Surat's ~$4/GJ marginal cost in all of them, so the whole contestable tail clears
+either way. **The lever's effect is on price, which is the point**: a stronger world
+market makes trains bid harder, and domestic buyers pay more.
+
+### Reservations and take-or-pay contracts
+
+A reservation now has a lever for whether it may break existing export contracts —
+the **Respect LNG foundation contracts** switch, on by default.
+
+**On**: the reservation may only take **uncontracted** export gas, so it is capped
+at `1 - lng_foundation_share` = **7%** however high the slider goes. That is how the
+Heads of Agreement with the east coast LNG exporters actually works, and how the
+ACCC frames the quarterly balance — what matters is what producers do with their
+*uncontracted* gas.
+
+**Off** (`--break-lng-contracts`): the reservation takes its share of all export
+volume, foundation SPAs included. Drastic, but a real policy option, so the model
+represents it rather than quietly refusing to.
+
+Stressed **2030, Winter High / LNG Medium**:
+
+| Reservation | Applied | LNG exported | Foundation | Spot | Domestic mean |
+|---|---|---|---|---|---|
+| none | — | 1,315 PJ | 1,223 | 92 | $14.31/GJ |
+| 5%, respects SPAs | 5.0% | 1,270 PJ | 1,223 | 47 | $13.67/GJ |
+| **20%, respects SPAs** | **7.0% (capped)** | 1,257 PJ | 1,223 | 34 | $13.63/GJ |
+| 20%, breaks SPAs | 20.0% | 1,090 PJ | 1,052 | 38 | $12.06/GJ |
+| 30%, breaks SPAs | 30.0% | 958 PJ | 921 | 38 | $10.98/GJ |
+
+> **The headline: every reservation level above 7% is capped once contracts are
+> respected.** 5% / 10% / 20% / 30% collapse toward the same outcome, because
+> there simply isn't more uncontracted gas to reserve. A reservation that actually
+> delivers 20% or 30% is a policy that breaks take-or-pay contracts — which the
+> model will now show you, but as a separate, explicitly labelled scenario
+> (`_Reserve20incl`). The KPI card reports *asked* versus *allowed* so the gap is
+> never silent.
+
+> **Trap worth knowing.** The reservation deliberately does **not** scale the
+> trains' demand rows under netback pricing. Doing so would shrink the foundation
+> leg and thereby *enlarge* the spot headroom (nameplate less foundation) — the
+> reservation would have converted contracted export into spot export and left
+> total exports untouched. It is subtracted from the export ceiling instead.
+
+Prices at Surat fall to $0.00/GJ under a large reservation — that is the zero-cost
+reserved tranche being the marginal supply at the source node, the documented
+behaviour of the reservation mechanism. No strictly negative prices at any level.
 
 ### Customer-segment prices
 

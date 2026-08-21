@@ -20,6 +20,40 @@ def _lever(lever, level, default):
 HORIZON_START = P.get_int('horizon_start', 2025)
 HORIZON_END = P.get_int('horizon_end', 2050)
 
+
+def lng_price_scenario(lng_level, baseline):
+    """Which ACIL Allen price path the netback is struck off, for an LNG level.
+
+    Under netback pricing the Global LNG lever stops scaling export VOLUME and
+    starts selecting a PRICE path. That is the coherent instrument once a price
+    exists in the model: strong global LNG demand raises what a train can pay,
+    and the volume it liquefies follows -- rather than the old lever asserting a
+    60% volume increase with no willingness to pay a cent more for it.
+
+    Levels map to ACIL Allen's own published scenario paths (Scenario_Levers sheet,
+    lever ``LNG_Netback``) rather than to an invented percentage shift, so every
+    number in the chain stays sourced:
+
+        Low     Accelerated Transition  -- weak global demand, netback collapses
+        Medium  the run's own baseline
+        High    Slower Growth           -- strong global demand, netback at the cap
+
+    Note this deliberately decouples the price path from the demand baseline, so
+    "Step Change demand with Slower Growth LNG prices" is expressible. That is the
+    sensitivity, not a mistake.
+    """
+    df = P.sheet('Scenario_Levers')
+    target = None
+    if not df.empty and 'Lever' in df.columns:
+        hit = df[(df['Lever'].astype(str) == 'LNG_Netback')
+                 & (df['Level'].astype(str) == str(lng_level))]
+        if not hit.empty:
+            target = str(hit.iloc[0]['Value']).strip()
+    if target is None:
+        target = {'Low': 'Accelerated', 'Medium': 'baseline',
+                  'High': 'SlowerGrowth'}.get(lng_level, 'baseline')
+    return baseline if target in ('baseline', '', 'nan') else target
+
 def load_data(baseline="StepChange"):
     base_path = os.path.dirname(__file__)
     data_dir = os.path.join(base_path, "data")
@@ -54,21 +88,34 @@ def get_lng_mult(scenario, year):
         else: return 1.1
     return _lever('LNG', 'Medium', 1.0)
 
-def _year_demand(data, year, winter, lng, reservation=0.0):
+def _year_demand(data, year, winter, lng, reservation=0.0, netback_pricing=False,
+                 respect_contracts=True):
     """Demand for one year with the Winter, LNG and reservation levers applied.
 
-    Returns ``(demand frame, TJ diverted, {day: TJ reserved})``.
+    Returns ``(demand frame, TJ diverted, {day: TJ reserved}, share applied)``.
     The reservation is applied last, so it bites on the export volume planned
     under this scenario rather than on the raw baseline.
+
+    **The LNG lever changes instrument under netback pricing.** With exports
+    must-serve there is no price in the model, so the only way to represent global
+    LNG market strength is to scale export volume. Once the netback exists that is
+    incoherent -- and it was also the source of an artefact, because the 1.6x High
+    multiplier pushed planned exports well above physical liquefaction nameplate
+    and the model could only report the excess as domestic lost load at VOLL. So
+    with ``netback_pricing=True`` the volume multiplier is NOT applied; the level
+    selects a netback price path instead (see lng_price_scenario).
     """
     dm = data['demand'].copy()
     winter_mult = _lever('Winter', winter,
                          {"Low": 1.0, "Medium": 1.5, "High": 2.2}[winter])
     dm.loc[(dm['Year'] == year) & (dm['Node'].isin(['Melbourne', 'Adelaide', 'Sydney'])) &
            (dm['Day'] >= 150) & (dm['Day'] <= 250), 'Demand'] *= winter_mult
-    lng_mult = get_lng_mult(lng, year)
-    dm.loc[(dm['Year'] == year) & (dm['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])), 'Demand'] *= lng_mult
-    return apply_lng_reservation(dm[dm['Year'] == year].copy(), reservation)
+    if not netback_pricing:
+        lng_mult = get_lng_mult(lng, year)
+        dm.loc[(dm['Year'] == year) & (dm['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])), 'Demand'] *= lng_mult
+    return apply_lng_reservation(dm[dm['Year'] == year].copy(), reservation,
+                                 respect_contracts=respect_contracts,
+                                 scale_demand=not netback_pricing)
 
 
 # Long-form baseline names for the one-line run header; the dashboard's dropdown
@@ -101,7 +148,8 @@ def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservatio
 def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
                    baseline="StepChange", dunkelflaute=False, discount_rate=0.07,
                    foresight=True, reservation=0.0, elastic_demand=False,
-                   datacentre=None, netback_pricing=False, title=None, log=True):
+                   datacentre=None, netback_pricing=False,
+                   respect_contracts=True, title=None, log=True):
     """Solve a scenario over 2025-2050.
 
     ``foresight=True`` (default) uses the two-stage full-horizon method: a
@@ -150,29 +198,33 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
         return _solve_foresight(data, years, winter, lng, baseline,
                                 dunkelflaute, mip_gap, discount_rate, callback,
                                 reservation, elastic_demand, log, datacentre,
-                                netback_pricing)
+                                netback_pricing, respect_contracts)
     return _solve_myopic(data, years, winter, lng, baseline,
                          dunkelflaute, mip_gap, callback, reservation,
-                         elastic_demand, log, datacentre, netback_pricing)
+                         elastic_demand, log, datacentre, netback_pricing,
+                         respect_contracts)
 
 
 def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
                   mip_gap, callback, reservation=0.0, elastic_demand=False, log=True,
-                  datacentre=None, netback_pricing=False):
+                  datacentre=None, netback_pricing=False, respect_contracts=True):
     """Reactive year-by-year solve: each year decides builds with no foresight."""
     contracts_all = data['contracts']
     built_projects, results = [], []
     for i, year in enumerate(years):
         if callback:
             callback(year, i / len(years))
-        demand_yr, diverted, reserved_day = _year_demand(data, year, winter, lng, reservation)
+        demand_yr, diverted, reserved_day, applied = _year_demand(
+            data, year, winter, lng, reservation, netback_pricing, respect_contracts)
         gm = GasMarketModel(
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
             contracts_df=contracts_all if year <= 2040 else None, year=year,
             already_built=built_projects,
             baseline=baseline, dunkelflaute=dunkelflaute,
             elastic_demand=elastic_demand, reserved_by_day=reserved_day,
-            datacentre=datacentre, netback_pricing=netback_pricing)
+            datacentre=datacentre, netback_pricing=netback_pricing,
+            netback_scenario=lng_price_scenario(lng, baseline) if netback_pricing else None,
+            reservation_applied=applied, respect_contracts=respect_contracts)
         gm.build_model()
         status = gm.solve(mip_gap=mip_gap)
         if status != "ok":
@@ -180,6 +232,8 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
         yr_res = gm.get_results()
         yr_res['Year'] = year
         yr_res['reservation_share'] = reservation
+        yr_res['reservation_share_applied'] = applied
+        yr_res['reservation_respects_contracts'] = respect_contracts
         yr_res['lng_reserved_tj'] = diverted
         yr_res['elastic_demand'] = elastic_demand
         results.append(yr_res)
@@ -194,7 +248,7 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
 def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
                      mip_gap, discount_rate, callback, reservation=0.0,
                      elastic_demand=False, log=True, datacentre=None,
-                     netback_pricing=False):
+                     netback_pricing=False, respect_contracts=True):
     """Two-stage full-horizon solve: perfect-foresight capacity + 365-day dispatch."""
     from capacity_model import CapacityExpansionModel, build_representative_days
     contracts_all = data['contracts']
@@ -203,12 +257,13 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
     # --- Pass 1: assemble every year's demand + GPG/industrial (events applied) ---
     dispatch_models, demand_all, gpg_all, ind_all = {}, {}, {}, {}
     diverted_by_year, reserved_all, dc_all = {}, {}, {}
+    applied_share = 0.0
     for year in years:
         # Applied here, before the representative days are built, so the capacity
         # layer sizes the network against the same post-reservation demand the
         # dispatch layer will face.
-        demand_yr, diverted_by_year[year], reserved_day = _year_demand(
-            data, year, winter, lng, reservation)
+        demand_yr, diverted_by_year[year], reserved_day, applied_share = _year_demand(
+            data, year, winter, lng, reservation, netback_pricing, respect_contracts)
         for d, v in reserved_day.items():
             reserved_all[(year, d)] = v
         gm = GasMarketModel(
@@ -216,7 +271,9 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
             contracts_df=contracts_all if year <= 2040 else None, year=year,
             baseline=baseline, dunkelflaute=dunkelflaute,
             elastic_demand=elastic_demand, reserved_by_day=reserved_day,
-            datacentre=datacentre, netback_pricing=netback_pricing)
+            datacentre=datacentre, netback_pricing=netback_pricing,
+            netback_scenario=lng_price_scenario(lng, baseline) if netback_pricing else None,
+            reservation_applied=applied_share, respect_contracts=respect_contracts)
         dispatch_models[year] = gm
         for (n, d), v in demand_yr.set_index(['Node', 'Day'])['Demand'].to_dict().items():
             demand_all[(n, year, d)] = v
@@ -254,7 +311,9 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         import_cost_by_year={
             y: float(dispatch_models[y].lng_prices['Import_Injection_AUD_GJ'])
             for y in years} if netback_pricing else None,
-        export_headroom=dispatch_models[start_year].export_headroom)
+        lng_nameplate=dispatch_models[start_year].lng_nameplate,
+        foundation_share=dispatch_models[start_year].foundation_share,
+        reservation_applied=applied_share, respect_contracts=respect_contracts)
     cap.build_model()
     status = cap.solve(mip_gap=mip_gap)
     if status != "ok":
@@ -276,6 +335,8 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         yr_res = gm.get_results()
         yr_res['Year'] = year
         yr_res['reservation_share'] = reservation
+        yr_res['reservation_share_applied'] = applied_share
+        yr_res['reservation_respects_contracts'] = respect_contracts
         yr_res['lng_reserved_tj'] = diverted_by_year[year]
         yr_res['elastic_demand'] = elastic_demand
         scenario_results.append(yr_res)
@@ -310,6 +371,11 @@ def main():
                              "become willingness-to-pay blocks at the netback and "
                              "imports are priced at the injection cost, instead of "
                              "exports being must-serve demand")
+    parser.add_argument("--break-lng-contracts", action="store_true",
+                        help="Let a reservation take its share of ALL export "
+                             "volume, foundation SPAs included. By default a "
+                             "reservation is capped at the uncontracted share, "
+                             "which is how the Heads of Agreement works")
     parser.add_argument("--elastic-demand", action="store_true",
                         help="Price-responsive mass-market demand: use the step "
                              "demand curve in curtailment_params.csv instead of "
@@ -336,7 +402,8 @@ def main():
         baseline=args.baseline, dunkelflaute=args.dunkelflaute,
         foresight=not args.myopic, reservation=args.reservation / 100.0,
         elastic_demand=args.elastic_demand, datacentre=datacentre,
-        netback_pricing=args.netback_pricing)
+        netback_pricing=args.netback_pricing,
+        respect_contracts=not args.break_lng_contracts)
     print(f"\nSolved {len(results)} years in {time.time() - t0:.1f}s "
           f"using {solvers.describe()}")
     builds = sorted({b for yr in results for b in yr['builds']})

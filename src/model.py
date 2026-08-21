@@ -99,6 +99,31 @@ LNG_PRICES_FILE = "lng_prices.csv"
 IMPORT_NODES = P.get_list('import_nodes', ['Port_Kembla'])
 
 
+def lng_train_nameplate():
+    """Each train's liquefaction nameplate, as ``{node: TJ/day}``.
+
+    This is the PHYSICAL ceiling on exports under netback pricing: a train cannot
+    liquefy more than it can liquefy, however attractive the netback. It replaces
+    the earlier ``export_headroom`` multiple, which was an arbitrary number
+    standing in for a capacity GARY already knew.
+    """
+    total = P.get('lng_nameplate_tj_day', 3680.0)
+    shares = P.get_pairs('lng_train_shares',
+                         [('APLNG', 0.357), ('GLNG', 0.31), ('QCLNG', 0.333)])
+    out = {}
+    for node, share in shares:
+        try:
+            out[node] = total * float(share)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def lng_foundation_share():
+    """Share of planned export volume under take-or-pay foundation SPAs."""
+    return P.get('lng_foundation_share', 0.93)
+
+
 def load_params(data_dir=None):
     """Scalar ACIL Allen assumptions, from the inputs workbook.
 
@@ -109,8 +134,7 @@ def load_params(data_dir=None):
     defaults = {'oil_link_fixed': 0.40, 'oil_link_slope': 0.12,
                 'fx_usd_per_aud': 0.66, 'gj_per_mmbtu': 1.055,
                 'shipping': 0.80, 'regasification': 1.50,
-                'export_netback_deduction': 2.87, 'code_price_cap': 12.00,
-                'export_headroom': 1.0}
+                'export_netback_deduction': 2.87, 'code_price_cap': 12.00}
     return {k: P.get(k, v) for k, v in defaults.items()}
 
 
@@ -338,28 +362,66 @@ def load_gpg_capacity(data_dir):
                    cap if hasattr(cap, '__iter__') else [cap] * len(df))}
 
 
-def apply_lng_reservation(demand_df, share):
+def apply_lng_reservation(demand_df, share, respect_contracts=True, scale_demand=True):
     """Divert ``share`` (0-1) of LNG export volume to the domestic market.
 
-    Returns ``(demand frame, TJ diverted, {day: TJ reserved})``. The per-day
-    series is what the zero-cost supply tranche is sized against, so the volume
-    released each day matches the export volume withheld that day rather than an
-    annual average. Applied after the Winter/LNG scenario levers, so the share
-    bites on the export volume actually planned under the scenario rather than on
-    the raw baseline.
+    Returns ``(demand frame, TJ diverted, {day: TJ reserved}, share applied)``.
+    The per-day series is what the zero-cost supply tranche is sized against, so
+    the volume released each day matches the export volume withheld that day
+    rather than an annual average. Applied after the Winter/LNG scenario levers,
+    so the share bites on the export volume actually planned under the scenario
+    rather than on the raw baseline.
+
+    ``respect_contracts=True`` (the default) caps the reservation at the
+    UNCONTRACTED share of export volume, ``1 - lng_foundation_share``. That is how
+    the Heads of Agreement with the east coast LNG exporters actually works -- it
+    covers gas the producers have not already sold, not their foundation SPAs --
+    and the ACCC's quarterly outlook is written in exactly those terms: what
+    matters to the domestic balance is what the producers do with their
+    *uncontracted* gas.
+
+    The practical consequence is blunt and worth seeing: with the foundation share
+    at 0.93 only ~7% of export volume is contestable, so **every reservation level
+    above 7% is capped**, and 5%/10%/20%/30% all collapse towards the same
+    outcome. The applied share is returned rather than the requested one precisely
+    so that gap is reported rather than hidden.
+
+    ``respect_contracts=False`` restores the earlier behaviour: the share is taken
+    off ALL export volume, foundation contracts included. That is a policy that
+    breaks take-or-pay contracts, which is a real (if drastic) option, so it is a
+    lever rather than something the model quietly refuses to represent.
+
+    ``scale_demand=False`` computes the reserved volume but leaves the demand frame
+    alone. That is what netback pricing needs, and the reason is a trap worth
+    naming: under netback pricing the train's demand row is the PLANNED volume that
+    the foundation/spot split is derived from, so scaling it down here would shrink
+    the foundation leg and *enlarge* the spot headroom (nameplate less foundation).
+    A reservation would then have converted contracted export into spot export and
+    left total exports untouched -- the opposite of withholding gas. The model
+    instead subtracts the reserved volume from the export ceiling directly; see
+    build_model.
     """
     if not share:
-        return demand_df, 0.0, {}
+        return demand_df, 0.0, {}, 0.0
+    applied = share
+    if respect_contracts:
+        uncontracted = max(0.0, 1.0 - lng_foundation_share())
+        applied = min(share, uncontracted)
+    if not applied:
+        return demand_df, 0.0, {}, 0.0
     mask = demand_df['Node'].isin(LNG_NODES)
-    diverted = float(demand_df.loc[mask, 'Demand'].sum()) * share
-    by_day = (demand_df.loc[mask].groupby('Day')['Demand'].sum() * share).to_dict()
-    demand_df = demand_df.copy()
-    demand_df.loc[mask, 'Demand'] *= (1.0 - share)
-    return demand_df, diverted, {int(d): float(v) for d, v in by_day.items()}
+    diverted = float(demand_df.loc[mask, 'Demand'].sum()) * applied
+    by_day = (demand_df.loc[mask].groupby('Day')['Demand'].sum() * applied).to_dict()
+    if scale_demand:
+        demand_df = demand_df.copy()
+        demand_df.loc[mask, 'Demand'] *= (1.0 - applied)
+    return (demand_df, diverted, {int(d): float(v) for d, v in by_day.items()},
+            float(applied))
 
 
 class GasMarketModel:
-    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, baseline="StepChange", dunkelflaute=False, builds_fixed=None, elastic_demand=False, reserved_by_day=None, datacentre=None, netback_pricing=False, code_price_cap=True):
+    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, baseline="StepChange", dunkelflaute=False, builds_fixed=None, elastic_demand=False, reserved_by_day=None, datacentre=None, netback_pricing=False, code_price_cap=True, netback_scenario=None,
+                 reservation_applied=0.0, respect_contracts=True):
         self.nodes = nodes_df
         self.arcs = arcs_df
         self.supply = supply_df
@@ -384,6 +446,16 @@ class GasMarketModel:
         # so the must-serve-export case stays the comparison baseline.
         self.netback_pricing = netback_pricing
         self.code_price_cap = code_price_cap
+        # Which of ACIL Allen's published price paths the netback is struck off.
+        # Under netback pricing the Global LNG lever selects this instead of
+        # scaling export volume -- see lng_price_scenario() in solve.py. None
+        # means the run's own GSOO baseline.
+        self.netback_scenario = netback_scenario or baseline
+        # Under netback pricing the reservation is not applied to the demand frame
+        # (see apply_lng_reservation); the model subtracts it from the export
+        # ceiling instead, so it needs the share and the contracts rule here.
+        self.reservation_applied = float(reservation_applied or 0.0)
+        self.respect_contracts = respect_contracts
         # The LNG trains' only feed pipes, and the node behind them. Resolved here
         # rather than in build_model so the capacity layer can read them before any
         # dispatch model has been built.
@@ -455,7 +527,7 @@ class GasMarketModel:
             self.ind_demand[_key] = self.ind_demand.get(_key, 0.0) + _tj
 
         # --- ACIL Allen price series -------------------------------------
-        self.lng_prices = (load_lng_prices(data_dir, self.baseline, self.year,
+        self.lng_prices = (load_lng_prices(data_dir, self.netback_scenario, self.year,
                                            self.code_price_cap)
                            if self.netback_pricing else {})
         if self.netback_pricing and not self.lng_prices:
@@ -466,12 +538,11 @@ class GasMarketModel:
                 "netback_pricing=True but no price series was found in "
                 "data/lng_prices.csv. Run: python src/build_lng_prices.py")
         self.netback = float(self.lng_prices.get('Netback_AUD_GJ', 0.0))
-        # How far a train may liquefy beyond its planned volume. See the note on
-        # export_headroom in acil_lng_params.csv: at the default 1.0 exports can
-        # only be declined, so the netback caps domestic prices in scarcity but
-        # does not anchor them in a well-supplied year the way ACIL Allen describe.
-        self.export_headroom = (load_params()['export_headroom']
-                                if self.netback_pricing else 1.0)
+        # Physical liquefaction capacity and the take-or-pay share of planned
+        # volume: together these replace the old export_headroom multiple with the
+        # two things that actually bound an export decision.
+        self.lng_nameplate = lng_train_nameplate() if self.netback_pricing else {}
+        self.foundation_share = lng_foundation_share() if self.netback_pricing else 0.0
         if self.netback_pricing:
             # LNG imports are priced on ACIL Allen's injection cost (Asian LNG
             # + shipping + regasification, Table 2.1) rather than the single flat
@@ -544,38 +615,73 @@ class GasMarketModel:
 
         node_demand = self.demand.set_index(['Node', 'Day'])['Demand'].to_dict()
 
-        # --- LNG exports as a willingness-to-pay block, not must-serve -----
-        # See the netback header block. The planned export volume stops being a
-        # volume that must be met and becomes the CEILING on a block worth the
-        # netback per GJ. It is taken out of node_demand entirely, so it no
-        # longer reaches balance_rule as fixed demand and unserved export is no
-        # longer priced at VOLL -- an export that does not happen is a sale
-        # forgone, not lost load.
+        # --- LNG exports: foundation contracts + a contestable spot tail ---
+        # See the netback header block. Planned export volume splits in two, the
+        # way the east coast market actually sells gas:
         #
-        # The volume is read AFTER the reservation has been applied to the demand
-        # frame, so a reservation still carves its share out of the ceiling.
-        lng_planned = {}
+        #   FOUNDATION  the take-or-pay share of planned volume (long-term SPAs).
+        #               Price-insensitive by construction -- the cargo goes
+        #               whatever the netback -- so it stays in node_demand as
+        #               ordinary must-serve demand.
+        #   SPOT TAIL   everything else the train could liquefy, bid at the
+        #               netback. Bounded above by PHYSICAL LIQUEFACTION NAMEPLATE
+        #               less the foundation volume, not by an arbitrary multiple:
+        #               a train can absorb cheap gas up to the capacity it has and
+        #               not one TJ further.
+        #
+        # This is what lets the netback ANCHOR domestic prices rather than only cap
+        # them in scarcity. In a well-supplied year the spare liquefaction absorbs
+        # cheap gas until the domestic price is bid up towards export parity; in a
+        # stressed year a domestic buyer outbids the spot tail and that gas stays
+        # home. Neither can touch the foundation volume, which is the point.
+        #
+        # Volumes are read AFTER the reservation has been applied to the demand
+        # frame, so a reservation still carves its share out first.
+        #
+        # A RESERVATION shrinks the export ceiling rather than the planned volume:
+        # reserved gas is gas the trains may not liquefy. It comes out of the
+        # uncontracted tail first; only with respect_contracts=False can the excess
+        # beyond the uncontracted share cut into the foundation leg as well.
+        lng_planned, lng_spot_cap = {}, {}
+        from_foundation = 0.0
         if self.netback_pricing:
+            applied = self.reservation_applied
+            uncontracted = max(0.0, 1.0 - self.foundation_share)
+            # How much of the PLANNED volume comes out of the foundation leg. The
+            # rest comes out of the tail -- but note the TOTAL export ceiling below
+            # is reduced by the full applied share either way. Breaking contracts
+            # changes how much export is committed, not how much is withheld.
+            from_foundation = (0.0 if self.respect_contracts
+                               else max(0.0, applied - uncontracted))
             for n in LNG_NODES:
+                nameplate = self.lng_nameplate.get(n, 0.0)
                 for t in range(1, 366):
-                    v = node_demand.pop((n, t), None)
-                    if v is not None:
-                        lng_planned[(n, t)] = v
+                    planned = node_demand.get((n, t))
+                    if planned is None:
+                        continue
+                    lng_planned[(n, t)] = planned
+                    foundation = max(0.0, planned * (self.foundation_share - from_foundation))
+                    node_demand[(n, t)] = foundation
+                    # Total export ceiling is nameplate less the reserved
+                    # volume; the spot block gets whatever is left after the
+                    # foundation leg. Using the full applied share here (not just
+                    # the part taken from the tail) is what makes a bigger
+                    # reservation actually export less.
+                    lng_spot_cap[(n, t)] = max(
+                        0.0, nameplate - foundation - planned * applied)
         m.LNGNodes = pyo.Set(initialize=[n for n in LNG_NODES
                                          if n in self.nodes['Name'].tolist()]
                              if self.netback_pricing else [])
         m.lng_export = pyo.Var(m.LNGNodes, m.T, domain=pyo.NonNegativeReals)
         m.lng_export_cap = pyo.Constraint(m.LNGNodes, m.T,
-            rule=lambda m, n, t: (m.lng_export[n, t]
-                                  <= lng_planned.get((n, t), 0.0) * self.export_headroom))
-        # Nothing to leave unserved at a train once its demand is endogenous, and
-        # a free shortage variable there would be a $300/GJ supply source the
-        # solver could in principle reach for. Fixed shut rather than left loose.
-        for n in m.LNGNodes:
-            for t in m.T:
-                m.shortage[n, t].fix(0.0)
+            rule=lambda m, n, t: m.lng_export[n, t] <= lng_spot_cap.get((n, t), 0.0))
         netback = self.netback
         self._lng_planned = lng_planned
+        # The foundation leg AFTER any contract-breaking reservation, so the
+        # reported split matches what the balance constraint actually served.
+        _served_share = (max(0.0, self.foundation_share - from_foundation)
+                         if self.netback_pricing else 0.0)
+        self._lng_foundation = {k: v * _served_share for k, v in lng_planned.items()}
 
         # Mass-market step demand curve. Only distribution nodes carry it: the LNG
         # trains enter the network as demand nodes too, but their volume is an
@@ -913,11 +1019,17 @@ class GasMarketModel:
             # off, so an inelastic run stores nothing extra.
             for n in m.LNGNodes:
                 planned = self._lng_planned.get((n, t), 0.0)
-                served = float(lng_ev[n, t] or 0)
+                foundation = self._lng_foundation.get((n, t), 0.0)
+                spot = float(lng_ev[n, t] or 0)
                 if planned > 0.001:
+                    # Foundation volume is served through node_demand, so total
+                    # exports are the contracted leg plus whatever spot cleared.
+                    # Forgone is measured against PLANNED volume, so it stays
+                    # comparable with a must-serve run.
                     res['lng'].append({'Day': t, 'Node': n, 'Planned': float(planned),
-                                       'Exported': served,
-                                       'Forgone': float(planned - served)})
+                                       'Foundation': foundation, 'Spot': spot,
+                                       'Exported': foundation + spot,
+                                       'Forgone': float(max(0.0, planned - foundation - spot))})
             # Demand taken up because gas was cheap; only rows that fired.
             for n in m.INDNodes:
                 for b in m.INDRaise:
@@ -938,9 +1050,13 @@ class GasMarketModel:
         # of it actually cleared. Zero/absent when the lever is off.
         res['netback_aud_gj'] = float(self.netback) if self.netback_pricing else 0.0
         res['lng_price_aud_gj'] = float(self.lng_prices.get('LNG_Asia_AUD_GJ', 0.0))
-        res['lng_exported_tj'] = float(sum(lng_ev[n, t] or 0
-                                           for n in m.LNGNodes for t in m.T))
+        res['lng_spot_tj'] = float(sum(lng_ev[n, t] or 0
+                                       for n in m.LNGNodes for t in m.T))
+        res['lng_foundation_tj'] = float(sum(self._lng_foundation.values()))
+        res['lng_exported_tj'] = res['lng_foundation_tj'] + res['lng_spot_tj']
         res['lng_planned_tj'] = float(sum(self._lng_planned.values()))
+        res['lng_foundation_share'] = float(self.foundation_share)
+        res['netback_scenario'] = self.netback_scenario if self.netback_pricing else None
         res['netback_pricing'] = self.netback_pricing
         res['datacentre_tj'] = float(sum(self.dc_demand.values()))
         res['reserved_served_tj'] = float(sum(rp[t] or 0 for t in m.T))
