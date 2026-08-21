@@ -1,0 +1,5 @@
+Segment,ContractShare,SpotShare,PremiumAUDGJ,Source
+ResidentialCommercial,1.00,0.00,0.00,"ACIL Allen (14 Jul 2023) s2.6.1 / (14 Nov 2025) s4.1.1: supply for this market is 100 per cent contracted"
+Industrial,0.90,0.10,0.00,"ACIL Allen (14 Jul 2023) s2.6.2: 90/10 contract/spot split applied to all regions"
+GPG_CCGT,0.80,0.20,0.00,"ACIL Allen (14 Jul 2023) s2.7: CCGTs 80 per cent contracted, 20 per cent spot"
+GPG_OCGT,0.20,0.80,1.00,"ACIL Allen (14 Jul 2023) s2.7: OCGTs 20/80 given their peaking role; premium for short-notice supply (pipeline capacity reservation/storage) is stated but NOT quantified by ACIL Allen - $1.00/GJ is a placeholder"

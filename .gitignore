@@ -52,3 +52,4 @@ src/data/gsoo/
 
 # Local desktop launcher (contains machine-specific absolute paths)
 GARY.desktop
+src/data/lng_prices.csv

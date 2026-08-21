@@ -1,0 +1,13 @@
+Scenario,Year,Brent_USD_bbl,LNG_Asia_AUD_GJ,SpotShare,Source
+SlowerGrowth,2025,70.0,13.99,0.35,ACIL Allen (Nov 2025) Tables B.2/B.3/B.4
+SlowerGrowth,2030,80.0,13.26,0.39,ACIL Allen (Nov 2025) Tables B.2/B.3/B.4
+SlowerGrowth,2040,81.9,14.94,0.36,ACIL Allen (Nov 2025) Tables B.2/B.3/B.4
+SlowerGrowth,2050,82.0,15.09,0.35,ACIL Allen (Nov 2025) Tables B.2/B.3/B.4
+StepChange,2025,70.0,13.99,0.35,ACIL Allen (Nov 2025) Tables B.2/B.3/B.4
+StepChange,2030,68.0,11.27,0.45,ACIL Allen (Nov 2025) Tables B.2/B.3/B.4
+StepChange,2040,63.0,10.50,0.35,ACIL Allen (Nov 2025) Tables B.2/B.3/B.4
+StepChange,2050,58.0,9.99,0.35,ACIL Allen (Nov 2025) Tables B.2/B.3/B.4
+Accelerated,2025,70.0,13.99,0.35,ACIL Allen (Nov 2025) Tables B.2/B.3/B.4
+Accelerated,2030,58.0,10.20,0.45,ACIL Allen (Nov 2025) Tables B.2/B.3/B.4
+Accelerated,2040,40.2,7.39,0.35,ACIL Allen (Nov 2025) Tables B.2/B.3/B.4
+Accelerated,2050,35.0,6.81,0.35,ACIL Allen (Nov 2025) Tables B.2/B.3/B.4

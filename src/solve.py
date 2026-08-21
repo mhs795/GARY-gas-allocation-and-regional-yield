@@ -3,8 +3,22 @@ import pandas as pd
 import os
 import time
 
+import params as P
 import solvers
 from model import GasMarketModel, apply_lng_reservation
+
+
+def _lever(lever, level, default):
+    """One row of the Scenario_Levers sheet, or the in-code default."""
+    df = P.sheet('Scenario_Levers')
+    if df.empty:
+        return default
+    hit = df[(df['Lever'].astype(str) == lever) & (df['Level'].astype(str) == level)]
+    return default if hit.empty else float(hit.iloc[0]['Value'])
+
+
+HORIZON_START = P.get_int('horizon_start', 2025)
+HORIZON_END = P.get_int('horizon_end', 2050)
 
 def load_data(baseline="StepChange"):
     base_path = os.path.dirname(__file__)
@@ -24,18 +38,21 @@ def load_data(baseline="StepChange"):
     }
 
 def get_lng_mult(scenario, year):
-    # Constants
+    """LNG export demand multiplier for one year. Levels come from the
+    Scenario_Levers sheet of the inputs workbook (see params.py); the piecewise
+    SHAPE stays here because it is model structure, not a parameter."""
     HIGH_LNG_START = 2026
     HIGH_LNG_END = 2030
     if scenario == "Low":
+        step = _lever('LNG', 'Low', 0.04)
         if year <= 2025: return 1.0
-        elif year <= 2030: return 1.0 - (year - 2025) * 0.04
+        elif year <= 2030: return 1.0 - (year - 2025) * step
         elif year <= 2040: return 0.8 - (year - 2030) * 0.03
         else: return max(0.2, 0.5 - (year - 2040) * 0.03)
     elif scenario == "High":
-        if HIGH_LNG_START <= year <= HIGH_LNG_END: return 1.6
+        if HIGH_LNG_START <= year <= HIGH_LNG_END: return _lever('LNG', 'High', 1.6)
         else: return 1.1
-    return 1.0
+    return _lever('LNG', 'Medium', 1.0)
 
 def _year_demand(data, year, winter, lng, reservation=0.0):
     """Demand for one year with the Winter, LNG and reservation levers applied.
@@ -45,7 +62,8 @@ def _year_demand(data, year, winter, lng, reservation=0.0):
     under this scenario rather than on the raw baseline.
     """
     dm = data['demand'].copy()
-    winter_mult = {"Low": 1.0, "Medium": 1.5, "High": 2.2}[winter]
+    winter_mult = _lever('Winter', winter,
+                         {"Low": 1.0, "Medium": 1.5, "High": 2.2}[winter])
     dm.loc[(dm['Year'] == year) & (dm['Node'].isin(['Melbourne', 'Adelaide', 'Sydney'])) &
            (dm['Day'] >= 150) & (dm['Day'] <= 250), 'Demand'] *= winter_mult
     lng_mult = get_lng_mult(lng, year)
@@ -60,7 +78,8 @@ BASELINE_LABELS = {'StepChange': 'Step Change', 'Accelerated': 'Accelerated Tran
 
 
 def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservation=0.0,
-              elastic_demand=False, foresight=True, datacentre=None):
+              elastic_demand=False, foresight=True, datacentre=None,
+              netback_pricing=False):
     """One-line description of a scenario, for the terminal header."""
     bits = [BASELINE_LABELS.get(baseline, baseline), f"Winter {winter}", f"LNG {lng}"]
     if dunkelflaute:
@@ -70,6 +89,8 @@ def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservatio
     if datacentre:
         bits.append(f"data centres {datacentre.get('NSW', 0):g} PJ NSW / "
                     f"{datacentre.get('VIC', 0):g} PJ VIC from {datacentre['start_year']}")
+    if netback_pricing:
+        bits.append("LNG netback pricing")
     if elastic_demand:
         bits.append("elastic demand")
     if not foresight:
@@ -80,7 +101,7 @@ def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservatio
 def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
                    baseline="StepChange", dunkelflaute=False, discount_rate=0.07,
                    foresight=True, reservation=0.0, elastic_demand=False,
-                   datacentre=None, title=None, log=True):
+                   datacentre=None, netback_pricing=False, title=None, log=True):
     """Solve a scenario over 2025-2050.
 
     ``foresight=True`` (default) uses the two-stage full-horizon method: a
@@ -99,6 +120,13 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     see the header block in model.py for what that choice does and does not
     assume.
 
+    ``netback_pricing=True`` applies ACIL Allen's price formation: the LNG trains
+    stop being must-serve demand and become willingness-to-pay blocks valued at the
+    export netback, and LNG imports are priced at ACIL Allen's injection cost. This
+    is what makes the international price discipline domestic prices instead of
+    exports being taken at any price. See the header block in model.py, and
+    build_lng_prices.py for where the series comes from.
+
     ``elastic_demand=True`` replaces must-serve mass-market demand with the step
     demand curves calibrated in build_demand_curves.py, so distribution load
     sheds when the nodal price exceeds its willingness to pay instead of being
@@ -114,22 +142,23 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     # scenarios x 26 years, the year lines are meaningless without it. Callers that
     # already have a nicer label (the dashboard passes its scenario key) override it.
     if log:
-        print(f"\n{title or run_title(winter, lng, baseline, dunkelflaute, reservation, elastic_demand, foresight, datacentre)}",
+        print(f"\n{title or run_title(winter, lng, baseline, dunkelflaute, reservation, elastic_demand, foresight, datacentre, netback_pricing)}",
               flush=True)
     data = load_data(baseline)
-    years = list(range(2025, 2051))
+    years = list(range(HORIZON_START, HORIZON_END + 1))
     if foresight:
         return _solve_foresight(data, years, winter, lng, baseline,
                                 dunkelflaute, mip_gap, discount_rate, callback,
-                                reservation, elastic_demand, log, datacentre)
+                                reservation, elastic_demand, log, datacentre,
+                                netback_pricing)
     return _solve_myopic(data, years, winter, lng, baseline,
                          dunkelflaute, mip_gap, callback, reservation,
-                         elastic_demand, log, datacentre)
+                         elastic_demand, log, datacentre, netback_pricing)
 
 
 def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
                   mip_gap, callback, reservation=0.0, elastic_demand=False, log=True,
-                  datacentre=None):
+                  datacentre=None, netback_pricing=False):
     """Reactive year-by-year solve: each year decides builds with no foresight."""
     contracts_all = data['contracts']
     built_projects, results = [], []
@@ -143,7 +172,7 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
             already_built=built_projects,
             baseline=baseline, dunkelflaute=dunkelflaute,
             elastic_demand=elastic_demand, reserved_by_day=reserved_day,
-            datacentre=datacentre)
+            datacentre=datacentre, netback_pricing=netback_pricing)
         gm.build_model()
         status = gm.solve(mip_gap=mip_gap)
         if status != "ok":
@@ -164,7 +193,8 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
 
 def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
                      mip_gap, discount_rate, callback, reservation=0.0,
-                     elastic_demand=False, log=True, datacentre=None):
+                     elastic_demand=False, log=True, datacentre=None,
+                     netback_pricing=False):
     """Two-stage full-horizon solve: perfect-foresight capacity + 365-day dispatch."""
     from capacity_model import CapacityExpansionModel, build_representative_days
     contracts_all = data['contracts']
@@ -186,7 +216,7 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
             contracts_df=contracts_all if year <= 2040 else None, year=year,
             baseline=baseline, dunkelflaute=dunkelflaute,
             elastic_demand=elastic_demand, reserved_by_day=reserved_day,
-            datacentre=datacentre)
+            datacentre=datacentre, netback_pricing=netback_pricing)
         dispatch_models[year] = gm
         for (n, d), v in demand_yr.set_index(['Node', 'Day'])['Demand'].to_dict().items():
             demand_all[(n, year, d)] = v
@@ -216,7 +246,15 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         gpg_raise=dispatch_models[start_year].gpg_raise,
         gpg_capacity=dispatch_models[start_year].gpg_capacity,
         lng_arcs=dispatch_models[start_year].lng_arcs,
-        lng_source=dispatch_models[start_year].lng_source)
+        lng_source=dispatch_models[start_year].lng_source,
+        # One netback and one import cost per year: both track the international
+        # LNG price, so unlike a field cost they cannot be a single number.
+        netback_by_year={y: dispatch_models[y].netback for y in years}
+                        if netback_pricing else None,
+        import_cost_by_year={
+            y: float(dispatch_models[y].lng_prices['Import_Injection_AUD_GJ'])
+            for y in years} if netback_pricing else None,
+        export_headroom=dispatch_models[start_year].export_headroom)
     cap.build_model()
     status = cap.solve(mip_gap=mip_gap)
     if status != "ok":
@@ -267,6 +305,11 @@ def main():
                              "Melbourne industrial demand on the GPG daily shape")
     parser.add_argument("--dc-start", type=int, default=2030, metavar="YEAR",
                         help="First year the data centre demand appears (default 2030)")
+    parser.add_argument("--netback-pricing", action="store_true",
+                        help="ACIL Allen LNG netback price formation: LNG exports "
+                             "become willingness-to-pay blocks at the netback and "
+                             "imports are priced at the injection cost, instead of "
+                             "exports being must-serve demand")
     parser.add_argument("--elastic-demand", action="store_true",
                         help="Price-responsive mass-market demand: use the step "
                              "demand curve in curtailment_params.csv instead of "
@@ -292,7 +335,8 @@ def main():
         args.winter, args.lng, mip_gap=args.mip_gap,
         baseline=args.baseline, dunkelflaute=args.dunkelflaute,
         foresight=not args.myopic, reservation=args.reservation / 100.0,
-        elastic_demand=args.elastic_demand, datacentre=datacentre)
+        elastic_demand=args.elastic_demand, datacentre=datacentre,
+        netback_pricing=args.netback_pricing)
     print(f"\nSolved {len(results)} years in {time.time() - t0:.1f}s "
           f"using {solvers.describe()}")
     builds = sorted({b for yr in results for b in yr['builds']})

@@ -21,6 +21,11 @@ baseline (e.g. gpg_demand_profile_StepChange.csv, ..._Accelerated.csv, ...):
                                    curtailment_params.csv, plus gpg_capacity.csv.
                                    Must follow step 1, which rewrites that file
                                    with only the GPG and Industrial strikes.
+  7. build_lng_prices           -> lng_prices.csv, the ACIL Allen oil price /
+                                   LNG price / netback / import injection series
+                                   used by the netback pricing lever. Depends only
+                                   on committed source assumptions, so its
+                                   position in the order is not load-bearing.
 
 Run the model scenarios afterwards via the "Run All Scenarios (Batch)" button.
 """
@@ -30,6 +35,7 @@ import build_gpg_demand_gsoo
 import build_industrial_demand_gsoo
 import build_demand_gsoo
 import build_demand_curves
+import build_lng_prices
 
 # (label, callable) in dependency order.
 STEPS = [
@@ -39,6 +45,7 @@ STEPS = [
     ("Industrial demand (all baselines)", build_industrial_demand_gsoo.build_all),
     ("Node distribution + LNG demand (all baselines)", build_demand_gsoo.build_all),
     ("Demand curves (all tiers, both directions) + GPG capacity", build_demand_curves.main),
+    ("LNG price + netback series (ACIL Allen methodology)", build_lng_prices.main),
 ]
 
 

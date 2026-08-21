@@ -50,6 +50,7 @@ The first run will take 2–3 minutes while dependencies install. After that, op
 2. Optionally switch on **Gas reservation** and pick the share of LNG exports to reserve (5/10/20/30%),
    and/or **Price-responsive demand**
 2b. Optionally enter **Data centre gas demand** in PJ/yr for NSW and VIC and set the year it starts
+2c. Optionally switch on **LNG netback pricing (ACIL Allen)** to price exports and imports off the international market
 3. Click **Run Scenario** to solve one combination
 4. Click **Run Scenarios** to pre-calculate **every combination** — all 3 baselines × 3 Winter × 3 LNG = 27 scenarios, plus the SA dunkelflaute case
 5. Click **Run Reservation Scenarios** to sweep **every reservation level × every GSOO baseline** — 5 levels (0/5/10/20/30%) × 3 baselines = 15 runs — at the Winter and LNG levels currently selected. This button sweeps the baseline dropdown and the reservation toggle itself, so both are ignored while it runs; every other sidebar setting is honoured. Each baseline gets its own 0% run, because a reservation is only readable against the same case without one
@@ -276,6 +277,206 @@ which the export cap never did, but it cannot put it where the shortage is.
 > and reserving more always lower it — the figure is the cost of serving what is left,
 > not a welfare measure. The dashboard relabels the KPI **System Cost (served gas
 > only)** and shows **Gas Reserved** with the percentage actually taken up.
+
+## Inputs workbook
+
+**Every model parameter lives on a sheet in `src/data/gary_inputs.xlsx`**, not as a
+constant in a module, so a parameter can be changed, reviewed and diffed in one
+place without touching code. It is a **committed source input** — it is not
+generated, and `regenerate_data.py` never rewrites it.
+
+| Sheet | Holds |
+|---|---|
+| `Parameters` | scalars and short lists: VOLL, curtailment strikes, the winter window, the SA dunkelflaute event, reservation levels, network roles, data centre nodes, capacity-model settings, and every ACIL Allen pricing assumption |
+| `Scenario_Levers` | the Winter and LNG demand multipliers |
+| `LNG_Anchors` | ACIL Allen's per-scenario Brent / LNG price / spot share anchors |
+| `Segment_Weights` | ACIL Allen's contract/spot weights per customer segment |
+
+`src/params.py` is the only reader. Every lookup carries the old in-code value as a
+fallback, so a clone without the workbook still runs — which also means a mistyped
+parameter name silently returns the default rather than raising. That is what
+`--check` is for:
+
+```bash
+python src/build_inputs_workbook.py --check   # list parameters the workbook lacks
+python src/build_inputs_workbook.py           # create it on a fresh clone
+```
+
+The create path **refuses to overwrite an existing workbook** without `--force`;
+regenerating it would discard hand edits. The workbook is read once and cached, so
+edits take effect on restart, not mid-run.
+
+## LNG netback price formation (ACIL Allen methodology)
+
+ACIL Allen produce the wholesale gas price projections that sit behind AEMO's GSOO.
+Their model, **GasMark**, is a partial spatial equilibrium LP over supply sources,
+demand points, liquefaction and receiving facilities connected by pipeline and
+shipping arcs, solved to maximise producer plus consumer surplus. GARY is the same
+class of model, and with price-responsive demand on it already carries the same
+objective — minimising cost net of demand benefit *is* maximising surplus.
+
+What GARY did not carry is the piece ACIL Allen identify as the thing that actually
+sets east coast prices:
+
+> "Price formation from 2026 is then based off the LNG netback pricing mechanism,
+> which was the price setting mechanism until the price cap was introduced."
+> — ACIL Allen, *Natural gas price forecasts for the Final 2023 IASR and for the
+> 2024 GSOO* (14 July 2023), §4.1
+
+The **LNG netback pricing** switch supplies it.
+
+```bash
+python src/solve.py --netback-pricing --winter High --lng High
+```
+
+**Off** (the default): the three Queensland trains are ordinary must-serve demand
+nodes. Their volume is taken at any price, unserved export is penalised at VOLL
+like lost household load, and no export price enters the model anywhere. Exports
+can never lose to a domestic buyer.
+
+**On**: each train becomes a bounded **willingness-to-pay block valued at the
+export netback**, entering the objective as a negative cost exactly like the GPG
+and industrial raise blocks. Gas reaches a train only while it can be got for less
+than the netback, and a domestic buyer willing to pay more outbids the export
+stream. LNG **imports** are simultaneously repriced from the flat $14/GJ in
+`supply.csv` to ACIL Allen's year- and scenario-varying **injection cost**.
+
+> **This is not the WA negative-price trap.** The removed WA build put export
+> revenue in the objective and coupled it through a reservation constraint that
+> *forced* domestic service — unbounded benefit, and Perth nodal prices went
+> negative. Here every block is bounded above by the train's own volume and nothing
+> forces uptake, the same shape as `gpg_expand`/`ind_expand`. Verified on stressed
+> 2030 and over the full horizon: **no negative nodal prices**. Re-check this if
+> the formulation changes.
+
+### The price series
+
+`src/build_lng_prices.py` builds `data/lng_prices.csv` from committed source
+assumptions in `data/acil_lng_anchors.csv` and `data/acil_lng_params.csv`.
+Everything comes from ACIL Allen, *Wholesale natural gas prices for AEMO*, Final
+Report, **14 November 2025** — the report behind the **2026 GSOO**, the same
+vintage as GARY's demand baselines. Its three scenarios carry the same names as
+GARY's three baselines, so they map one to one with no interpretation.
+
+| Step | Source |
+|---|---|
+| Brent oil price, anchored 2025/2030/2040/2050 | Table B.2 |
+| Oil-linked contract LNG price `P_LNG = (FC + S·Pb)/(FX·C)`, FC = US$0.40/mmbtu, S = 0.12, FX = 0.66, C = 1.055 | §B.9 |
+| Spot share of LNG sales | Table B.3 |
+| Blended Asian LNG price (treated as primary) | Table B.4 |
+| Implied spot price, backed out so blend/contract/spot stay consistent | derived |
+| Import injection price = Asian LNG + $0.80 shipping + $1.50 regas | Table 2.1 / §B.11 |
+| Export netback = Asian LNG − netback deduction, then capped | see below |
+
+The generator **asserts** that it reproduces ACIL Allen's published injection-cost
+table (Table 2.1) to the cent, so the adders can't drift away from the source
+silently.
+
+Step Change netback: **$11.12/GJ (2025) → $8.40 (2030) → $7.63 (2040) → $7.12
+(2050)**. Slower Growth rises to the $12 cap by 2040; Accelerated falls to $3.94 by
+2050.
+
+### The one number that is not published
+
+The **export netback deduction** — avoidable liquefaction (plant short-run marginal
+cost plus fuel gas) and shipping — is commercial-in-confidence. ACIL Allen do not
+publish it, and neither does the ACCC, whose netback series uses the same
+avoidable-cost framework with figures obtained directly from the Queensland LNG
+producers.
+
+> The default **A$2.87/GJ** is the midpoint of the publicly discussed
+> US$1.5–2.5/mmbtu range at ACIL Allen's own FX and heat content. **It is a choice,
+> not a source.** It lives in `data/acil_lng_params.csv` and it is the first number
+> to test if a netback result matters to a conclusion.
+
+GARY does *not* deduct the Wallumbilla→Gladstone pipeline leg the ACCC deducts: the
+netback here is struck at the train node, already downstream of the APLNG/GLNG/WGP
+feed pipes and their tariffs in `arcs.csv`. Deducting it again would double-count.
+
+### Gas Market Code price cap
+
+The Commonwealth's $12/GJ cap is applied the way ACIL Allen apply it — as a ceiling
+on the *netback*, not bolted onto domestic prices:
+
+> "The price cap is operationalised in our model by setting the LNG netback price
+> (measured at Wallumbilla) to not move above $12/GJ." — ACIL Allen (14 July 2023), §4.1
+
+That rule is self-terminating, so no end year is needed: once long-run LNG prices
+pull the netback below $12 the ceiling stops binding, which is ACIL Allen's own
+assumption about how the Code lapses. Their 2025 report is sceptical it binds at
+all — *"the price cap has not necessarily acted as a price cap, but more like a
+price floor"* (§2.3.1) — so the capped series is the conservative reading, not a
+consensus one. `Netback_Uncapped_AUD_GJ` is emitted alongside so the difference is
+always visible.
+
+### What the lever changes
+
+Stressed **2030, Winter High / LNG High**, Step Change:
+
+| | must-serve exports | netback pricing |
+|---|---|---|
+| LNG exported | 2,104 PJ (all of it) | 1,367 PJ — **737 PJ declined** |
+| Shortage | 553,543 TJ | **4,302 TJ** |
+| Domestic mean price | $115.79/GJ | **$14.87/GJ** |
+| Melbourne mean | $88.98/GJ | $53.64/GJ |
+| Minimum nodal price | $7.00 | $5.70 (no negatives) |
+
+The huge shortage in the must-serve column is largely an **artefact** the lever
+fixes: the LNG High multiplier creates an export volume the network physically
+cannot serve alongside domestic load, and must-serve demand can only report that as
+lost load at VOLL. Priced at the netback it is correctly resolved as *exports that
+don't happen*.
+
+This also bears directly on [the reservation finding](#gas-reservation): with the
+netback in the model, a stressed southern market **voluntarily** outbids
+one third of the export stream. The reservation was trying to force an outcome the
+priced market produces on its own — where transport allows it.
+
+> **Known limitation — `export_headroom`.** At the default `1.0` a train may only
+> *decline* its planned volume, never expand. So the netback **caps** domestic
+> prices in scarcity but does not **anchor** them in a well-supplied year, which is
+> the stronger claim ACIL Allen make. Raising `export_headroom` in
+> `acil_lng_params.csv` lets spare liquefaction capacity absorb cheap gas and
+> restores that anchoring — but GARY has no reserves constraint, so a high value
+> lets exports soak up field deliverability indefinitely. Left at 1.0 deliberately.
+
+### Customer-segment prices
+
+GARY's nodal prices are LP duals — short-run marginal cost plus transport, $4–8/GJ.
+ACIL Allen are explicit that this is not what a customer pays, so they run GasMark
+twice and blend the legs per segment. `src/acil_segment_prices.py` is that layer,
+applied to a solved scenario; it adds no constraint and re-solves nothing.
+
+| Segment | Contract | Spot | Premium | Source |
+|---|---|---|---|---|
+| Residential/commercial | 100% | — | — | §2.6.1: *"supply for this market is 100 per cent contracted"* |
+| Industrial | 90% | 10% | — | §2.6.2, applied to all regions |
+| GPG — CCGT | 80% | 20% | — | §2.7, baseload role |
+| GPG — OCGT | 20% | 80% | $1.00/GJ | §2.7, *"based on their 'peaking' role and their low load factor"* |
+
+The contract leg is the **demand-weighted** annual mean of the daily duals (a flat
+mean lets quiet summer days pull an annual contract price down); the spot leg is
+the plain daily mean, which carries the winter peaks. The Code cap applies to the
+contract leg only — ACIL Allen's Run 2 explicitly removes it. Weights live in
+`data/acil_segment_weights.csv`.
+
+> **The OCGT premium is a placeholder.** ACIL Allen state that one exists and why
+> — *"the additional costs they typically pay to source high volumes of gas at
+> short notice… reserving pipeline capacity or the costs of storage"* — but do not
+> quantify it. $1.00/GJ is GARY's number, not theirs.
+
+> **ACIL Allen's Step 2 overlay is deliberately not reproduced.** Vertical
+> integration, gentailer portfolio effects, market power, and "inflating" new
+> supply costs toward netback because new entrants price off the next best
+> alternative are judgement applied outside the model, per generator and per
+> contract. None of it is reproducible from published material, and guessing would
+> put a number on this output that looks like ACIL Allen's and isn't. These are
+> their **mechanical** layer only, and will sit below their published forecasts
+> wherever that overlay adds to them.
+
+**Sources:** [ACIL Allen, *Wholesale natural gas prices for AEMO* (14 Nov 2025)](https://www.aemo.com.au/-/media/files/gas/national_planning_and_forecasting/gsoo/2026/2026-acil-allen-2025-projections.pdf) ·
+[ACIL Allen, *Natural gas price forecasts for the Final 2023 IASR and for the 2024 GSOO* (14 Jul 2023)](https://www.aemo.com.au/-/media/files/major-publications/isp/2023/iasr-supporting-material/acil-allen-natural-gas-price-forecasts.pdf) ·
+[ACCC LNG netback price series](https://www.accc.gov.au/inquiries-and-consultations/gas-inquiry-2017-30/lng-netback-price-series)
 
 ## Data centre gas demand
 
@@ -566,5 +767,5 @@ python src/migrate_results.py            # rewrites in place, keeps a .bak
 - **Horizon:** 2025–2050 (annual dispatch, 365 days/year)
 - **Solve method:** two-stage full-horizon — a perfect-foresight capacity-expansion layer (NPV over representative days) sets the build schedule, then each year is dispatched at 365-day resolution as a pure LP for nodal prices; a myopic year-by-year mode is also available as a toggle
 - **Baselines:** selectable AEMO **2026 GSOO** scenario — **Step Change** (central), **Accelerated Transition**, or **Slower Growth** (demand re-based on the GSOO; daily shapes from GBB actuals)
-- **Scenario levers:** Winter stress × LNG demand (9 combinations) layered on the chosen baseline, plus the SA Dunkelflaute event, the gas reservation, data centre gas demand in NSW/VIC and price-responsive demand; the batch runs all 3 baselines × 9 = 27 scenarios
+- **Scenario levers:** Winter stress × LNG demand (9 combinations) layered on the chosen baseline, plus the SA Dunkelflaute event, the gas reservation, data centre gas demand in NSW/VIC, LNG netback price formation and price-responsive demand; the batch runs all 3 baselines × 9 = 27 scenarios
 

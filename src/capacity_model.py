@@ -13,8 +13,9 @@ project's full CapEx is charged once, discounted to its build year.
 import calendar
 import pyomo.environ as pyo
 
+import params as P
 import solvers
-from model import LNG_NODES, VOLL_PER_GJ, WINTER_DAYS
+from model import IMPORT_NODES, LNG_NODES, VOLL_PER_GJ, WINTER_DAYS
 
 # Day-of-year (1..365, non-leap) -> calendar month.
 _MONTH_OF_DAY = {}
@@ -25,7 +26,8 @@ for _mo in range(1, 13):
             _MONTH_OF_DAY[_d] = _mo
             _d += 1
 
-PEAK_DAY_WEIGHT = 5.0        # days represented by the annual peak day (adequacy)
+# Days represented by the annual peak day (adequacy).
+PEAK_DAY_WEIGHT = P.get('peak_day_weight', 5.0)
 
 
 def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
@@ -102,15 +104,19 @@ class CapacityExpansionModel:
     """Perfect-foresight investment MIP: build[e, year] over representative days."""
 
     def __init__(self, nodes_df, arcs_df, supply_df, expansion_df, years, rep,
-                 discount_rate=0.07, strike_gpg=22.0, strike_ind=120.0,
-                 terminal_earliest=2028, base_year=2025, mm_blocks=(),
+                 discount_rate=None, strike_gpg=None, strike_ind=None,
+                 terminal_earliest=None, base_year=None, mm_blocks=(),
                  ind_raise=(), gpg_raise=(), gpg_capacity=None,
-                 lng_arcs=(), lng_source=()):
+                 lng_arcs=(), lng_source=(), netback_by_year=None,
+                 import_cost_by_year=None, export_headroom=1.0):
         self.nodes, self.arcs, self.supply, self.expansion = nodes_df, arcs_df, supply_df, expansion_df
         self.years = list(years)
         self.rep = rep                      # {year: [rep-day dicts]}
-        self.r = discount_rate
-        self.strike_gpg, self.strike_ind = strike_gpg, strike_ind
+        # Defaults come from the inputs workbook, not from the signature, so the
+        # workbook stays the single place a parameter is set.
+        self.r = P.get('discount_rate_default', 0.07) if discount_rate is None else discount_rate
+        self.strike_gpg = P.get('strike_gpg_default', 22.0) if strike_gpg is None else strike_gpg
+        self.strike_ind = P.get('strike_ind_default', 120.0) if strike_ind is None else strike_ind
         # Mass-market step demand curve, same blocks the dispatch layer will face.
         # The investment layer has to see it too: if it sized the network against
         # demand that dispatch then sheds, it would build pipe for gas nobody is
@@ -128,8 +134,20 @@ class CapacityExpansionModel:
         # so the investment layer sees the same zero-cost reserved tranche and the
         # same export-eligibility rule the dispatch layer will face.
         self.lng_arcs, self.lng_source = list(lng_arcs), list(lng_source)
-        self.terminal_earliest = terminal_earliest
-        self.base_year = base_year
+        # {year: netback $/GJ} when LNG netback price formation is on, else empty.
+        # The investment layer has to see it for the same reason it has to see the
+        # demand curves: sizing the network against an export volume that dispatch
+        # will decline to liquefy would build pipe for gas nobody buys.
+        self.netback_by_year = dict(netback_by_year or {})
+        # {year: $/GJ} injection cost for regasification terminals under netback
+        # pricing. Year-varying because it tracks the international LNG price,
+        # unlike a field cost, so it cannot live in the single supply frame.
+        self.import_cost_by_year = dict(import_cost_by_year or {})
+        self.export_headroom = float(export_headroom)
+        self.terminal_earliest = (P.get_int('terminal_earliest', 2028)
+                                  if terminal_earliest is None else terminal_earliest)
+        self.base_year = (P.get_int('capacity_base_year', 2025)
+                          if base_year is None else base_year)
         self.solved = False
 
     def build_model(self):
@@ -177,6 +195,23 @@ class CapacityExpansionModel:
         m.ind_expand = pyo.Var(m.INDNodes, m.INDRaise, m.YR, domain=pyo.NonNegativeReals)
         m.gpg_expand = pyo.Var(m.GPGRaiseNodes, m.GPGRaise, m.YR, domain=pyo.NonNegativeReals)
 
+        # LNG exports as a bounded willingness-to-pay block at the netback, the
+        # same swap the dispatch layer makes. The planned volume sits in
+        # rd['demand'] at the train nodes; with the lever on it becomes a ceiling
+        # rather than a must-serve quantity, and is netted out of rd['demand'] in
+        # balance_rule below.
+        self.netback_on = bool(self.netback_by_year)
+        m.LNGNodes = pyo.Set(initialize=[n for n in LNG_NODES
+                                         if n in self.nodes['Name'].tolist()]
+                             if self.netback_on else [])
+        m.lng_export = pyo.Var(m.LNGNodes, m.YR, domain=pyo.NonNegativeReals)
+        m.lng_export_cap = pyo.Constraint(m.LNGNodes, m.YR, rule=lambda m, n, y, i:
+            m.lng_export[n, y, i]
+            <= self.rep[y][i]['demand'].get(n, 0) * self.export_headroom)
+        for n in m.LNGNodes:
+            for (y, i) in YR:
+                m.shortage[n, y, i].fix(0.0)
+
         def ind_raise_avail(n, b, y, i):
             # Firm data centre load is inside rd['ind'] but does not respond to
             # price, so it is netted out here just as it is in the dispatch model.
@@ -220,9 +255,15 @@ class CapacityExpansionModel:
 
         # --- NPV objective ---------------------------------------------------
         def obj_rule(m):
+            def _supply_cost(s_, y):
+                """Field cost, or the year's LNG injection cost at an import terminal."""
+                if s_[0] in IMPORT_NODES and s_[1] and y in self.import_cost_by_year:
+                    return self.import_cost_by_year[y]
+                return supply_dict[s_]['Cost']
+
             ops = pyo.quicksum(
                 df[y] * wt[y, i] * (
-                    pyo.quicksum(m.production[s[0], s[1], y, i] * supply_dict[s]['Cost'] * 1000 for s in m.Supply)
+                    pyo.quicksum(m.production[s[0], s[1], y, i] * _supply_cost(s, y) * 1000 for s in m.Supply)
                     + pyo.quicksum(m.flow[a, y, i] * arc_data[a]['Cost'] * 1000 for a in m.Arcs)
                     + pyo.quicksum(m.shortage[n, y, i] * VOLL_PER_GJ * 1000 for n in m.Nodes)
                     + pyo.quicksum((m.injection[sn, y, i] + m.withdrawal[sn, y, i]) * 0.5 * 1000 for sn in m.StorageNodes)
@@ -235,7 +276,12 @@ class CapacityExpansionModel:
                                    for n in m.INDNodes for b in m.INDRaise)
                     - pyo.quicksum(m.gpg_expand[n, b, y, i] * gpg_raise_val[n, b] * 1000
                                    for n in m.GPGRaiseNodes for b in m.GPGRaise
-                                   if (n, b) in gpg_raise_val))
+                                   if (n, b) in gpg_raise_val)
+                    # Export revenue at that year's netback; bounded above by
+                    # lng_export_cap and forced by nothing.
+                    - pyo.quicksum(m.lng_export[n, y, i]
+                                   * self.netback_by_year.get(y, 0.0) * 1000
+                                   for n in m.LNGNodes))
                 for (y, i) in YR)
             capex = pyo.quicksum(m.build[e, y] * exp_data[e]['CapEx'] * df[y] for e in m.Expansion for y in Y)
             return ops + capex
@@ -256,7 +302,9 @@ class CapacityExpansionModel:
                     + (m.ind_curtail[n, y, i] if n in m.INDNodes else 0)
                     + (pyo.quicksum(m.mm_curtail[n, b, y, i] for b in m.MMBlocks)
                        if n in m.MMNodes else 0)
-                    == r['demand'].get(n, 0) + r['gpg'].get(n, 0) + r['ind'].get(n, 0)
+                    == (0 if n in m.LNGNodes else r['demand'].get(n, 0))
+                    + (m.lng_export[n, y, i] if n in m.LNGNodes else 0)
+                    + r['gpg'].get(n, 0) + r['ind'].get(n, 0)
                     + (pyo.quicksum(m.ind_expand[n, b, y, i] for b in m.INDRaise)
                        if n in m.INDNodes else 0)
                     + (pyo.quicksum(m.gpg_expand[n, b, y, i] for b in m.GPGRaise)

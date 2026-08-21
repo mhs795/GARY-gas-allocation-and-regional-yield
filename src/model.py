@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import re
 
+import params as P
 import results_io
 import solvers
 
@@ -16,10 +17,11 @@ import solvers
 # that stresses Moomba->Adelaide and the SEA Gas import from Victoria. The window
 # is a full month (deliberately longer than any historical event) to stress-test
 # a prolonged drought.
-DUNKELFLAUTE_YEAR = 2027
-DUNKELFLAUTE_NODE = "Adelaide"
-DUNKELFLAUTE_DAYS = range(152, 182)   # 1-30 June (gas day-of-year)
-DUNKELFLAUTE_MULT = 2.75
+DUNKELFLAUTE_YEAR = P.get_int('dunkelflaute_year', 2027)
+DUNKELFLAUTE_NODE = P.get_str('dunkelflaute_node', "Adelaide")
+DUNKELFLAUTE_DAYS = range(P.get_int('dunkelflaute_day_start', 152),
+                          P.get_int('dunkelflaute_day_end', 181) + 1)
+DUNKELFLAUTE_MULT = P.get('dunkelflaute_mult', 2.75)
 
 
 # --- Domestic gas reservation ------------------------------------------------
@@ -50,10 +52,96 @@ DUNKELFLAUTE_MULT = 2.75
 # which the reserved gas was never produced at all: domestic demand was already
 # met, so cost minimisation simply left it in the ground and the reservation was
 # an export cap by another name. Pricing it at zero is what makes it move.
-LNG_NODES = ['APLNG', 'GLNG', 'QCLNG']
+LNG_NODES = P.get_list('lng_nodes', ['APLNG', 'GLNG', 'QCLNG'])
+
+
+# --- LNG netback price formation (ACIL Allen / GasMark methodology) ----------
+# ACIL Allen produce the wholesale gas price projections behind AEMO's GSOO with
+# GasMark, a partial spatial equilibrium LP over supply nodes, demand nodes,
+# liquefaction and receiving facilities, solved to maximise producer plus consumer
+# surplus. GARY is the same class of model and, with the demand curves on, already
+# carries the same objective. The piece it did not carry is the one ACIL Allen
+# identify as setting east coast prices:
+#
+#     "Price formation from 2026 is then based off the LNG netback pricing
+#      mechanism, which was the price setting mechanism until the price cap was
+#      introduced."   -- ACIL Allen (14 July 2023), s4.1
+#
+# WITHOUT THIS LEVER the three Queensland trains are ordinary must-serve demand
+# nodes: their volume is taken at any price, unserved export is penalised at VOLL
+# like lost household load, and no export price enters the model anywhere. Exports
+# can therefore never lose to a domestic buyer, and the netback never disciplines a
+# domestic price.
+#
+# WITH IT the trains become a bounded willingness-to-pay block instead. Each train
+# may liquefy up to its planned volume and pays the export netback per GJ, entering
+# the objective as a negative cost exactly as the GPG and industrial raise blocks
+# do. Gas flows to the trains only while it can be got for less than the netback,
+# and a domestic buyer who will pay more than the netback outbids the export
+# stream. That is the netback acting as a price, which is the whole mechanism.
+#
+# WHY THIS IS NOT THE WA NEGATIVE-PRICE TRAP. The removed WA build put export
+# revenue in the objective and coupled it through a reservation constraint that
+# FORCED domestic service, which is unbounded benefit and drove Perth nodal prices
+# negative. Here every block is bounded above by the train's own planned volume and
+# nothing forces uptake -- the same shape as gpg_expand/ind_expand, which are
+# already proven safe. Re-check nodal prices for negatives if this formulation
+# changes.
+#
+# The netback series itself is built by build_lng_prices.py from ACIL Allen's
+# published oil price path, oil-linked contract formula, spot share and blended
+# Asian LNG price, less the avoidable liquefaction and shipping deduction. See that
+# module for what is sourced and for the one number that is not published.
+LNG_PRICES_FILE = "lng_prices.csv"
+
+# Regasification terminals: potential supply whose cost is an international price
+# (Asian LNG + shipping + regas), not a field development cost.
+IMPORT_NODES = P.get_list('import_nodes', ['Port_Kembla'])
+
+
+def load_params(data_dir=None):
+    """Scalar ACIL Allen assumptions, from the inputs workbook.
+
+    ``data_dir`` is accepted and ignored: the workbook is the source of truth and
+    lives at a fixed path (see params.py). The signature is kept so callers that
+    already thread a data directory around do not need to care.
+    """
+    defaults = {'oil_link_fixed': 0.40, 'oil_link_slope': 0.12,
+                'fx_usd_per_aud': 0.66, 'gj_per_mmbtu': 1.055,
+                'shipping': 0.80, 'regasification': 1.50,
+                'export_netback_deduction': 2.87, 'code_price_cap': 12.00,
+                'export_headroom': 1.0}
+    return {k: P.get(k, v) for k, v in defaults.items()}
+
+
+def load_lng_prices(data_dir, baseline, year, code_price_cap=True):
+    """ACIL Allen price row for one baseline and year, as a dict of floats.
+
+    Returns ``{}`` when the file is absent, which is what keeps the lever
+    optional; model code treats an empty result as "netback pricing unavailable".
+    ``code_price_cap`` selects the capped or uncapped netback column -- see
+    build_lng_prices.py for why the cap is applied to the netback rather than to
+    domestic prices, and for ACIL Allen's own scepticism that it binds.
+    """
+    try:
+        df = pd.read_csv(os.path.join(data_dir, LNG_PRICES_FILE))
+    except FileNotFoundError:
+        return {}
+    sub = df[(df['Scenario'] == baseline) & (df['Year'] == int(year))]
+    if sub.empty:
+        # Outside the published horizon: hold the nearest year rather than
+        # extrapolate an oil-linked price decades past its anchors.
+        sub = df[df['Scenario'] == baseline]
+        if sub.empty:
+            return {}
+        sub = sub.iloc[[(sub['Year'] - int(year)).abs().idxmin() - sub.index[0]]]
+    row = sub.iloc[0].to_dict()
+    row['Netback_AUD_GJ'] = float(row['Netback_Capped_AUD_GJ' if code_price_cap
+                                      else 'Netback_Uncapped_AUD_GJ'])
+    return row
 
 # Reservation shares offered by the dashboard slider (fraction of export volume).
-RESERVATION_LEVELS = [0.05, 0.10, 0.20, 0.30]
+RESERVATION_LEVELS = P.get_list('reservation_levels', [0.05, 0.10, 0.20, 0.30], cast=float)
 
 
 # --- Data centre gas demand --------------------------------------------------
@@ -99,7 +187,8 @@ RESERVATION_LEVELS = [0.05, 0.10, 0.20, 0.30]
 # can be netted out of the industrial *expansion* headroom: the raise blocks
 # represent industrial load that takes up more gas when it is cheap, and a data
 # centre's consumption is set by its compute, not by the gas price.
-DATACENTRE_STATE_NODE = [('NSW', 'Sydney'), ('VIC', 'Melbourne')]
+DATACENTRE_STATE_NODE = P.get_pairs('datacentre_state_node',
+                                    [('NSW', 'Sydney'), ('VIC', 'Melbourne')])
 
 
 def datacentre_profile(spec, year, gpg_demand):
@@ -169,11 +258,12 @@ def datacentre_profile(spec, year, gpg_demand):
 # Recommendations, Feb 2023). GARY's $300/GJ predates that check and is therefore
 # conservative; it is left as-is because changing it moves every historical result,
 # but it is the number to revisit if VOLL ever matters to a conclusion.
-VOLL_PER_GJ = 300.0
+VOLL_PER_GJ = P.get('voll_per_gj', 300.0)
 
 # Southern winter window (gas day-of-year) used by the Winter lever, and by the
 # per-block WinterScale that damps the price response through the heating season.
-WINTER_DAYS = range(150, 251)
+WINTER_DAYS = range(P.get_int('winter_day_start', 150),
+                    P.get_int('winter_day_end', 250) + 1)
 
 
 def load_demand_blocks(data_dir):
@@ -269,7 +359,7 @@ def apply_lng_reservation(demand_df, share):
 
 
 class GasMarketModel:
-    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, baseline="StepChange", dunkelflaute=False, builds_fixed=None, elastic_demand=False, reserved_by_day=None, datacentre=None):
+    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, baseline="StepChange", dunkelflaute=False, builds_fixed=None, elastic_demand=False, reserved_by_day=None, datacentre=None, netback_pricing=False, code_price_cap=True):
         self.nodes = nodes_df
         self.arcs = arcs_df
         self.supply = supply_df
@@ -289,6 +379,11 @@ class GasMarketModel:
         self.reserved_by_day = dict(reserved_by_day or {})
         # Data centre lever: {'NSW': PJ/yr, 'VIC': PJ/yr, 'start_year': yyyy}.
         self.datacentre = dict(datacentre) if datacentre else None
+        # LNG netback price formation (ACIL Allen / GasMark) -- see the header
+        # block. Off by default: it changes every scenario, not just export ones,
+        # so the must-serve-export case stays the comparison baseline.
+        self.netback_pricing = netback_pricing
+        self.code_price_cap = code_price_cap
         # The LNG trains' only feed pipes, and the node behind them. Resolved here
         # rather than in build_model so the capacity layer can read them before any
         # dispatch model has been built.
@@ -358,13 +453,44 @@ class GasMarketModel:
         self.dc_demand = datacentre_profile(self.datacentre, self.year, self.gpg_demand)
         for _key, _tj in self.dc_demand.items():
             self.ind_demand[_key] = self.ind_demand.get(_key, 0.0) + _tj
+
+        # --- ACIL Allen price series -------------------------------------
+        self.lng_prices = (load_lng_prices(data_dir, self.baseline, self.year,
+                                           self.code_price_cap)
+                           if self.netback_pricing else {})
+        if self.netback_pricing and not self.lng_prices:
+            # Falling back to must-serve exports would look exactly like the
+            # lever having no effect, which is indistinguishable from a real
+            # null result -- the same trap the elastic-demand lever raises on.
+            raise RuntimeError(
+                "netback_pricing=True but no price series was found in "
+                "data/lng_prices.csv. Run: python src/build_lng_prices.py")
+        self.netback = float(self.lng_prices.get('Netback_AUD_GJ', 0.0))
+        # How far a train may liquefy beyond its planned volume. See the note on
+        # export_headroom in acil_lng_params.csv: at the default 1.0 exports can
+        # only be declined, so the netback caps domestic prices in scarcity but
+        # does not anchor them in a well-supplied year the way ACIL Allen describe.
+        self.export_headroom = (load_params()['export_headroom']
+                                if self.netback_pricing else 1.0)
+        if self.netback_pricing:
+            # LNG imports are priced on ACIL Allen's injection cost (Asian LNG
+            # + shipping + regasification, Table 2.1) rather than the single flat
+            # figure in supply.csv, so the import terminal competes on the same
+            # international price the exports are valued at. Copied first: the
+            # foresight solve hands one supply frame to all 26 years.
+            injection = float(self.lng_prices.get('Import_Injection_AUD_GJ', 0.0))
+            if injection > 0:
+                self.supply = self.supply.copy()
+                _imp = (self.supply['Node'].isin(IMPORT_NODES)
+                        & self.supply['IsPotential'].astype(bool))
+                self.supply.loc[_imp, 'Cost'] = injection
         try:
             strikes = pd.read_csv(os.path.join(data_dir, "curtailment_params.csv")
                                   ).set_index('Tier')['StrikePrice'].to_dict()
         except FileNotFoundError:
             strikes = {}
-        self.strike_gpg = float(strikes.get('GPG', 22.0))
-        self.strike_ind = float(strikes.get('Industrial', 120.0))
+        self.strike_gpg = float(strikes.get('GPG', P.get('strike_gpg_default', 22.0)))
+        self.strike_ind = float(strikes.get('Industrial', P.get('strike_ind_default', 120.0)))
         blocks = load_demand_blocks(data_dir) if self.elastic_demand else {}
         self.mm_blocks = blocks.get(('MassMarket', 'shed'), [])
         self.mm_raise = blocks.get(('MassMarket', 'raise'), [])
@@ -417,6 +543,39 @@ class GasMarketModel:
         m.ind_curtail = pyo.Var(m.INDNodes, m.T, domain=pyo.NonNegativeReals)
 
         node_demand = self.demand.set_index(['Node', 'Day'])['Demand'].to_dict()
+
+        # --- LNG exports as a willingness-to-pay block, not must-serve -----
+        # See the netback header block. The planned export volume stops being a
+        # volume that must be met and becomes the CEILING on a block worth the
+        # netback per GJ. It is taken out of node_demand entirely, so it no
+        # longer reaches balance_rule as fixed demand and unserved export is no
+        # longer priced at VOLL -- an export that does not happen is a sale
+        # forgone, not lost load.
+        #
+        # The volume is read AFTER the reservation has been applied to the demand
+        # frame, so a reservation still carves its share out of the ceiling.
+        lng_planned = {}
+        if self.netback_pricing:
+            for n in LNG_NODES:
+                for t in range(1, 366):
+                    v = node_demand.pop((n, t), None)
+                    if v is not None:
+                        lng_planned[(n, t)] = v
+        m.LNGNodes = pyo.Set(initialize=[n for n in LNG_NODES
+                                         if n in self.nodes['Name'].tolist()]
+                             if self.netback_pricing else [])
+        m.lng_export = pyo.Var(m.LNGNodes, m.T, domain=pyo.NonNegativeReals)
+        m.lng_export_cap = pyo.Constraint(m.LNGNodes, m.T,
+            rule=lambda m, n, t: (m.lng_export[n, t]
+                                  <= lng_planned.get((n, t), 0.0) * self.export_headroom))
+        # Nothing to leave unserved at a train once its demand is endogenous, and
+        # a free shortage variable there would be a $300/GJ supply source the
+        # solver could in principle reach for. Fixed shut rather than left loose.
+        for n in m.LNGNodes:
+            for t in m.T:
+                m.shortage[n, t].fix(0.0)
+        netback = self.netback
+        self._lng_planned = lng_planned
 
         # Mass-market step demand curve. Only distribution nodes carry it: the LNG
         # trains enter the network as demand nodes too, but their volume is an
@@ -512,8 +671,15 @@ class GasMarketModel:
             gpg_benefit = sum(m.gpg_expand[n, b, t] * gpg_raise_val[n, b] * 1000
                               for n in m.GPGRaiseNodes for b in m.GPGRaise for t in m.T
                               if (n, b) in gpg_raise_val)
+            # Export revenue at the LNG netback. Negative, like the demand-raise
+            # benefits: gas reaches a train only while supplying it costs less
+            # than the netback. Bounded by lng_export_cap and forced by nothing,
+            # which is what separates it from the WA formulation.
+            lng_benefit = sum(m.lng_export[n, t] * netback * 1000
+                              for n in m.LNGNodes for t in m.T)
             return (prod_cost + trans_cost + shortage_penalty + storage_cost + exp_capex
-                    + gpg_pen + ind_pen + mm_pen - ind_benefit - gpg_benefit)
+                    + gpg_pen + ind_pen + mm_pen - ind_benefit - gpg_benefit
+                    - lng_benefit)
         m.obj = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
 
         arcs_to = {n: [a for a in m.Arcs if arc_data[a]['To'] == n] for n in m.Nodes}
@@ -532,6 +698,7 @@ class GasMarketModel:
                     (m.ind_curtail[n, t] if n in m.INDNodes else 0) +
                     (sum(m.mm_curtail[n, b, t] for b in m.MMBlocks) if n in m.MMNodes else 0) ==
                     node_demand.get((n, t), 0) + gpg_dem.get((n, t), 0) + ind_dem.get((n, t), 0) +
+                    (m.lng_export[n, t] if n in m.LNGNodes else 0) +
                     (sum(m.ind_expand[n, b, t] for b in m.INDRaise) if n in m.INDNodes else 0) +
                     (sum(m.gpg_expand[n, b, t] for b in m.GPGRaise) if n in m.GPGRaiseNodes else 0) +
                     sum(m.flow[a, t] for a in arcs_from[n]))
@@ -666,7 +833,7 @@ class GasMarketModel:
 
     def get_results(self):
         m = self.model
-        res = {k: [] for k in ['prices', 'production', 'flow', 'storage', 'shortage', 'builds', 'gpg', 'industrial', 'massmarket', 'demand_raise']}
+        res = {k: [] for k in ['prices', 'production', 'flow', 'storage', 'shortage', 'builds', 'gpg', 'industrial', 'massmarket', 'demand_raise', 'lng']}
         demand_dict = self.demand.set_index(['Node', 'Day'])['Demand'].to_dict()
         supply_at = {n: [s for s in m.Supply if s[0] == n] for n in m.Nodes}
 
@@ -682,6 +849,7 @@ class GasMarketModel:
         ind_ev = m.ind_expand.get_values()
         gpg_ev = m.gpg_expand.get_values()
         rp = m.reserved_prod.get_values()
+        lng_ev = m.lng_export.get_values()
 
         # Nodes whose balance dual is a meaningful price. A node that never has
         # demand and never carries gas has a degenerate dual -- the constraint is
@@ -740,6 +908,16 @@ class GasMarketModel:
                         dem = self._mm_available(n, b, t)
                         res['massmarket'].append({'Day': t, 'Node': n, 'Block': b, 'Demand': float(dem),
                                                   'Served': float(dem - cur), 'Curtailed': cur})
+            # LNG exports under netback pricing: planned volume vs what was
+            # actually worth liquefying at the netback. Empty when the lever is
+            # off, so an inelastic run stores nothing extra.
+            for n in m.LNGNodes:
+                planned = self._lng_planned.get((n, t), 0.0)
+                served = float(lng_ev[n, t] or 0)
+                if planned > 0.001:
+                    res['lng'].append({'Day': t, 'Node': n, 'Planned': float(planned),
+                                       'Exported': served,
+                                       'Forgone': float(planned - served)})
             # Demand taken up because gas was cheap; only rows that fired.
             for n in m.INDNodes:
                 for b in m.INDRaise:
@@ -756,6 +934,14 @@ class GasMarketModel:
 
         # Data centre load carried this year, TJ. Zero when the lever is off or
         # the year is before its start year.
+        # Netback price formation: what the export stream was worth and how much
+        # of it actually cleared. Zero/absent when the lever is off.
+        res['netback_aud_gj'] = float(self.netback) if self.netback_pricing else 0.0
+        res['lng_price_aud_gj'] = float(self.lng_prices.get('LNG_Asia_AUD_GJ', 0.0))
+        res['lng_exported_tj'] = float(sum(lng_ev[n, t] or 0
+                                           for n in m.LNGNodes for t in m.T))
+        res['lng_planned_tj'] = float(sum(self._lng_planned.values()))
+        res['netback_pricing'] = self.netback_pricing
         res['datacentre_tj'] = float(sum(self.dc_demand.values()))
         res['reserved_served_tj'] = float(sum(rp[t] or 0 for t in m.T))
         res['reserved_offered_tj'] = float(sum(self.reserved_by_day.values()))

@@ -65,6 +65,10 @@ SERIES_SCHEMA = {
     # Absent from scenarios solved with elastic demand off.
     'demand_raise': {'Day': 'day', 'Node': 'name', 'Tier': 'name', 'Block': 'name',
                      'Value': 'val'},
+    # LNG exports under netback price formation: planned volume, what cleared at
+    # the netback, and what was forgone. Absent with the netback lever off.
+    'lng': {'Day': 'day', 'Node': 'name', 'Planned': 'val', 'Exported': 'val',
+            'Forgone': 'val'},
 }
 SERIES_COLUMNS = {k: list(v) for k, v in SERIES_SCHEMA.items()}
 

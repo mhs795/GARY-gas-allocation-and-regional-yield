@@ -879,6 +879,8 @@ def short_key(k):
     dc = re.search(_DC_RE, k)
     if dc:
         parts.append(f'DC {dc.group(1)}/{dc.group(2)} PJ @{dc.group(3)}')
+    if '_Netback' in k:
+        parts.append('Netback')
     if '_Elastic' in k:
         parts.append('Elastic')
     if '_Myopic' in k:
@@ -900,6 +902,7 @@ def pretty_key(k):
                              f'{mo.group(2)} PJ VIC from {mo.group(3)}', rest)
     rest = (rest.replace('_Winter_', 'Winter ').replace('_LNG_', '  ·  LNG ')
                 .replace('_Dunkelflaute', '  ·  SA Dunkelflaute 2027')
+                .replace('_Netback', '  ·  LNG netback pricing')
                 .replace('_Elastic', '  ·  Elastic demand')
                 .replace('_Myopic', '  ·  Myopic'))
     if '_DR' in rest:
@@ -1067,6 +1070,17 @@ sidebar = html.Div(className='md-sidebar', children=[
             dcc.Slider(id='dc-start-slider', min=2025, max=2050, step=1, value=2030,
                        marks={y: str(y) for y in range(2025, 2051, 5)},
                        tooltip={'placement': 'bottom', 'always_visible': True})),
+
+        dbc.Checklist(id='netback-toggle',
+                      options=[{'label': ' LNG netback pricing (ACIL Allen)', 'value': 'on'}],
+                      value=[], switch=True,
+                      style={'marginBottom': '2px', 'fontSize': '12px'}),
+        html.Div('Off: LNG exports are must-serve demand at any price. On: trains '
+                 'bid for gas at the export netback and imports are priced at '
+                 'ACIL Allen\'s injection cost, so the international price '
+                 'disciplines domestic prices.',
+                 style={'marginBottom': '16px', 'fontSize': '10px',
+                        'color': '#888', 'lineHeight': '1.35', 'paddingLeft': '38px'}),
 
         # Covers every tier and both directions now, not just mass-market shedding,
         # so the label says "demand" rather than naming one tier.
@@ -1264,7 +1278,8 @@ def datacentre_spec(nsw_pj, vic_pj, start_year):
 
 
 def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
-                 elastic=False, foresight=True, discount=0.07, datacentre=None):
+                 elastic=False, foresight=True, discount=0.07, datacentre=None,
+                 netback=False):
     """Cache key for one scenario.
 
     Segment order is load-bearing — pretty_key parses it and the cached results on
@@ -1277,6 +1292,7 @@ def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
             + ('_Dunkelflaute' if dunkelflaute else '')
             + (f'_Reserve{round(reservation * 100)}' if reservation else '')
             + dc
+            + ('_Netback' if netback else '')
             + ('_Elastic' if elastic else '')
             + ('' if foresight else '_Myopic')
             + (f'_DR{round(discount * 100)}' if foresight and abs(discount - 0.07) > 1e-9 else ''))
@@ -1360,6 +1376,7 @@ def show_tab(active):
     State('discount-slider', 'value'),
     State('foresight-toggle', 'value'),
     State('elastic-toggle', 'value'),
+    State('netback-toggle', 'value'),
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
     State('dc-start-slider', 'value'),
@@ -1377,7 +1394,7 @@ def show_tab(active):
     prevent_initial_call=True,
 )
 def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on, resv_i,
-                 discount, foresight_v, elastic_v, dc_nsw, dc_vic, dc_start, refresh):
+                 discount, foresight_v, elastic_v, netback_v, dc_nsw, dc_vic, dc_start, refresh):
     w, l = LEVELS[wi], LEVELS[li]
     baseline = baseline or 'StepChange'
     dunkelflaute = bool(dunkel) and 'on' in dunkel
@@ -1385,18 +1402,20 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
     foresight = 'on' in (foresight_v or [])
     elastic = 'on' in (elastic_v or [])
     dr = 0.07 if discount is None else float(discount)
+    netback = 'on' in (netback_v or [])
     datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
     def _cb(yr, p):
         pct = int(p * 100)
         set_progress((pct, f'Solving {yr}… {pct}%'))
     # Built before the solve so it can also title the terminal log.
     key = scenario_key(baseline, w, l, dunkelflaute, reservation, elastic, foresight, dr,
-                       datacentre)
+                       datacentre, netback)
     result = solve_scenario(w, l, mip_gap=gap, callback=_cb,
                             baseline=baseline, dunkelflaute=dunkelflaute,
                             discount_rate=dr, foresight=foresight,
                             reservation=reservation, elastic_demand=elastic,
-                            datacentre=datacentre, title=pretty_key(key))
+                            datacentre=datacentre, netback_pricing=netback,
+                            title=pretty_key(key))
     data = load_results()
     data['all_scenarios'][key] = result
     data['current_key'] = key
@@ -1453,6 +1472,7 @@ def _run_sweep(jobs, data, set_progress):
     State('foresight-toggle', 'value'),
     State('reservation-toggle', 'value'),
     State('reservation-slider', 'value'),
+    State('netback-toggle', 'value'),
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
     State('dc-start-slider', 'value'),
@@ -1470,7 +1490,7 @@ def _run_sweep(jobs, data, set_progress):
     prevent_initial_call=True,
 )
 def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
-              resv_on, resv_i, dc_nsw, dc_vic, dc_start, refresh):
+              resv_on, resv_i, netback_v, dc_nsw, dc_vic, dc_start, refresh):
     # Every combination: all GSOO baselines x Winter x LNG (dunkelflaute
     # off) -> 27 runs, plus one Step Change + SA Dunkelflaute (2027) case at the
     # central Winter/LNG so it sits alongside its plain Step Change counterpart.
@@ -1485,13 +1505,15 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     # The data centre lever rides along the same way the reservation does: the
     # whole sweep is solved with it, under its own keys, alongside the plain runs.
     datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
+    netback = 'on' in (netback_v or [])
     dr = 0.07 if discount is None else float(discount)
     combos = [(b['value'], w, l, False) for b in BASELINES for w in LEVELS for l in LEVELS]
     combos.append(('StepChange', 'Medium', 'Medium', True))
     data = load_results()
     jobs = []
     for b, w, l, dunkel in combos:
-        key = scenario_key(b, w, l, dunkel, reservation, False, foresight, dr, datacentre)
+        key = scenario_key(b, w, l, dunkel, reservation, False, foresight, dr, datacentre,
+                           netback)
         # Skip already-computed base combos, but always recompute the dunkelflaute
         # case so edits to the event flow through on a re-run.
         if dunkel or key not in data['all_scenarios']:
@@ -1499,7 +1521,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
                          dict(winter=w, lng=l, mip_gap=gap, baseline=b,
                               dunkelflaute=dunkel, discount_rate=dr,
                               foresight=foresight, reservation=reservation,
-                              datacentre=datacentre)))
+                              datacentre=datacentre, netback_pricing=netback)))
     _run_sweep(jobs, data, set_progress)
     resv_note = f' at {round(reservation * 100)}% reservation' if reservation else ''
     return (refresh or 0) + 1, f'✓  Batch complete — {len(combos)} scenarios (all baselines + SA dunkelflaute){resv_note}'
@@ -1518,6 +1540,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     State('discount-slider', 'value'),
     State('foresight-toggle', 'value'),
     State('elastic-toggle', 'value'),
+    State('netback-toggle', 'value'),
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
     State('dc-start-slider', 'value'),
@@ -1535,7 +1558,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     prevent_initial_call=True,
 )
 def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
-                          discount, foresight_v, elastic_v,
+                          discount, foresight_v, elastic_v, netback_v,
                           dc_nsw, dc_vic, dc_start, refresh):
     """Every reservation level x every GSOO baseline, at the selected Winter/LNG case.
 
@@ -1553,6 +1576,7 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     dunkelflaute = bool(dunkel) and 'on' in dunkel
     foresight = 'on' in (foresight_v or [])
     elastic = 'on' in (elastic_v or [])
+    netback = 'on' in (netback_v or [])
     datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
     dr = 0.07 if discount is None else float(discount)
     levels = [0.0] + list(RESERVATION_LEVELS)
@@ -1564,7 +1588,7 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     jobs = []
     for base, share in combos:
         key = scenario_key(base, w, l, dunkelflaute, share, elastic, foresight, dr,
-                           datacentre)
+                           datacentre, netback)
         # Cached combinations are skipped, so a re-run after adding a level costs
         # one solve rather than the whole sweep. Clear Results to force a rebuild.
         if key not in data['all_scenarios']:
@@ -1572,7 +1596,8 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
                          dict(winter=w, lng=l, mip_gap=gap, baseline=base,
                               dunkelflaute=dunkelflaute, discount_rate=dr,
                               foresight=foresight, reservation=share,
-                              elastic_demand=elastic, datacentre=datacentre)))
+                              elastic_demand=elastic, datacentre=datacentre,
+                              netback_pricing=netback)))
     _run_sweep(jobs, data, set_progress)
     shares = ' / '.join(f'{round(x * 100)}%' for x in levels)
     skipped = len(combos) - len(jobs)
@@ -1702,6 +1727,18 @@ def update_header_kpis(key, end_year):
         chips.insert(3, kpi_card('Gas Reserved', [f"{reserved_pj:,.0f} PJ", take_up]))
     # Data centre load carried over the horizon. Absent from any run solved
     # before this lever existed, and from any run with both boxes at zero.
+    # LNG netback pricing: the export volume that priced itself out. Under
+    # must-serve exports this is structurally zero, so the card only appears on a
+    # netback run and only when the netback actually bound somewhere.
+    if any(r.get('netback_pricing') for r in filtered):
+        planned_pj = sum(r.get('lng_planned_tj', 0) for r in filtered) / 1000
+        exported_pj = sum(r.get('lng_exported_tj', 0) for r in filtered) / 1000
+        last_nb = next((r.get('netback_aud_gj', 0) for r in reversed(filtered)
+                        if r.get('netback_aud_gj')), 0)
+        sub = html.Span(f"{exported_pj/planned_pj*100:.0f}% of planned"
+                        if planned_pj else '', className='md-kpi-sub')
+        chips.insert(3, kpi_card('LNG Exported', [f"{exported_pj:,.0f} PJ", sub]))
+        chips.insert(3, kpi_card('LNG Netback', f"${last_nb:.2f}/GJ"))
     dc_pj = sum(r.get('datacentre_tj', 0) for r in filtered) / 1000
     if dc_pj:
         chips.insert(3, kpi_card('Data Centre Load', f"{dc_pj:,.0f} PJ"))
