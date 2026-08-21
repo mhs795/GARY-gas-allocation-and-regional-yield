@@ -329,6 +329,102 @@ The **LNG netback pricing** switch supplies it.
 python src/solve.py --netback-pricing --winter High --lng High
 ```
 
+### In plain terms
+
+Australia's east coast is joined to the world market by three LNG trains at
+Gladstone. A producer with a spare TJ of gas has two customers: a domestic buyer,
+or a train that will liquefy it and ship it to Asia. What the train can pay is the
+Asian LNG price **less the cost of getting it there** — liquefaction and shipping.
+That figure is the **netback**, and it is the floor under what a domestic buyer has
+to beat.
+
+**Before this change, GARY had no idea any of that existed.** The trains were
+written in as demand that simply had to be met, like a hospital. They took their
+gas first, at any price, and if the pipes couldn't also serve Melbourne in a cold
+snap the model recorded that as households losing supply. Exports could never lose.
+
+**Now the trains bid like everyone else.** Each one may liquefy up to its planned
+volume and will pay up to the netback — no more. When gas is plentiful the trains
+get it, because nobody domestic is bidding higher. When a southern winter bites and
+Melbourne is worth more than the netback, **gas that would have been exported stays
+home instead**, and the export simply doesn't happen. That is a sale forgone, not a
+blackout, and the model now says so.
+
+Two consequences fall straight out of it:
+
+- **Domestic prices get a ceiling.** No buyer pays wildly more than export parity
+  for long, because at that point the gas is worth more here than abroad and the
+  export stops instead.
+- **Imports get a real price.** The Port Kembla terminal used to sit at a flat
+  $14/GJ forever. It now costs what imported LNG actually costs — the Asian price
+  plus shipping plus regasification — which rises and falls with the world market
+  like everything else.
+
+### How the price is built
+
+```mermaid
+flowchart TD
+    A["<b>Brent oil price</b><br/>US$/bbl, by scenario<br/><i>ACIL Allen Table B.2</i>"]
+    B["<b>Oil-linked contract price</b><br/>(0.40 + 0.12 x Brent) / (0.66 x 1.055)<br/><i>ACIL Allen §B.9</i>"]
+    C["<b>Spot LNG price</b><br/>implied, so the blend stays exact"]
+    D["<b>Asian LNG price</b><br/>contract and spot, blended on the spot share<br/><i>ACIL Allen Tables B.3, B.4</i>"]
+    E["<b>Export netback</b><br/>what a train can pay for a TJ"]
+    F{"Above the<br/>$12/GJ Code cap?"}
+    G["<b>Capped at $12/GJ</b><br/>Gas Market Code"]
+    H["<b>Netback unchanged</b>"]
+    I["<b>Import injection price</b><br/>what a cargo landed here costs"]
+
+    A --> B
+    B --> D
+    C --> D
+    D -- "minus liquefaction<br/>and shipping, A$2.87/GJ" --> E
+    D -- "plus shipping A$0.80<br/>plus regas A$1.50" --> I
+    E --> F
+    F -- yes --> G
+    F -- no --> H
+
+    style E fill:#1f6feb,color:#fff
+    style I fill:#1f6feb,color:#fff
+    style G fill:#8250df,color:#fff
+    style H fill:#8250df,color:#fff
+```
+
+Only two numbers leave this chain and enter the model: the **export netback**,
+which is what each train will pay, and the **import injection price**, which is
+what the Port Kembla terminal costs to run.
+
+### How it changes the model
+
+```mermaid
+flowchart LR
+    subgraph OFF["Netback pricing OFF — the old behaviour"]
+        direction TB
+        O1["Surat gas"] --> O2["<b>LNG trains</b><br/>must-serve demand<br/>take their volume<br/>at any price"]
+        O1 --> O3["Domestic buyers<br/>get what is left"]
+        O3 --> O4["Can't reach them?<br/><b>Recorded as lost load<br/>at VOLL $300/GJ</b>"]
+    end
+
+    subgraph ON["Netback pricing ON — ACIL Allen's mechanism"]
+        direction TB
+        N1["Surat gas"] --> N2{"Who values<br/>this TJ more?"}
+        N5["Port Kembla import<br/>at the injection price"] --> N2
+        N2 -- "netback wins" --> N3["<b>Exported</b>"]
+        N2 -- "domestic buyer<br/>bids above netback" --> N4["<b>Stays home</b><br/>export declined,<br/>a sale forgone"]
+    end
+
+    %% Invisible link: pins OFF to the left of ON so the pair reads
+    %% before-then-after rather than in whatever order the layout picks.
+    OFF ~~~ ON
+
+    style O2 fill:#cf222e,color:#fff
+    style O4 fill:#cf222e,color:#fff
+    style N3 fill:#1a7f37,color:#fff
+    style N4 fill:#1a7f37,color:#fff
+```
+
+The switch is **off by default**, so the must-serve case stays the comparison
+baseline and every cached scenario keeps its key.
+
 **Off** (the default): the three Queensland trains are ordinary must-serve demand
 nodes. Their volume is taken at any price, unserved export is penalised at VOLL
 like lost household load, and no export price enters the model anywhere. Exports
