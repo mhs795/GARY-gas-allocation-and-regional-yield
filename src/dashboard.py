@@ -2081,30 +2081,16 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
                 s += f"&nbsp;&nbsp;· {fr['FacilityName']}: {fr['MeanDemand'] * 365 / 1000 * scale:.1f} PJ/yr<br>"
             return s
         tt += _fac_block(static_data.get('gpg_facs'), 'GPG', '⚡', gpg_serv.get(node, 0), gpg_cur.get(node, 0))
-        # Data centre load is carried inside the large-industrial tier (model.py
-        # folds dc_demand into ind_demand), so it has to come back OUT of the
-        # industrial figure before the facility split is scaled to it. Left in, it
-        # inflates every sticker underneath: a 50 PJ Melbourne data centre was
-        # showing up as a Viva Energy refinery consuming 43.8 PJ/yr.
-        #
-        # The solver does not record which industrial load a curtailment fell on,
-        # so the served/shed split is apportioned pro rata by volume rather than
-        # asserting the data centre was firm through a shortage.
-        ind_s, ind_c = ind_serv.get(node, 0), ind_cur.get(node, 0)
+        tt += _fac_block(static_data.get('ind_bbg'), 'Large industrial', '🏭',
+                         ind_serv.get(node, 0), ind_cur.get(node, 0))
+        # Data centre load is noted, not split out. The solve folds dc_demand into
+        # the large-industrial tier (model.py), so the volume is already inside the
+        # industrial figure above and its facility rows -- hence "of which" rather
+        # than a tier of its own, which would double-count it against the total.
         dc_pj_node = dc_load.get(node, 0.0) / 1000
-        dc_s, dc_c = dc_pj_node, 0.0
-        ind_tot = ind_s + ind_c
-        if dc_pj_node > 0.01 and ind_tot > 0.01:
-            keep = max(0.0, 1 - dc_pj_node / ind_tot)
-            dc_s, dc_c = ind_s * (1 - keep), ind_c * (1 - keep)
-            ind_s, ind_c = ind_s * keep, ind_c * keep
-        tt += _fac_block(static_data.get('ind_bbg'), 'Large industrial', '🏭', ind_s, ind_c)
-        # The lever is a bulk state volume, not a facility list, so there is
-        # nothing to itemise underneath it — one line for the node, flagged as a
-        # scenario assumption rather than a modelled build.
         if dc_pj_node > 0.01:
-            note = (f"{dc_c:.1f} shed · " if dc_c > 0.01 else "") + "scenario lever"
-            tt += f"🖥️ Data centres: {dc_s + dc_c:.1f} PJ/yr <i>({note})</i><br>"
+            tt += (f"&nbsp;&nbsp;· <i>of which data centres: "
+                   f"{dc_pj_node:.1f} PJ/yr (scenario lever)</i><br>")
 
         map_nodes.append({'Node': node, 'Lat': c[0], 'Lon': c[1],
                           'Type': n_t, 'Price': p_v, 'Supply': s_v, 'Tooltip': tt,
