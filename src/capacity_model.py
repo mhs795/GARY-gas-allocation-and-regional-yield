@@ -327,7 +327,15 @@ class CapacityExpansionModel:
         m.balance = pyo.Constraint(m.Nodes, m.YR, rule=balance_rule)
 
         m.gpg_cap = pyo.Constraint(m.GPGNodes, m.YR, rule=lambda m, n, y, i: m.gpg_curtail[n, y, i] <= rd(y, i)['gpg'].get(n, 0))
-        m.ind_cap = pyo.Constraint(m.INDNodes, m.YR, rule=lambda m, n, y, i: m.ind_curtail[n, y, i] <= rd(y, i)['ind'].get(n, 0))
+        # Firm data centre load is netted out of what the industrial tier may shed,
+        # exactly as in the dispatch model. This has to match: the capacity stage
+        # chooses the builds that the dispatch stage is then held to, so if it were
+        # allowed to assume a data centre stands down at strike_ind while dispatch
+        # requires it served or short at VOLL, it would under-build against the very
+        # scarcity it is meant to be sizing for.
+        m.ind_cap = pyo.Constraint(m.INDNodes, m.YR,
+            rule=lambda m, n, y, i: m.ind_curtail[n, y, i] <= max(
+                0.0, rd(y, i)['ind'].get(n, 0) - rd(y, i).get('dc', {}).get(n, 0)))
         m.mm_cap = pyo.Constraint(m.MMNodes, m.MMBlocks, m.YR,
             rule=lambda m, n, b, y, i: m.mm_curtail[n, b, y, i] <= rd(y, i)['mm'].get(b, {}).get(n, 0))
         m.ind_expand_cap = pyo.Constraint(m.INDNodes, m.INDRaise, m.YR,
