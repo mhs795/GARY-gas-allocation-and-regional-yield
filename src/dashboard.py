@@ -2081,16 +2081,31 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
                 s += f"&nbsp;&nbsp;· {fr['FacilityName']}: {fr['MeanDemand'] * 365 / 1000 * scale:.1f} PJ/yr<br>"
             return s
         tt += _fac_block(static_data.get('gpg_facs'), 'GPG', '⚡', gpg_serv.get(node, 0), gpg_cur.get(node, 0))
-        tt += _fac_block(static_data.get('ind_bbg'), 'Large industrial', '🏭',
-                         ind_serv.get(node, 0), ind_cur.get(node, 0))
-        # Data centre load is noted, not split out. The solve folds dc_demand into
-        # the large-industrial tier (model.py), so the volume is already inside the
-        # industrial figure above and its facility rows -- hence "of which" rather
-        # than a tier of its own, which would double-count it against the total.
+        # Data centre load is demand ADDITIONAL to GPG and to the existing large
+        # industrial facilities -- model.py adds dc_demand on top of ind_demand
+        # rather than reallocating within it. It rides inside the industrial tier
+        # only so that it faces the same curtailment terms, so the two are separated
+        # again here: the industrial line keeps the existing facilities it is
+        # itemising, and the data centres get a line of their own. Left combined,
+        # the tier total is scaled across the facility rows and the lever's volume
+        # is attributed to plant that is not consuming it -- Melbourne 2040 read as
+        # a Viva Energy refinery on 43.8 PJ/yr against 3.8 PJ the year before.
+        ind_s, ind_c = ind_serv.get(node, 0), ind_cur.get(node, 0)
         dc_pj_node = dc_load.get(node, 0.0) / 1000
+        dc_s, dc_c = dc_pj_node, 0.0
+        ind_tot = ind_s + ind_c
+        if dc_pj_node > 0.01 and ind_tot > 0.01:
+            # The solver does not record which industrial load a curtailment fell
+            # on, so shedding is apportioned by volume. Attributing it all to one
+            # side would assert something the model never decided.
+            keep = max(0.0, 1 - dc_pj_node / ind_tot)
+            dc_s, dc_c = ind_s * (1 - keep), ind_c * (1 - keep)
+            ind_s, ind_c = ind_s * keep, ind_c * keep
+        tt += _fac_block(static_data.get('ind_bbg'), 'Large industrial', '🏭', ind_s, ind_c)
+        # A bulk state volume, not a facility list, so nothing to itemise under it.
         if dc_pj_node > 0.01:
-            tt += (f"&nbsp;&nbsp;· <i>of which data centres: "
-                   f"{dc_pj_node:.1f} PJ/yr (scenario lever)</i><br>")
+            note = (f"{dc_c:.1f} shed · " if dc_c > 0.01 else "") + "scenario lever"
+            tt += f"🖥️ Data centres: {dc_s + dc_c:.1f} PJ/yr <i>({note})</i><br>"
 
         map_nodes.append({'Node': node, 'Lat': c[0], 'Lon': c[1],
                           'Type': n_t, 'Price': p_v, 'Supply': s_v, 'Tooltip': tt,
