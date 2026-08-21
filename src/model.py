@@ -1059,6 +1059,13 @@ class GasMarketModel:
         res['netback_scenario'] = self.netback_scenario if self.netback_pricing else None
         res['netback_pricing'] = self.netback_pricing
         res['datacentre_tj'] = float(sum(self.dc_demand.values()))
+        # Per-node split as well as the total: the map hover card names the load
+        # sitting at each node, and a single system-wide figure cannot say
+        # whether it landed on Sydney or Melbourne.
+        _dc_by_node = {}
+        for (_n, _d), _v in self.dc_demand.items():
+            _dc_by_node[_n] = _dc_by_node.get(_n, 0.0) + float(_v)
+        res['datacentre_by_node_tj'] = _dc_by_node
         res['reserved_served_tj'] = float(sum(rp[t] or 0 for t in m.T))
         res['reserved_offered_tj'] = float(sum(self.reserved_by_day.values()))
 

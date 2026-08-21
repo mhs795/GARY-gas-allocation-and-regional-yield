@@ -859,6 +859,33 @@ _LVL_SHORT = {'Low': 'L', 'Medium': 'M', 'High': 'H'}
 # Data centre segment of a scenario key: _DC<nsw>N<vic>V<startyear>, e.g.
 # _DC50N30V2030. Both readers below parse it with this one pattern.
 _DC_RE = r'_DC([\d.]+)N([\d.]+)V(\d{4})'
+# Which node each state's data centre load lands on. Mirrors
+# model.DATACENTRE_STATE_NODE, which reads the pair off the inputs workbook; this
+# copy exists only to decode scenarios solved before the per-node split was saved.
+_DC_KEY_NODES = (('NSW', 'Sydney'), ('VIC', 'Melbourne'))
+
+
+def datacentre_by_node(res, key):
+    """Data centre load at each node for one solved year, ``{node: TJ}``.
+
+    Prefers the split the model now saves. Scenarios solved before that only
+    carry the system-wide total, so for those the volumes are read back off the
+    scenario key, which encodes the NSW/VIC PJ split and the start year -- the
+    same numbers the solve was handed. The year gate comes from the saved total:
+    it is zero before the start year, so a run that has not switched on yet
+    reports nothing rather than back-dating the load.
+    """
+    saved = res.get('datacentre_by_node_tj')
+    if saved:
+        return {n: float(v) for n, v in saved.items()}
+    if not res.get('datacentre_tj'):
+        return {}
+    mo = re.search(_DC_RE, key or '')
+    if not mo:
+        return {}
+    pj = {'NSW': float(mo.group(1)), 'VIC': float(mo.group(2))}
+    return {node: pj[state] * 1000.0
+            for state, node in _DC_KEY_NODES if pj.get(state, 0) > 0}
 
 
 def _base_of(k):
@@ -1373,24 +1400,39 @@ def delivered_price(res):
     return float((merged['Price'] * merged['Vol']).sum() / total)
 
 
+def headline_price(res):
+    """The one price figure the dashboard quotes for a year, $/GJ.
+
+    Every card that shows "the price" goes through here, so the header KPI and
+    the map KPI cannot drift apart again -- which is exactly what had happened
+    when one weighted by production and the other by throughput.
+
+    Falls back to a mean over the priced demand nodes when a year delivered
+    nothing to weight. A plain mean over ALL nodes would sweep in undeveloped
+    ones, whose nodal dual sits at the $300 value of lost load and is a shadow
+    price rather than a market price.
+    """
+    p_avg = delivered_price(res)
+    if p_avg is not None:
+        return p_avg
+    _prices = res['prices']
+    if _prices.empty:
+        return float('nan')
+    demand_names = static_data['nodes'].loc[
+        static_data['nodes']['Type'] == 'Demand', 'Name'].tolist()
+    _dem_p = _prices[_prices['Node'].astype(str).isin(demand_names)]
+    return float(_dem_p['Price'].mean() if not _dem_p.empty
+                 else _prices['Price'].mean())
+
+
 def build_summary(filtered_results):
     rows, prices_trend, builds_timeline, total_cost = [], [], [], 0
     exp_lookup = static_data['expansion'].set_index('Name').to_dict('index')
-    demand_names = static_data['nodes'].loc[
-        static_data['nodes']['Type'] == 'Demand', 'Name'].tolist()
     for res in filtered_results:
         y = res['Year']
         _prices = res['prices']
         _prod   = res['production']
-        # Fallback for a year that priced nothing at a demand centre: the mean
-        # over the demand nodes that do have a price. A plain mean over ALL
-        # nodes would sweep in undeveloped ones, whose nodal dual sits at the
-        # $300 value-of-lost-load and is not a market price.
-        p_avg = delivered_price(res)
-        if p_avg is None:
-            _dem_p = _prices[_prices['Node'].astype(str).isin(demand_names)]
-            p_avg = (_dem_p['Price'].mean() if not _dem_p.empty
-                     else _prices['Price'].mean())
+        p_avg   = headline_price(res)
         rows.append({'Year': y, 'Production_PJ': _prod['Value'].sum() / 1000,
                      'Shortage_TJ': res['shortage']['Value'].sum(),
                      'Avg_Price': p_avg})
@@ -1921,17 +1963,19 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
     flow_map  = _flow.groupby(['From','To','Arc'])['Value'].sum().reset_index()
     flow_map['Value'] /= 1000
 
-    # Per-node throughput (production + inflow, TJ/yr). Used to (a) volume-weight the
-    # system average price and (b) mask "phantom" nodes: an undeveloped/disconnected
-    # potential node (e.g. Beetaloo before it is built) carries no gas, so its nodal
-    # balance dual sits at the value-of-lost-load ($300) — a real shadow price, but
-    # meaningless as a market price. It must not drag the average or paint the node hot.
+    # Per-node throughput (production + inflow, TJ/yr). Used to mask "phantom"
+    # nodes: an undeveloped/disconnected potential node (e.g. Beetaloo before it is
+    # built) carries no gas, so its nodal balance dual sits at the value-of-lost-load
+    # ($300) — a real shadow price, but meaningless as a market price. It must not
+    # paint the node hot.
     PRICE_MIN_TP = 1.0   # TJ/yr; below this a node is treated as unpriced
     _infl   = _flow.groupby('To')['Value'].sum() if not _flow.empty else pd.Series(dtype=float)
     _prod_n = _prod.groupby('Node')['Value'].sum() if not _prod.empty else pd.Series(dtype=float)
     throughput = _prod_n.add(_infl, fill_value=0.0)
-    _pw = throughput.reindex(price_map.index).fillna(0.0).clip(lower=0)
-    avg_price = float((price_map * _pw).sum() / _pw.sum()) if _pw.sum() > 0 else float(price_map.mean())
+    # Same measure as the header's Final Price card, taken for the year the map
+    # is showing rather than the last year of the horizon, so stepping the year
+    # slider moves this figure with the map.
+    avg_price = headline_price(res)
 
     map_kpis = [
         map_kpi(f'Avg Price ({map_year})', f"${avg_price:.2f}/GJ"),
@@ -2004,6 +2048,7 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
         return (df.groupby('Node')[col].sum() / 1000).to_dict() if not df.empty else {}
     gpg_serv, gpg_cur = _node_sum('gpg', 'Served'), _node_sum('gpg', 'Curtailed')
     ind_serv, ind_cur = _node_sum('industrial', 'Served'), _node_sum('industrial', 'Curtailed')
+    dc_load = datacentre_by_node(res, key)
     map_nodes = []
     for node, c in COORDS.items():
         n_t = node_types.get(node, 'Hub')
@@ -2036,7 +2081,31 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
                 s += f"&nbsp;&nbsp;· {fr['FacilityName']}: {fr['MeanDemand'] * 365 / 1000 * scale:.1f} PJ/yr<br>"
             return s
         tt += _fac_block(static_data.get('gpg_facs'), 'GPG', '⚡', gpg_serv.get(node, 0), gpg_cur.get(node, 0))
-        tt += _fac_block(static_data.get('ind_bbg'), 'Large industrial', '🏭', ind_serv.get(node, 0), ind_cur.get(node, 0))
+        # Data centre load is carried inside the large-industrial tier (model.py
+        # folds dc_demand into ind_demand), so it has to come back OUT of the
+        # industrial figure before the facility split is scaled to it. Left in, it
+        # inflates every sticker underneath: a 50 PJ Melbourne data centre was
+        # showing up as a Viva Energy refinery consuming 43.8 PJ/yr.
+        #
+        # The solver does not record which industrial load a curtailment fell on,
+        # so the served/shed split is apportioned pro rata by volume rather than
+        # asserting the data centre was firm through a shortage.
+        ind_s, ind_c = ind_serv.get(node, 0), ind_cur.get(node, 0)
+        dc_pj_node = dc_load.get(node, 0.0) / 1000
+        dc_s, dc_c = dc_pj_node, 0.0
+        ind_tot = ind_s + ind_c
+        if dc_pj_node > 0.01 and ind_tot > 0.01:
+            keep = max(0.0, 1 - dc_pj_node / ind_tot)
+            dc_s, dc_c = ind_s * (1 - keep), ind_c * (1 - keep)
+            ind_s, ind_c = ind_s * keep, ind_c * keep
+        tt += _fac_block(static_data.get('ind_bbg'), 'Large industrial', '🏭', ind_s, ind_c)
+        # The lever is a bulk state volume, not a facility list, so there is
+        # nothing to itemise underneath it — one line for the node, flagged as a
+        # scenario assumption rather than a modelled build.
+        if dc_pj_node > 0.01:
+            note = (f"{dc_c:.1f} shed · " if dc_c > 0.01 else "") + "scenario lever"
+            tt += f"🖥️ Data centres: {dc_s + dc_c:.1f} PJ/yr <i>({note})</i><br>"
+
         map_nodes.append({'Node': node, 'Lat': c[0], 'Lon': c[1],
                           'Type': n_t, 'Price': p_v, 'Supply': s_v, 'Tooltip': tt,
                           'Priced': priced})
