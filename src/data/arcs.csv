@@ -1,5 +1,5 @@
 Name,From,To,Capacity,Cost
-MSP,Moomba,Sydney,590,0.5
+MSP,Moomba,Sydney,565,0.5
 MAPS,Moomba,Adelaide,249,0.4
 SWQP,Moomba,Surat,340,0.3
 SWQP_Rev,Surat,Moomba,512,0.3
@@ -12,7 +12,7 @@ EGP,Gippsland,Sydney,350,0.6
 VNI,Melbourne,Sydney,150,0.3
 SEA_Gas,Melbourne,Adelaide,300,0.4
 Longford,Gippsland,Melbourne,1000,0.1
-SWP,Iona,Melbourne,400,0.2
+SWP,Iona,Melbourne,570,0.2
 VGP,Gippsland,Iona,200,0.3
 MSP_Rev,Sydney,Moomba,100,0.6
 VNI_Rev,Sydney,Melbourne,218,0.4

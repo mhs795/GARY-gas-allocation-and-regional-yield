@@ -345,7 +345,7 @@ netback deduction and the foundation share follow.
 | `ECGG_3A_SWQP` | `SWQP_Rev` | +58 TJ/d | $141m † | Winter 2028 | APA ECGG Stage 3A, FID Feb 2026 |
 | `ECGG_3A_MSP` | `MSP` | +10 TJ/d | $24m † | Winter 2028 | APA ECGG Stage 3A |
 | `ECGG_3A_Culcairn` | `VNI_Rev` | +39 TJ/d | $95m † | Winter 2028 | APA ECGG Stage 3A, Young–Culcairn lateral |
-| `MSEP_Conversion` | `MSP` | +22 TJ/d | $25m | Winter 2026 | Moomba–Sydney Ethane Pipeline converted to gas; NSW approval Oct 2025 |
+| `MSEP_Conversion` | `MSP` | +25 TJ/d | $25m | Winter 2026 | Moomba–Sydney Ethane Pipeline converted to gas; NSW approval Oct 2025. APA: total southbound 565 → 590 TJ/d |
 | `EGP_Reversal` | `EGP_Rev` **(new arc)** | +200 TJ/d **south** | $220m ‡ | Winter 2026 | Jemena EGP reversal stage 1 |
 | `SWP_Compression` | `SWP` | +45 TJ/d | $213m | Winter 2029 | APA rule 80; Irrewillipe + Stonehaven + Winchelsea; Iona injection 570→615 TJ/d; AER approved 2026 |
 
@@ -364,7 +364,7 @@ snapshot with a cut-off, not a standing fact.
 | Project | GARY target | Capacity | CapEx | Date | Source |
 |---|---|---|---|---|---|
 | `Bulloo_Interlink` | `Bulloo` **(new arc)** | 800 TJ/d N→S | $220m | End 2028, pre-FID | APA ECGG Stage 3B; new SWQP→MSP link, ~240 km shorter corridor; line pipe purchased |
-| `ECGG_VTS_Expansion` | `VNI_Rev` | +294 TJ/d (+84%) | $714m ‡ | Winter 2029 | APA ECGG future stage; MSP+VTS to 350 TJ/d Young→Wollert |
+| `ECGG_VTS_Expansion` | `VNI_Rev` | +93 TJ/d § | $226m ‡ | Winter 2029 | APA ECGG Stage 5; MSP+VTS to 350 TJ/d Young→Wollert |
 | `SWP_Looping` | `SWP` | +45 TJ/d | $340m ‡ | 2029 | APA's alternative to `SWP_Compression`: 88 km of looping; more linepack. **Mutually exclusive** with it |
 | `Viva_Geelong_FSRU` | `Geelong` **(new node)** | 750 TJ/d | $1.0bn ‡ | Winter 2029, FID H2 2026 | Viva Energy Gas Terminal, Corio Bay; EPBC approval Apr 2026. AEMO: a Geelong terminal lifts total SWP capacity to ~770 TJ/d |
 | `Vopak_Victoria_FSRU` | `Geelong` | 750 TJ/d ‡ | $1.0bn ‡ | Pre-winter 2029 | Vopak Victoria Energy Terminal, Port Phillip Bay; FSRU secured Sep 2025. **Mutually exclusive** with Viva — AEMO states the two behave similarly for the DTS |
@@ -375,6 +375,10 @@ snapshot with a cut-off, not a standing fact.
 | `Beetaloo_Dev` | `Beetaloo` | 450 TJ/d | $900m | Proposed | Beetaloo development. Corridor-limited: the NGP is only 90 TJ/d until APA's proposed North East Australia Pipeline exists |
 
 ‡ Not public — GARY's own, derived as stated in the row's `Note`.
+§ Sized to land GARY's corridor on APA's stated **350 TJ/d** endpoint: 350 less
+the 218 TJ/d `VNI_Rev` base less `ECGG_3A_Culcairn`'s 39. APA calls the project an
+~84% increase, which implies a current corridor near 190 TJ/d — so the endpoint is
+the sourced number and the increment follows from GARY's own base, not the reverse.
 
 ### Four new arcs and one new node
 
@@ -433,14 +437,20 @@ and `Port_Kembla_Terminal`.
 | **APA North East Australia Pipeline** | Early planning only; no public capacity or cost to source a row from |
 | **WAG pipeline conversion** | Complements a Geelong FSRU downstream of `GEE2MEL`; no separate capacity figure published |
 
-### A calibration discrepancy this surfaced
+### Two base capacities the candidate set corrected
 
-GARY's `SWP` arc is **400 TJ/d**, but the real Iona injection limit is **570 TJ/d**
-today and 615 TJ/d after the committed expansion — and `nodes.csv` already gives
-`Iona` a `MaxWithdrawal` of 570. So the arc, not the storage node, is the binding
-constraint, and it binds ~30% tighter than reality. This is **not** changed here:
-it would move every baseline result, and it is a calibration decision separate from
-the expansion candidate set. Flagged for a decision.
+Sourcing the candidates surfaced two arcs whose base capacity was wrong, both now
+fixed. Each moves every baseline result, so they are called out rather than buried:
+
+| Arc | Was | Now | Why |
+|---|---|---|---|
+| `SWP` | 400 TJ/d | **570 TJ/d** | The real Iona injection limit into the DTS is 570 (615 after `SWP_Compression`), and `nodes.csv` already gave `Iona` a `MaxWithdrawal` of 570. The arc, not the storage node, was binding — about 30% tighter than reality. AEMO's own framing is that Port Campbell production cannot all reach the DTS *because of the SWP limit*, which is only the right story once the arc carries the right number |
+| `MSP` | 590 TJ/d | **565 TJ/d** | 590 is the *post*-MSEP figure (APA: 565 → 590 on conversion). Carrying `MSEP_Conversion` as an expansion on top of 590 double-counted the project. Base is now pre-conversion and MSEP earns its +25 |
+
+One nearby figure was left alone: `SEA_Gas` is 300 TJ/d against a real Port
+Campbell→Adelaide capacity of 314. GARY's arc runs Melbourne→Adelaide rather than
+from Port Campbell, so the 4.7% gap is calibration noise on an arc that does not
+serve Victoria, not an error to correct.
 
 ### Sources
 
