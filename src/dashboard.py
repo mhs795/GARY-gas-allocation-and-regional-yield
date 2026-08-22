@@ -1910,19 +1910,43 @@ def update_header_kpis(key, end_year):
     raised_pj = sum(float(r['demand_raise']['Value'].sum())
                     for r in filtered if len(r.get('demand_raise', ()))) / 1000
     elastic_run = any(r.get('elastic_demand') for r in filtered)
+    netback_run = any(r.get('netback_pricing') for r in filtered)
+    respects = next((r.get('reservation_respects_contracts', True) for r in filtered), True)
+    caveats = []
+    if reserved_pj:
+        if not netback_run:
+            caveats.append('no export revenue counted')
+        elif respects:
+            caveats.append('incl. export revenue forgone')
+        else:
+            caveats.append('export revenue counted on spot tail only')
+        caveats.append('reserved gas at $0')
+    if elastic_run:
+        caveats.append('net of demand benefit')
+    cost_caveat = ' · '.join(caveats)
     chips = [
         kpi_card('Final Price', [final_price,
                                  html.Span(f'demand-weighted, {final_year}',
                                            className='md-kpi-sub')]),
-        # Not comparable across runs in two separate ways. Under a reservation the
-        # objective carries no export revenue, and the reserved gas is costed at
-        # zero, so both removing export demand and reserving more always lower it.
-        # Under elastic demand it also carries a negative benefit term for demand
-        # taken up cheaply, which is a surplus, not a cost. Either way it is the
-        # cost of serving what was served, not a welfare number.
-        kpi_card('System Cost' + (' (served gas only)' if reserved_pj else '')
-                 + (' (net of demand benefit)' if elastic_run and not reserved_pj else ''),
-                 f"${total_cost/1e6:,.0f}M"),
+        # What the objective does and does not count, spelled out under the number
+        # rather than in the title, because it depends on three switches at once.
+        #
+        # Export revenue exists ONLY under netback pricing: model.py initialises
+        # LNGNodes to an empty set otherwise, so lng_benefit is identically zero
+        # and a reservation looks free because it removes demand nothing was
+        # paying for. With netback on, the reservation shrinks the spot ceiling by
+        # the full applied share, so the revenue it forgoes IS costed -- but only
+        # on the contestable tail. Foundation volume is written back into
+        # node_demand as must-serve and carries no revenue, so a reservation that
+        # breaks contracts still loses export value the objective never sees.
+        #
+        # The reserved tranche is priced at $0/GJ in every mode, so reserving more
+        # always lowers the number regardless. It is the cost of serving what was
+        # served, never a welfare number.
+        kpi_card('System Cost',
+                 [f"${total_cost/1e6:,.0f}M"]
+                 + ([html.Span(cost_caveat, className='md-kpi-sub')]
+                    if cost_caveat else [])),
         kpi_card('Total Supply', f"{summary['Production_PJ'].sum():,.0f} PJ"),
         kpi_card('New Projects', str(len(builds_df))),
     ]

@@ -223,9 +223,11 @@ capacity layer and the 365-day dispatch see the same policy:
    exports to Surat's own production would strand the trains on those days and
    change the no-reservation base case.
 
-There is still **no export revenue term in the objective**. That coupling is what
+The reservation itself adds **no export revenue term**. That coupling is what
 produced negative nodal prices at Perth in the removed WA DomGas build; here the
-reservation acts entirely through supply cost and flow eligibility.
+reservation acts entirely through supply cost and flow eligibility. Export value
+enters the objective only via LNG netback pricing, and only on the contestable
+spot tail — see the note on System Cost below.
 
 > This replaces an earlier **pure export-cap** formulation (piece 1 alone). Under
 > that version the reserved gas was never produced at all: domestic demand was
@@ -276,11 +278,20 @@ in sharper form: **a reservation is a Queensland price policy, not a southern su
 policy.** Forcing the gas into the market at zero cost gets it produced and consumed,
 which the export cap never did, but it cannot put it where the shortage is.
 
-> **System Cost is not comparable across reservation levels.** The objective carries
-> no export revenue and costs the reserved gas at zero, so both removing export demand
-> and reserving more always lower it — the figure is the cost of serving what is left,
-> not a welfare measure. The dashboard relabels the KPI **System Cost (served gas
-> only)** and shows **Gas Reserved** with the percentage actually taken up.
+> **System Cost is not comparable across reservation levels**, though how badly
+> depends on the netback switch. The reserved tranche is priced at $0/GJ in every
+> mode, so reserving more always lowers the figure. What changes is whether the
+> export value given up is counted at all:
+>
+> | Mode | Foregone export revenue |
+> |---|---|
+> | Netback **off** | **Not counted.** `LNGNodes` is an empty set, so `lng_benefit` is identically zero and a reservation looks free because it removes demand nothing was paying for |
+> | Netback **on**, contracts respected (the default) | **Counted.** The reservation shrinks the spot ceiling by the full applied share, and a contract-respecting reservation is capped at the uncontracted tail — which is exactly the volume that carries revenue |
+> | Netback **on**, `--break-lng-contracts` | **Partly.** The spot portion is costed; volume taken from the foundation leg is not, because that is written back into `node_demand` as must-serve with no revenue attached |
+>
+> Either way it is the cost of serving what was served, not a welfare measure. The
+> KPI carries the applicable caveat under the number, and **Gas Reserved** shows the
+> percentage actually taken up.
 
 ## Where inputs live
 
@@ -1060,7 +1071,8 @@ carry `massmarket` and `demand_raise` series; the dashboard adds **Demand Shed**
 
 > **System Cost is not comparable with an inelastic run.** The objective now carries a
 > negative benefit term for demand taken up cheaply, which is a surplus, not a cost. The
-> dashboard relabels the KPI **System Cost (net of demand benefit)**.
+> KPI carries a **net of demand benefit** caveat under the number. Caveats stack: a
+> run that is both elastic and reserved shows all of the applicable ones.
 
 ### Nodes without a meaningful price
 
