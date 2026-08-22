@@ -1455,6 +1455,23 @@ def headline_price(res):
                  else _prices['Price'].mean())
 
 
+def exp_label(name):
+    """Display name for an expansion project.
+
+    Reads the `Label` column of expansion_options.csv so the readable name lives
+    with the data rather than in a dict in the UI, and falls back to the raw name
+    with underscores stripped — a project added to the CSV without a Label still
+    renders, just less prettily.
+    """
+    row = static_data['expansion']
+    hit = row[row['Name'] == name]
+    if not hit.empty and 'Label' in hit.columns:
+        val = hit.iloc[0]['Label']
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return str(name).replace('_', ' ')
+
+
 def build_summary(filtered_results):
     rows, prices_trend, builds_timeline, total_cost = [], [], [], 0
     exp_lookup = static_data['expansion'].set_index('Name').to_dict('index')
@@ -1474,7 +1491,11 @@ def build_summary(filtered_results):
                 info = exp_lookup.get(b, {})
                 builds_timeline.append({
                     'Year': y,
+                    # Project stays the RAW name: it is the join key back to
+                    # expansion_options.csv and to res['builds'], and several
+                    # callers look up by it. Label is the display string.
                     'Project': b,
+                    'Label': exp_label(b),
                     'Type': info.get('Type', '—'),
                     'New Capacity (TJ/d)': info.get('NewCapacity', '—'),
                     'CapEx ($M)': f"{info['CapEx']/1e6:,.0f}" if info.get('CapEx') else '—',
@@ -1483,7 +1504,7 @@ def build_summary(filtered_results):
         pd.DataFrame(rows) if rows else pd.DataFrame(columns=['Year','Production_PJ','Shortage_TJ','Avg_Price']),
         pd.concat(prices_trend, ignore_index=True)[['Year', 'Node', 'Price']]
         if prices_trend else pd.DataFrame(columns=['Year', 'Node', 'Price']),
-        pd.DataFrame(builds_timeline) if builds_timeline else pd.DataFrame(columns=['Year','Project','Type','New Capacity (TJ/d)','CapEx ($M)']),
+        pd.DataFrame(builds_timeline) if builds_timeline else pd.DataFrame(columns=['Year','Project','Label','Type','New Capacity (TJ/d)','CapEx ($M)']),
         total_cost,
     )
 
@@ -2257,8 +2278,9 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
             e_cap = int(exp_row.iloc[0]['NewCapacity']) if not exp_row.empty else '?'
             e_capex = f"${exp_row.iloc[0]['CapEx']/1e6:,.0f}M" if not exp_row.empty else '?'
             proj_name = exp_row.iloc[0]['Name'] if not exp_row.empty else row_t['Node']
+            proj_label = exp_label(proj_name) if not exp_row.empty else row_t['Node']
             built_yr = builds_df[builds_df['Project'] == proj_name]['Year'].iloc[0] if not builds_df.empty and proj_name in builds_df['Project'].values else '?'
-            tip = (f"<b>⚓ {row_t['Node']} — LNG Import Terminal</b><br>"
+            tip = (f"<b>⚓ {proj_label} — LNG Import Terminal</b><br>"
                    f"Status: <b>OPERATIONAL</b> (built {built_yr})<br>"
                    f"Capacity: {e_cap} TJ/d<br>CapEx: {e_capex}")
         # Outer glow ring
@@ -2309,8 +2331,8 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
                 lat, lon = COORDS[target]
                 built_yr = builds_df[builds_df['Project'] == proj]['Year'].iloc[0] if not builds_df.empty else '?'
                 exp_lats.append(lat); exp_lons.append(lon)
-                exp_labels.append(proj.replace('_', ' '))
-                exp_tips.append(f"<b>✦ {proj}</b><br>Type: Terminal<br>Built: {built_yr}<br>"
+                exp_labels.append(exp_label(proj))
+                exp_tips.append(f"<b>✦ {exp_label(proj)}</b><br>Type: Terminal<br>Built: {built_yr}<br>"
                                 f"+{e['NewCapacity']} TJ/d<br>CapEx: ${e['CapEx']/1e6:,.0f}M")
                 continue
             arc_row_e = static_data['arcs'][static_data['arcs']['Name'] == target]
@@ -2327,8 +2349,8 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
                 lon = (COORDS[from_n][1] + COORDS[to_n][1]) / 2
             built_yr = builds_df[builds_df['Project'] == proj]['Year'].iloc[0] if not builds_df.empty else '?'
             exp_lats.append(lat); exp_lons.append(lon)
-            exp_labels.append(proj.replace('_', ' '))
-            exp_tips.append(f"<b>✦ {proj}</b><br>Type: {e['Type']}<br>Built: {built_yr}<br>+{e['NewCapacity']} TJ/d<br>CapEx: ${e['CapEx']/1e6:,.0f}M")
+            exp_labels.append(exp_label(proj))
+            exp_tips.append(f"<b>✦ {exp_label(proj)}</b><br>Type: {e['Type']}<br>Built: {built_yr}<br>+{e['NewCapacity']} TJ/d<br>CapEx: ${e['CapEx']/1e6:,.0f}M")
         if exp_lats:
             fig.add_trace(go.Scattermap(
                 lat=exp_lats, lon=exp_lons,
@@ -2607,10 +2629,11 @@ def update_expansions(key, end_year, active_tab, theme):
     fig = go.Figure()
     for _, row in sorted_df.iterrows():
         color = type_colors.get(row.get('Type', ''), '#78909C')
-        label = f"<b>{row['Project']}</b><br>Built: {row['Year']}<br>Type: {row.get('Type','—')}<br>Capacity: {row.get('New Capacity (TJ/d)','—')} TJ/d<br>CapEx: ${row.get('CapEx ($M)','—')}M"
+        name = row.get('Label') or row['Project']
+        label = f"<b>{name}</b><br>Built: {row['Year']}<br>Type: {row.get('Type','—')}<br>Capacity: {row.get('New Capacity (TJ/d)','—')} TJ/d<br>CapEx: ${row.get('CapEx ($M)','—')}M"
         fig.add_trace(go.Bar(
             x=[end_year - row['Year'] + 1],
-            y=[row['Project']],
+            y=[name],
             base=[row['Year']],
             orientation='h',
             marker_color=color,
@@ -2631,8 +2654,14 @@ def update_expansions(key, end_year, active_tab, theme):
         margin=dict(l=0, r=20, t=40, b=40),
     )
 
+    # Show the readable Label under the "Project" heading and drop the raw name --
+    # it is a join key, not something to read in a table.
+    table_df = (sorted_df.drop(columns=['Project'])
+                         .rename(columns={'Label': 'Project'}))
+    table_df = table_df[['Year', 'Project'] + [c for c in table_df.columns
+                                               if c not in ('Year', 'Project')]]
     table = dbc.Table.from_dataframe(
-        sorted_df.drop(columns=['Type'], errors='ignore') if 'Type' not in sorted_df.columns else sorted_df,
+        table_df,
         striped=True, bordered=False, hover=True, size='sm',
         className='table-light',
         style={'fontSize': '0.85rem'},

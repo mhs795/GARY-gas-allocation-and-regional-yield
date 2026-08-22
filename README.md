@@ -334,6 +334,10 @@ AEMO counts it in the **2026 GSOO / Victorian Gas Planning Report Update** as
 *committed*, or whether it came from GARY's own market scan and sits outside that
 boundary (pre-FID, proposed, or committed after the GSOO's cut-off).
 
+Each row also carries a short **`Label`** — the name the dashboard shows in the
+Expansions tab and on the map. `Name` stays the stable key that results and
+lookups join on, so a label can be reworded without invalidating anything.
+
 Nothing here is a placeholder. Where a figure is not public it is labelled as
 GARY's own in the row's `Note` and in the table below — the same discipline the
 netback deduction and the foundation share follow.
