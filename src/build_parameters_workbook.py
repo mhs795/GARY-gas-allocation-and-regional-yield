@@ -83,6 +83,12 @@ PARAMETERS = [
      "Value of the Source column in expansion_options.csv that counts as GSOO"),
 
     # --- ACIL Allen gas pricing methodology ------------------------------------
+    ("ACIL Allen LNG price", "netback_pricing_default", "TRUE", "boolean",
+     "Default state of the dashboard's LNG netback pricing switch. TRUE = ACIL "
+     "Allen price formation is on unless turned off, which is the methodology "
+     "behind the 2026 GSOO and the only mode in which an international price "
+     "disciplines domestic prices. Overridden per run by the sidebar switch or "
+     "--netback-pricing"),
     ("ACIL Allen LNG price", "oil_link_fixed", 0.40, "US$/mmbtu",
      "ACIL Allen (14 Nov 2025) B.9: FC in P_LNG=(FC+S*Pb)/(FX*C)"),
     ("ACIL Allen LNG price", "oil_link_slope", 0.12, "fraction",

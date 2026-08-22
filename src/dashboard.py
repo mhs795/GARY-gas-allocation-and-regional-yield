@@ -14,6 +14,7 @@ from dash import dcc, html, Input, Output, State, DiskcacheManager, no_update, c
 import dash_bootstrap_components as dbc
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import params as P
 import results_io
 from model import RESERVATION_LEVELS, lng_foundation_share
 from solve import solve_scenario
@@ -140,6 +141,14 @@ static_data = load_static_data()
 # ---------------------------------------------------------------------------
 # Geographic constants
 # ---------------------------------------------------------------------------
+# Sidebar switch defaults that are parameters rather than code. Netback pricing is
+# ON by default: it is ACIL Allen's methodology, the one behind the 2026 GSOO, and
+# the only mode in which the international price disciplines domestic prices --
+# with it off the LNG lever scales export VOLUME instead, which at High pushes
+# planned exports past physical liquefaction nameplate and reports the excess as
+# domestic lost load at VOLL.
+NETBACK_DEFAULT = str(P.get_str('netback_pricing_default', 'TRUE')).strip().upper() in ('TRUE', '1', 'YES')
+
 COORDS = {
     'Surat':          [-27.15, 149.07], 'Moomba':        [-28.1,  140.2],
     'Gippsland':      [-38.5,  147.0],  'Sydney':        [-33.86, 151.2],
@@ -1154,12 +1163,14 @@ sidebar = html.Div(className='md-sidebar', children=[
 
         dbc.Checklist(id='netback-toggle',
                       options=[{'label': ' LNG netback pricing (ACIL Allen)', 'value': 'on'}],
-                      value=[], switch=True,
+                      value=['on'] if NETBACK_DEFAULT else [], switch=True,
                       style={'marginBottom': '2px', 'fontSize': '12px'}),
-        html.Div('Off: LNG exports are must-serve demand at any price. On: trains '
-                 'bid for gas at the export netback and imports are priced at '
-                 'ACIL Allen\'s injection cost, so the international price '
-                 'disciplines domestic prices.',
+        html.Div('On (default): trains bid for gas at the export netback and '
+                 'imports are priced at ACIL Allen\'s injection cost, so the '
+                 'international price disciplines domestic prices. Off: LNG '
+                 'exports revert to must-serve demand at any price, and the '
+                 'Global LNG lever scales export volume instead of selecting a '
+                 'price path.',
                  style={'marginBottom': '16px', 'fontSize': '10px',
                         'color': '#888', 'lineHeight': '1.35', 'paddingLeft': '38px'}),
 

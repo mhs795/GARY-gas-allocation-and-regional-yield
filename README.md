@@ -50,7 +50,7 @@ The first run will take 2–3 minutes while dependencies install. After that, op
 2. Optionally switch on **Gas reservation** and pick the share of LNG exports to reserve (5/10/20/30%),
    and/or **Price-responsive demand**
 2b. Optionally enter **Data centre gas demand** in PJ/yr for NSW and VIC and set the year it starts
-2c. Optionally switch on **LNG netback pricing (ACIL Allen)** to price exports and imports off the international market. With it on, **Global LNG Market** selects a netback price path rather than scaling export volume
+2c. **LNG netback pricing (ACIL Allen)** is **on by default** — exports and imports are priced off the international market, and **Global LNG Market** selects a netback price path rather than scaling export volume. Switch it off to revert to must-serve exports (see the warning under [LNG netback price formation](#lng-netback-price-formation-acil-allen-methodology))
 2d. With a reservation on, **Respect LNG foundation contracts** decides whether it may only take uncontracted export gas (capped at 7%) or may break take-or-pay SPAs
 2e. Optionally switch on **GSOO expansions only** to restrict the capacity model to the expansions AEMO counts as committed in the 2026 GSOO/VGPR, dropping every pre-FID and proposed candidate — see [Network expansion candidates](#network-expansion-candidates)
 3. Click **Run Scenario** to solve one combination
@@ -590,10 +590,14 @@ flowchart LR
     style N6 fill:#6e7781,color:#fff
 ```
 
-The switch is **off by default**, so the must-serve case stays the comparison
-baseline and every cached scenario keeps its key.
+The switch is **on by default** (`netback_pricing_default` on the Parameters
+sheet). This is ACIL Allen's own methodology — the one behind the 2026 GSOO — and
+the only mode in which an international price disciplines domestic prices. It is
+also the mode that avoids the must-serve artefact described below. A netback run
+still carries the `_Netback` key segment either way, so netback and must-serve
+scenarios never collide in the cache.
 
-**Off** (the default): the three Queensland trains are ordinary must-serve demand
+**Off**: the three Queensland trains are ordinary must-serve demand
 nodes. Their volume is taken at any price, unserved export is penalised at VOLL
 like lost household load, and no export price enters the model anywhere. Exports
 can never lose to a domestic buyer.
