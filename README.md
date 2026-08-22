@@ -52,6 +52,7 @@ The first run will take 2–3 minutes while dependencies install. After that, op
 2b. Optionally enter **Data centre gas demand** in PJ/yr for NSW and VIC and set the year it starts
 2c. Optionally switch on **LNG netback pricing (ACIL Allen)** to price exports and imports off the international market. With it on, **Global LNG Market** selects a netback price path rather than scaling export volume
 2d. With a reservation on, **Respect LNG foundation contracts** decides whether it may only take uncontracted export gas (capped at 7%) or may break take-or-pay SPAs
+2e. Optionally switch on **GSOO expansions only** to restrict the capacity model to the expansions AEMO counts as committed in the 2026 GSOO/VGPR, dropping every pre-FID and proposed candidate — see [Network expansion candidates](#network-expansion-candidates)
 3. Click **Run Scenario** to solve one combination
 4. Click **Run Scenarios** to pre-calculate **every combination** — all 3 baselines × 3 Winter × 3 LNG = 27 scenarios, plus the SA dunkelflaute case
 5. Click **Run Reservation Scenarios** to sweep **every reservation level × every GSOO baseline** — 5 levels (0/5/10/20/30%) × 3 baselines = 15 runs — at the Winter and LNG levels currently selected. This button sweeps the baseline dropdown and the reservation toggle itself, so both are ignored while it runs; every other sidebar setting is honoured. Each baseline gets its own 0% run, because a reservation is only readable against the same case without one
@@ -79,6 +80,8 @@ Sweeps run several scenarios at once, one process each — see
 | `src/results_io.py` | Compressed, column-oriented scenario-results cache |
 | `src/regenerate_data.py` | One-button rebuild of all derived data from source |
 | `src/build_*.py` | GSOO/GBB demand-build pipeline (see below) |
+| `src/data/gary_parameters.xlsx` | Every model parameter (scalars, levers, price anchors) |
+| `src/data/expansion_options.csv` | Network expansion candidates, tagged GSOO / market |
 | `src/data/` | Network nodes, pipelines, supply, demand, contracts |
 | `requirements.txt` | Python dependencies |
 
@@ -279,9 +282,25 @@ which the export cap never did, but it cannot put it where the shortage is.
 > not a welfare measure. The dashboard relabels the KPI **System Cost (served gas
 > only)** and shows **Gas Reserved** with the percentage actually taken up.
 
-## Inputs workbook
+## Where inputs live
 
-**Every model parameter lives on a sheet in `src/data/gary_inputs.xlsx`**, not as a
+GARY's inputs are split by **kind**, not lumped into one file. Three groups:
+
+| Group | Where | What it is |
+|---|---|---|
+| **Parameters** | `src/data/gary_parameters.xlsx` | scalars and short lists an analyst tunes — VOLL, strikes, discount rate, scenario levers, ACIL Allen price anchors |
+| **Structure** | committed CSVs in `src/data/` | the network itself — `nodes.csv`, `arcs.csv`, `supply.csv`, `expansion_options.csv`, `contracts.csv`, `demand_profiles.csv` — plus the raw `GasBB*.CSV` and GSOO workbooks the generators read |
+| **Derived** | generated CSVs in `src/data/` | everything `regenerate_data.py` writes (`demand_*.csv`, `curtailment_params.csv`, `gpg_raise_blocks.csv`, `lng_prices.csv`). Gitignored; never hand-edit |
+
+The split is deliberate. A parameter is a *value*, and one place to set it beats
+hunting through modules. A node, an arc or an expansion candidate is a *row* — with
+a name, a capacity, a cost and a source citation — and rows diff, review and cite
+far better as plain text than as spreadsheet cells. So the workbook is named for
+what it actually holds: parameters, not "all inputs".
+
+### The parameters workbook
+
+**Every model parameter lives on a sheet in `src/data/gary_parameters.xlsx`**, not as a
 constant in a module, so a parameter can be changed, reviewed and diffed in one
 place without touching code. It is a **committed source input** — it is not
 generated, and `regenerate_data.py` never rewrites it.
@@ -299,13 +318,142 @@ parameter name silently returns the default rather than raising. That is what
 `--check` is for:
 
 ```bash
-python src/build_inputs_workbook.py --check   # list parameters the workbook lacks
-python src/build_inputs_workbook.py           # create it on a fresh clone
+python src/build_parameters_workbook.py --check   # list parameters the workbook lacks
+python src/build_parameters_workbook.py           # create it on a fresh clone
 ```
 
 The create path **refuses to overwrite an existing workbook** without `--force`;
 regenerating it would discard hand edits. The workbook is read once and cached, so
 edits take effect on restart, not mid-run.
+
+## Network expansion candidates
+
+`src/data/expansion_options.csv` is the menu the capacity layer chooses from. Each
+row is a real project with a public source; the `Source` column records whether
+AEMO counts it in the **2026 GSOO / Victorian Gas Planning Report Update** as
+*committed*, or whether it came from GARY's own market scan and sits outside that
+boundary (pre-FID, proposed, or committed after the GSOO's cut-off).
+
+Nothing here is a placeholder. Where a figure is not public it is labelled as
+GARY's own in the row's `Note` and in the table below — the same discipline the
+netback deduction and the foundation share follow.
+
+### In the GSOO (committed)
+
+| Project | GARY target | Capacity | CapEx | Date | Source |
+|---|---|---|---|---|---|
+| `ECGG_3A_SWQP` | `SWQP_Rev` | +58 TJ/d | $141m † | Winter 2028 | APA ECGG Stage 3A, FID Feb 2026 |
+| `ECGG_3A_MSP` | `MSP` | +10 TJ/d | $24m † | Winter 2028 | APA ECGG Stage 3A |
+| `ECGG_3A_Culcairn` | `VNI_Rev` | +39 TJ/d | $95m † | Winter 2028 | APA ECGG Stage 3A, Young–Culcairn lateral |
+| `MSEP_Conversion` | `MSP` | +22 TJ/d | $25m | Winter 2026 | Moomba–Sydney Ethane Pipeline converted to gas; NSW approval Oct 2025 |
+| `EGP_Reversal` | `EGP_Rev` **(new arc)** | +200 TJ/d **south** | $220m ‡ | Winter 2026 | Jemena EGP reversal stage 1 |
+| `SWP_Compression` | `SWP` | +45 TJ/d | $213m | Winter 2029 | APA rule 80; Irrewillipe + Stonehaven + Winchelsea; Iona injection 570→615 TJ/d; AER approved 2026 |
+
+† The three Stage 3A legs share one published $260m. GARY splits it pro-rata by
+capacity — the split is GARY's own, the total is APA's.
+‡ Not public. GARY's own, at the MSEP conversion unit rate ($1.11m per TJ/d).
+
+**A boundary case worth knowing about.** `SWP_Compression` was *not* committed in the
+March 2026 GSOO/VGPR — AEMO's text says so explicitly — but the AER approved the
+$213m spend afterwards. GARY tags it `GSOO` because it is now committed. It is the
+clearest illustration of why the toggle exists: the GSOO's committed set is a
+snapshot with a cut-off, not a standing fact.
+
+### Outside the GSOO (GARY's market scan)
+
+| Project | GARY target | Capacity | CapEx | Date | Source |
+|---|---|---|---|---|---|
+| `Bulloo_Interlink` | `Bulloo` **(new arc)** | 800 TJ/d N→S | $220m | End 2028, pre-FID | APA ECGG Stage 3B; new SWQP→MSP link, ~240 km shorter corridor; line pipe purchased |
+| `ECGG_VTS_Expansion` | `VNI_Rev` | +294 TJ/d (+84%) | $714m ‡ | Winter 2029 | APA ECGG future stage; MSP+VTS to 350 TJ/d Young→Wollert |
+| `SWP_Looping` | `SWP` | +45 TJ/d | $340m ‡ | 2029 | APA's alternative to `SWP_Compression`: 88 km of looping; more linepack. **Mutually exclusive** with it |
+| `Viva_Geelong_FSRU` | `Geelong` **(new node)** | 750 TJ/d | $1.0bn ‡ | Winter 2029, FID H2 2026 | Viva Energy Gas Terminal, Corio Bay; EPBC approval Apr 2026. AEMO: a Geelong terminal lifts total SWP capacity to ~770 TJ/d |
+| `Vopak_Victoria_FSRU` | `Geelong` | 750 TJ/d ‡ | $1.0bn ‡ | Pre-winter 2029 | Vopak Victoria Energy Terminal, Port Phillip Bay; FSRU secured Sep 2025. **Mutually exclusive** with Viva — AEMO states the two behave similarly for the DTS |
+| `Golden_Beach` | `Gippsland` | 375 TJ/d | $600m ‡ | Late 2029, FID H2 2026 | GB Energy Golden Beach Energy Storage; 125 TJ/d production late 2028 → 300 → 375 TJ/d; 42 PJ store |
+| `Outer_Harbor_LNG` | `Adelaide` **(new supply)** | 422 TJ/d | $900m ‡ | Winter 2028 | AG&P Outer Harbor FSRU, Port Adelaide; 400 mmscfd. ~90 of its ~110 PJ/yr is aimed at Victoria (60 PJ to Iona + 30 PJ to the Port Campbell pipeline) |
+| `SEA_Gas_Reversal` | `SEA_Gas_Rev` **(new arc)** | 300 TJ/d | $150m ‡ | With Outer Harbor | SEA Gas compression + reverse flow on the Port Campbell–Adelaide pipeline, to move Outer Harbor gas east |
+| `Port_Kembla_Terminal` | `Port_Kembla` | 500 TJ/d | $250m | ≥2027 | Squadron Energy PKET; mechanically complete, FSRU redeployed to Egypt |
+| `Beetaloo_Dev` | `Beetaloo` | 450 TJ/d | $900m | Proposed | Beetaloo development. Corridor-limited: the NGP is only 90 TJ/d until APA's proposed North East Australia Pipeline exists |
+
+‡ Not public — GARY's own, derived as stated in the row's `Note`.
+
+### Four new arcs and one new node
+
+Three of the strongest southbound candidates had **no path in GARY at all** before
+this work, which meant they could not be tested even in principle:
+
+| Added | Why |
+|---|---|
+| `EGP_Rev` (Sydney→Gippsland) | `EGP` was one-way north. A committed 200 TJ/d southbound path could not be represented |
+| `SEA_Gas_Rev` (Adelaide→Melbourne) | `SEA_Gas` was one-way west. An Adelaide FSRU backfilling Victoria had nowhere to flow |
+| `Bulloo` (Surat→Moomba) | The Bulloo Interlink is a *new* route, not extra capacity on an existing one. Cost 0.25 vs `SWQP_Rev`'s 0.30 reflects the ~240 km shorter haul — GARY's own |
+| `GEE2MEL` + node `Geelong` | A Geelong FSRU lands on the Lara–Brooklyn corridor, not at Iona, so it needed its own node and lateral rather than being folded into `SWP` |
+
+Reversal arcs carry base capacity 0 and exist only if their project is built, so
+none of them changes a run in which the project is not selected.
+
+### Mutual exclusion
+
+Rival projects that deliver the **same** capacity share a `Group` and at most one
+may be built (`build_group_once`, enforced in both solve stages):
+
+- `SWP_Expansion` — compression *or* looping, two routes to one 615 TJ/d Iona limit
+- `Geelong_FSRU` — Viva *or* Vopak, two FSRUs for one landing point
+
+Without this the solver takes both and books the capacity twice.
+
+### The GSOO-only toggle
+
+Sidebar switch **GSOO expansions only**, CLI `--gsoo-expansions-only`, key segment
+`_GSOOExp`. Off by default, so a plain run sees the whole market. On, the capacity
+layer may only build rows tagged `Source=GSOO`.
+
+```bash
+python src/solve.py --winter High --lng Medium                          # all candidates
+python src/solve.py --winter High --lng Medium --gsoo-expansions-only   # committed only
+```
+
+Filtering happens once in `solve.filter_expansions`, before either stage runs, so
+the investment and dispatch layers are always offered the identical menu. The
+default lives on the `Parameters` sheet as `gsoo_expansions_only`, and the label
+that counts as "in the GSOO" is `expansion_source_gsoo` — so neither is hardcoded.
+
+On stressed 2030-horizon Step Change / Winter High / LNG Medium the two settings
+diverge as expected: the committed-only run builds `ECGG_3A_MSP`, `MSEP_Conversion`
+and `SWP_Compression`, while the full set adds `EGP_Reversal`, `SEA_Gas_Reversal`
+and `Port_Kembla_Terminal`.
+
+### What was deliberately left out
+
+| Candidate | Why not |
+|---|---|
+| **MSP off-peak expansion** (+80–120 TJ/d, $15m, committed) | Summer only. GARY has no seasonal arc capacity, so entering it would inflate *winter* capacity — the one thing that matters here |
+| **Riverina Storage Pipeline** | Its transport benefit is the same 350 TJ/d Culcairn target already carried by `ECGG_VTS_Expansion`; entering both would double-count |
+| **Iona HUGS Phase 1 / HUGS2** | Storage, held as a node attribute (`Iona` `MaxWithdrawal` is already 570 TJ/d), not an arc or terminal |
+| **Narrabri + Hunter Gas Pipeline** | NSW supply. `Sydney` is a pure demand node in GARY, so there is nowhere to attach it without new supply topology |
+| **APA North East Australia Pipeline** | Early planning only; no public capacity or cost to source a row from |
+| **WAG pipeline conversion** | Complements a Geelong FSRU downstream of `GEE2MEL`; no separate capacity figure published |
+
+### A calibration discrepancy this surfaced
+
+GARY's `SWP` arc is **400 TJ/d**, but the real Iona injection limit is **570 TJ/d**
+today and 615 TJ/d after the committed expansion — and `nodes.csv` already gives
+`Iona` a `MaxWithdrawal` of 570. So the arc, not the storage node, is the binding
+constraint, and it binds ~30% tighter than reality. This is **not** changed here:
+it would move every baseline result, and it is a calibration decision separate from
+the expansion candidate set. Flagged for a decision.
+
+### Sources
+
+- AEMO, [*2026 Gas Statement of Opportunities*](https://www.aemo.com.au/-/media/files/gas/national_planning_and_forecasting/gsoo/2026/2026-gas-statement-of-opportunities.pdf), March 2026
+- AEMO, [*Victorian Gas Planning Report Update*](https://www.aemo.com.au/-/media/files/gas/national_planning_and_forecasting/vgpr/2026/2026-victorian-gas-planning-report-update.pdf), March 2026 — committed/potential project lists, SWP capacity, the ~770 TJ/d Geelong figure
+- APA, [East Coast Gas Grid Expansion Plan](https://www.apa.com.au/operations-and-projects/gas/gas-transmission/east-coast-grid-expansion-ecge) — Stage 3A/3B capacities and costs
+- APA, [AER approval of the $213m South West Pipeline expansion](https://www.apa.com.au/news/asx-and-media-releases/apa-welcomes-aer-decision-to-approve-213-million-expansion-of-south-west-pipeline-in-victoria)
+- APA, [Bulloo Interlink Pipeline project](https://www.apa.com.au/operations-and-projects/gas/gas-transmission/bulloo-interlink-pipeline-project)
+- Viva Energy, [federal environmental approval for the Geelong gas terminal](https://www.vivaenergy.com.au/media/news/2026/viva-energy-s-proposed-gas-terminal-receives-federal-environmental-approval)
+- Resources Victoria, [Golden Beach Energy Storage Project](https://resources.vic.gov.au/landholders-and-community/key-site-updates/golden-beach-energy-storage-project)
+- Lochard Energy, [next phase of Iona expansion](https://www.lochardenergy.com.au/lochard-energy-plans-next-phase-of-expansion-to-strengthen-victorias-energy-security/)
+- AG&P LNG / Venice Energy, [Outer Harbor LNG Project](https://veniceenergy.com/outer-harbor-lng-project/)
+- Squadron Energy, [Port Kembla Energy Terminal](https://squadronenergy.com/news/port-kembla-energy-terminal-ready-to-supply-gas-to-australias-eastern-states/)
 
 ## LNG netback price formation (ACIL Allen methodology)
 

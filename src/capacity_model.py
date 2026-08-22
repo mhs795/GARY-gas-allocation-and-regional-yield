@@ -113,7 +113,7 @@ class CapacityExpansionModel:
         self.nodes, self.arcs, self.supply, self.expansion = nodes_df, arcs_df, supply_df, expansion_df
         self.years = list(years)
         self.rep = rep                      # {year: [rep-day dicts]}
-        # Defaults come from the inputs workbook, not from the signature, so the
+        # Defaults come from the parameters workbook, not from the signature, so the
         # workbook stays the single place a parameter is set.
         self.r = P.get('discount_rate_default', 0.07) if discount_rate is None else discount_rate
         self.strike_gpg = P.get('strike_gpg_default', 22.0) if strike_gpg is None else strike_gpg
@@ -258,6 +258,22 @@ class CapacityExpansionModel:
 
         m.build_once = pyo.Constraint(m.Expansion, rule=lambda m, e: sum(m.build[e, y] for y in Y) <= 1)
 
+        # Rival projects that deliver the SAME capacity cannot both be built.
+        # APA's SWP compression and looping options are two ways to reach the one
+        # 615 TJ/d Iona injection limit, and the Viva and Vopak terminals are two
+        # FSRUs for one Geelong landing point -- without this the solver would take
+        # both and book the capacity twice. Groups come from the Group column of
+        # expansion_options.csv; a blank Group means the project stands alone.
+        groups = {}
+        for e in m.Expansion:
+            g = exp_data[e].get('Group')
+            if isinstance(g, str) and g.strip():
+                groups.setdefault(g.strip(), []).append(e)
+        if groups:
+            m.ExpGroup = pyo.Set(initialize=sorted(groups))
+            m.build_group_once = pyo.Constraint(m.ExpGroup, rule=lambda m, g:
+                sum(m.build[e, y] for e in groups[g] for y in Y) <= 1)
+
         # can't build terminals before terminal_earliest
         for e in m.Expansion:
             if exp_data[e]['Type'] == 'Terminal':
@@ -347,7 +363,16 @@ class CapacityExpansionModel:
             cap = supply_dict[node, is_pot]['Capacity']
             if is_pot:
                 rel = [e for e in m.Expansion if exp_data[e]['Type'] == 'Terminal' and exp_data[e]['Target'] == node]
-                return m.production[node, is_pot, y, i] <= cap * active(rel[0], y) if rel else m.production[node, is_pot, y, i] == 0
+                # SUM over the relevant terminals, not just the first. Two rival
+                # projects can front the same node -- Viva and Vopak both land at
+                # Geelong -- and taking rel[0] would gate the node on whichever
+                # happened to be listed first. Each terminal brings its OWN
+                # NewCapacity, so a node's ceiling is set by what actually got
+                # built; the mutual-exclusion Group stops rivals stacking.
+                if not rel:
+                    return m.production[node, is_pot, y, i] == 0
+                return m.production[node, is_pot, y, i] <= pyo.quicksum(
+                    active(e, y) * exp_data[e]['NewCapacity'] for e in rel)
             declined = cap * ((1 + supply_dict[node, is_pot].get('DeclineRate', 0)) ** (y - 2025))
             # Reserved gas is a zero-cost slice of the same field, not extra gas.
             if node in self.lng_source:

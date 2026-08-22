@@ -65,7 +65,7 @@ guessing at it would put a number on this output that looks like ACIL Allen's an
 is not. These prices are therefore ACIL Allen's *mechanical* layer only, and will
 sit below their published forecasts wherever that overlay adds to them.
 
-The weights live on the Segment_Weights sheet of data/gary_inputs.xlsx (mirrored
+The weights live on the Segment_Weights sheet of data/gary_parameters.xlsx (mirrored
 in data/acil_segment_weights.csv) so they can be moved without editing this
 module.
 """
@@ -92,7 +92,7 @@ DEFAULT_WEIGHTS = {
 def load_weights(data_dir=DATA):
     """Segment weights as {segment: {contract, spot, premium}}.
 
-    From the Segment_Weights sheet of the inputs workbook, falling back to the
+    From the Segment_Weights sheet of the parameters workbook, falling back to the
     plain-text CSV mirror and then to DEFAULT_WEIGHTS.
     """
     df = P.sheet('Segment_Weights')

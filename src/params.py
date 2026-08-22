@@ -1,11 +1,29 @@
 """
-Single source of truth for GARY's model parameters: data/gary_inputs.xlsx.
+Single source of truth for GARY's scalar PARAMETERS: data/gary_parameters.xlsx.
 
-Every economic and structural parameter the model uses lives on a sheet in that
-workbook rather than as a constant in a module, so a parameter can be changed,
-reviewed and diffed in one place without touching code. The workbook is a
-**committed source input** — it is not generated and `regenerate_data.py` does not
-rewrite it.
+This workbook holds parameters — the numbers and short lists an analyst tunes. It
+is deliberately NOT "all of GARY's inputs": the network itself is structural data
+and stays in CSVs, because a node, an arc or an expansion candidate is a ROW in a
+table, not a value in a cell, and rows are far easier to diff, review and source
+one-per-line in plain text.
+
+GARY's inputs therefore live in three places, by kind:
+
+  data/gary_parameters.xlsx    PARAMETERS — scalars, levers, price anchors,
+                               segment weights. Read only through this module.
+  data/*.csv (committed)       STRUCTURE — nodes.csv, arcs.csv, supply.csv,
+                               expansion_options.csv, contracts.csv,
+                               demand_profiles.csv, plus the raw GasBB*.CSV and
+                               GSOO workbooks the generators read.
+  data/*.csv (generated)       DERIVED series written by regenerate_data.py
+                               (demand_*.csv, curtailment_params.csv,
+                               gpg_raise_blocks.csv, lng_prices.csv, ...).
+                               Gitignored — never edit these by hand.
+
+Anything in the first group is set here rather than as a constant in a module, so
+a parameter can be changed, reviewed and diffed in one place without touching
+code. The workbook is a **committed source input** — it is not generated and
+`regenerate_data.py` does not rewrite it.
 
 Sheets
 ------
@@ -25,7 +43,7 @@ Every accessor takes a default and uses it when the workbook, sheet or row is
 missing. That is what lets a clone without the workbook still run, and it means a
 typo in a parameter name silently returns the default rather than crashing — so
 ``check()`` exists to list what a caller asked for that the workbook did not have,
-and ``build_inputs_workbook.py --check`` runs it.
+and ``build_parameters_workbook.py --check`` runs it.
 
 The workbook is read once and cached. Editing it while the dashboard is running
 therefore has no effect until restart, which is deliberate: a scenario solved
@@ -37,7 +55,7 @@ import threading
 import pandas as pd
 
 DATA = os.path.join(os.path.dirname(__file__), "data")
-WORKBOOK = "gary_inputs.xlsx"
+WORKBOOK = "gary_parameters.xlsx"
 
 _lock = threading.Lock()
 _cache = {}

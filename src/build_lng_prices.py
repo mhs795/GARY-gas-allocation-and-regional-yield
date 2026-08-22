@@ -66,7 +66,7 @@ avoidable-cost framework and which obtains the numbers directly from the
 Queensland LNG producers. The default here, A$2.87/GJ, is the midpoint of the
 publicly discussed US$1.5-2.5/mmbtu range converted at the same FX and heat
 content ACIL Allen use. **It is a choice, not a source**, it lives on the
-Parameters sheet of data/gary_inputs.xlsx precisely so it can be moved, and it is
+Parameters sheet of data/gary_parameters.xlsx precisely so it can be moved, and it is
 the first number to test if a netback result matters.
 
 Note that GARY does NOT need the Wallumbilla-to-Gladstone pipeline leg the ACCC
@@ -123,7 +123,7 @@ PUBLISHED_INJECTION = {
 
 
 def load_params(data_dir=DATA):
-    """Scalar assumptions, from the Parameters sheet of the inputs workbook.
+    """Scalar assumptions, from the Parameters sheet of the parameters workbook.
 
     Falls back to acil_lng_params.csv -- the plain-text mirror of the same
     numbers -- if the workbook is absent, so a clone without it still builds.

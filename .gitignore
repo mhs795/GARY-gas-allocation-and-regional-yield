@@ -53,3 +53,6 @@ src/data/gsoo/
 # Local desktop launcher (contains machine-specific absolute paths)
 GARY.desktop
 src/data/lng_prices.csv
+
+# Results-cache backups (generated; the 44MB one nearly got committed once)
+src/data/precalculated_results.pkl*

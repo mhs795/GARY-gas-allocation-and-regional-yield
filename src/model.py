@@ -119,7 +119,12 @@ LNG_PRICES_FILE = "lng_prices.csv"
 
 # Regasification terminals: potential supply whose cost is an international price
 # (Asian LNG + shipping + regas), not a field development cost.
-IMPORT_NODES = P.get_list('import_nodes', ['Port_Kembla'])
+IMPORT_NODES = P.get_list('import_nodes', ['Port_Kembla', 'Geelong', 'Adelaide'])
+
+# Earliest year an import/field terminal may be commissioned. The capacity layer
+# reads the same parameter (capacity_model.py), so the two stages cannot disagree
+# about when a terminal is allowed to exist.
+TERMINAL_EARLIEST = P.get_int('terminal_earliest', 2028)
 
 
 def lng_train_nameplate():
@@ -148,7 +153,7 @@ def lng_foundation_share():
 
 
 def load_params(data_dir=None):
-    """Scalar ACIL Allen assumptions, from the inputs workbook.
+    """Scalar ACIL Allen assumptions, from the parameters workbook.
 
     ``data_dir`` is accepted and ignored: the workbook is the source of truth and
     lives at a fixed path (see params.py). The signature is kept so callers that
@@ -994,7 +999,13 @@ class GasMarketModel:
             cap = supply_dict[node, is_pot]['Capacity']
             if is_pot:
                 rel_exp = [e for e in m.Expansion if exp_data[e]['Type'] == 'Terminal' and exp_data[e]['Target'] == node]
-                return m.production[node, is_pot, t] <= cap * m.build[rel_exp[0]] if rel_exp else m.production[node, is_pot, t] == 0
+                # Sum over every terminal fronting this node rather than taking the
+                # first -- see the matching note in capacity_model.py. Rival FSRUs
+                # at one landing point are kept from stacking by build_group_once.
+                if not rel_exp:
+                    return m.production[node, is_pot, t] == 0
+                return m.production[node, is_pot, t] <= sum(
+                    m.build[e] * exp_data[e]['NewCapacity'] for e in rel_exp)
             declined = cap * ((1 + supply_dict[node, is_pot].get('DeclineRate', 0)) ** (self.year - 2025))
             # The reserved tranche is a slice of the SAME field, priced at zero --
             # not extra gas. Both draw on one physical deliverability limit.
@@ -1051,9 +1062,26 @@ class GasMarketModel:
                 m.build[e].fix(1 if e in self.builds_fixed else 0)
         else:
             for e in self.already_built: m.build[e].fix(1)
-            if self.year < 2028:
+            if self.year < TERMINAL_EARLIEST:
+                # Test the project's TYPE, not its name. This used to read
+                # `'Terminal' in e`, which only ever matched Port_Kembla_Terminal
+                # and silently let every other import/field terminal be built from
+                # 2025 -- harmless while Beetaloo_Dev was the only other one, but
+                # not once the candidate set carries four more.
                 for e in m.Expansion:
-                    if 'Terminal' in e: m.build[e].fix(0)
+                    if exp_data[e]['Type'] == 'Terminal': m.build[e].fix(0)
+            # Rival projects delivering the same capacity cannot both be built --
+            # see build_group_once in capacity_model.py. Only needed on the free
+            # (myopic) path; the two-stage path fixes builds from the schedule.
+            groups = {}
+            for e in m.Expansion:
+                g = exp_data[e].get('Group')
+                if isinstance(g, str) and g.strip():
+                    groups.setdefault(g.strip(), []).append(e)
+            if groups:
+                m.ExpGroup = pyo.Set(initialize=sorted(groups))
+                m.build_group_once = pyo.Constraint(m.ExpGroup, rule=lambda m, g:
+                    sum(m.build[e] for e in groups[g]) <= 1)
 
     def solve(self, mip_gap=0.005):
         m = self.model

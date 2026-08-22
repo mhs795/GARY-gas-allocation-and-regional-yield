@@ -36,6 +36,7 @@ COORDS = {
     'Brisbane': [-27.47, 153.02], 'Gladstone': [-23.84, 151.26], 'APLNG': [-23.76, 151.20],
     'GLNG': [-23.80, 151.25], 'QCLNG': [-23.84, 151.30], 'Port_Kembla': [-34.45, 150.9],
     'Iona': [-38.55, 142.9], 'Silver_Springs': [-27.4, 149.2],
+    'Geelong': [-38.10, 144.42],
 }
 
 # arc -> (From, To, OSM matcher). Matcher takes an OSM way's tags dict -> bool.

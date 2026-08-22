@@ -148,6 +148,7 @@ COORDS = {
     'APLNG':          [-23.76, 151.20], 'GLNG':          [-23.80, 151.25],
     'QCLNG':          [-23.84, 151.30], 'Port_Kembla':   [-34.45, 150.9],
     'Iona':           [-38.55, 142.9],  'Silver_Springs':[-27.4,  149.2],
+    'Geelong':        [-38.10, 144.42],
     # Northern Territory
     'Amadeus':        [-23.85, 132.30], 'Beetaloo':      [-16.30, 133.40],
     'Darwin':         [-12.46, 130.84], 'Tennant_Creek': [-19.65, 134.19],
@@ -170,6 +171,14 @@ ARC_WAYPOINTS = {
     'QGP':      [[-27.15,149.07],[-26.55,149.30],[-26.13,149.96],[-25.40,150.05],[-24.95,150.08],[-24.57,149.98],[-24.41,150.50],[-24.00,150.90],[-23.87,151.10],[-23.84,151.26]],
     'Longford': [[-38.50,147.00],[-38.11,147.07],[-38.16,146.79],[-38.20,146.54],[-38.24,146.40],[-38.17,146.27],[-38.16,145.93],[-38.13,145.85],[-38.10,145.72],[-38.07,145.48],[-37.98,145.21],[-37.81,144.96]],
     'SS2Surat': [[-27.4,149.2],[-27.35,149.18],[-27.28,149.15],[-27.20,149.12],[-27.15,149.07]],
+    # --- Expansion candidates that are NEW routes, not reversals -------------
+    # Bulloo Interlink (APA ECGG Stage 3B): SWQP -> MSP direct across south-west
+    # Queensland via the Bulloo Shire (Thargomindah), ~240 km shorter than routing
+    # the same gas around through the existing SWQP/Moomba corner.
+    'Bulloo':  [[-27.15,149.07],[-27.35,148.20],[-27.55,147.20],[-27.75,146.00],[-27.90,144.90],[-27.99,143.82],[-28.05,142.60],[-28.08,141.40],[-28.10,140.20]],
+    # Geelong FSRU (Viva at Refinery Pier / Vopak in Port Phillip Bay) into the
+    # DTS via the Lara-Brooklyn corridor -- NOT via Iona and the SWP.
+    'GEE2MEL': [[-38.10,144.42],[-38.02,144.41],[-37.95,144.55],[-37.90,144.66],[-37.85,144.80],[-37.81,144.96]],
     # --- Northern Territory (Amadeus Basin to Darwin Pipeline + NGP; AEMO gas map v2021) ---
     # AGP: Mereenie (Amadeus Basin) -> Alice Springs -> N along the Stuart Hwy corridor
     # -> Tennant Creek -> Katherine -> Darwin.
@@ -191,7 +200,12 @@ try:
         ARC_WAYPOINTS.update(_json.load(_gf))
 except (OSError, ValueError):
     pass
-for _fwd, _rev in [('SWQP','SWQP_Rev'),('MSP','MSP_Rev'),('VNI','VNI_Rev'),('PK2SYD','SYD2PK'),('SS2Surat','Surat2SS'),('NGP','NGP_Rev')]:
+for _fwd, _rev in [('SWQP','SWQP_Rev'),('MSP','MSP_Rev'),('VNI','VNI_Rev'),('PK2SYD','SYD2PK'),
+                   ('SS2Surat','Surat2SS'),('NGP','NGP_Rev'),
+                   # Reversal candidates: Jemena's EGP stage 1 and SEA Gas's
+                   # Port Campbell-Adelaide reverse flow both run an existing
+                   # route backwards, so they inherit its real OSM geometry.
+                   ('EGP','EGP_Rev'),('SEA_Gas','SEA_Gas_Rev')]:
     if _rev not in ARC_WAYPOINTS and _fwd in ARC_WAYPOINTS:
         ARC_WAYPOINTS[_rev] = list(reversed(ARC_WAYPOINTS[_fwd]))
 
@@ -860,7 +874,7 @@ _LVL_SHORT = {'Low': 'L', 'Medium': 'M', 'High': 'H'}
 # _DC50N30V2030. Both readers below parse it with this one pattern.
 _DC_RE = r'_DC([\d.]+)N([\d.]+)V(\d{4})'
 # Which node each state's data centre load lands on. Mirrors
-# model.DATACENTRE_STATE_NODE, which reads the pair off the inputs workbook; this
+# model.DATACENTRE_STATE_NODE, which reads the pair off the parameters workbook; this
 # copy exists only to decode scenarios solved before the per-node split was saved.
 _DC_KEY_NODES = (('NSW', 'Sydney'), ('VIC', 'Melbourne'))
 
@@ -911,6 +925,8 @@ def short_key(k):
     dc = re.search(_DC_RE, k)
     if dc:
         parts.append(f'DC {dc.group(1)}/{dc.group(2)} PJ @{dc.group(3)}')
+    if '_GSOOExp' in k:
+        parts.append('GSOO exp')
     if '_Netback' in k:
         parts.append('Netback')
     if '_Elastic' in k:
@@ -936,6 +952,7 @@ def pretty_key(k):
                              f'{mo.group(2)} PJ VIC from {mo.group(3)}', rest)
     rest = (rest.replace('_Winter_', 'Winter ').replace('_LNG_', '  ·  LNG ')
                 .replace('_Dunkelflaute', '  ·  SA Dunkelflaute 2027')
+                .replace('_GSOOExp', '  ·  GSOO expansions only')
                 .replace('_Netback', '  ·  LNG netback pricing')
                 .replace('_Elastic', '  ·  Elastic demand')
                 .replace('_Myopic', '  ·  Myopic'))
@@ -1122,6 +1139,18 @@ sidebar = html.Div(className='md-sidebar', children=[
             dcc.Slider(id='dc-start-slider', min=2025, max=2050, step=1, value=2030,
                        marks={y: str(y) for y in range(2025, 2051, 5)},
                        tooltip={'placement': 'bottom', 'always_visible': True})),
+
+        dbc.Checklist(id='gsoo-exp-toggle',
+                      options=[{'label': ' GSOO expansions only', 'value': 'on'}],
+                      value=[], switch=True,
+                      style={'marginBottom': '2px', 'fontSize': '12px'}),
+        html.Div('Off: the capacity model may build any candidate in '
+                 'expansion_options.csv, including pre-FID projects from GARY\'s '
+                 'own market scan (Bulloo Interlink, the Geelong FSRUs, Golden '
+                 'Beach, Outer Harbor, the VTS expansion). On: only expansions '
+                 'AEMO counts as committed in the 2026 GSOO/VGPR.',
+                 style={'marginBottom': '16px', 'fontSize': '10px',
+                        'color': '#888', 'lineHeight': '1.35', 'paddingLeft': '38px'}),
 
         dbc.Checklist(id='netback-toggle',
                       options=[{'label': ' LNG netback pricing (ACIL Allen)', 'value': 'on'}],
@@ -1331,7 +1360,7 @@ def datacentre_spec(nsw_pj, vic_pj, start_year):
 
 def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
                  elastic=False, foresight=True, discount=0.07, datacentre=None,
-                 netback=False, respect_contracts=True):
+                 netback=False, respect_contracts=True, gsoo_exp=False):
     """Cache key for one scenario.
 
     Segment order is load-bearing — pretty_key parses it and the cached results on
@@ -1345,6 +1374,7 @@ def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
             + ((f'_Reserve{round(reservation * 100)}'
                 + ('' if respect_contracts else 'incl')) if reservation else '')
             + dc
+            + ('_GSOOExp' if gsoo_exp else '')
             + ('_Netback' if netback else '')
             + ('_Elastic' if elastic else '')
             + ('' if foresight else '_Myopic')
@@ -1497,6 +1527,7 @@ def show_tab(active):
     State('foresight-toggle', 'value'),
     State('elastic-toggle', 'value'),
     State('netback-toggle', 'value'),
+    State('gsoo-exp-toggle', 'value'),
     State('contracts-toggle', 'value'),
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
@@ -1515,7 +1546,7 @@ def show_tab(active):
     prevent_initial_call=True,
 )
 def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on, resv_i,
-                 discount, foresight_v, elastic_v, netback_v, contracts_v,
+                 discount, foresight_v, elastic_v, netback_v, gsoo_exp_v, contracts_v,
                  dc_nsw, dc_vic, dc_start, refresh):
     w, l = LEVELS[wi], LEVELS[li]
     baseline = baseline or 'StepChange'
@@ -1525,6 +1556,7 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
     elastic = 'on' in (elastic_v or [])
     dr = 0.07 if discount is None else float(discount)
     netback = 'on' in (netback_v or [])
+    gsoo_exp = 'on' in (gsoo_exp_v or [])
     respect_contracts = 'on' in (contracts_v or [])
     datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
     def _cb(yr, p):
@@ -1532,13 +1564,14 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
         set_progress((pct, f'Solving {yr}… {pct}%'))
     # Built before the solve so it can also title the terminal log.
     key = scenario_key(baseline, w, l, dunkelflaute, reservation, elastic, foresight, dr,
-                       datacentre, netback, respect_contracts)
+                       datacentre, netback, respect_contracts, gsoo_exp)
     result = solve_scenario(w, l, mip_gap=gap, callback=_cb,
                             baseline=baseline, dunkelflaute=dunkelflaute,
                             discount_rate=dr, foresight=foresight,
                             reservation=reservation, elastic_demand=elastic,
                             datacentre=datacentre, netback_pricing=netback,
                             respect_contracts=respect_contracts,
+                            gsoo_expansions_only=gsoo_exp,
                             title=pretty_key(key))
     data = load_results()
     data['all_scenarios'][key] = result
@@ -1597,6 +1630,7 @@ def _run_sweep(jobs, data, set_progress):
     State('reservation-toggle', 'value'),
     State('reservation-slider', 'value'),
     State('netback-toggle', 'value'),
+    State('gsoo-exp-toggle', 'value'),
     State('contracts-toggle', 'value'),
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
@@ -1615,7 +1649,7 @@ def _run_sweep(jobs, data, set_progress):
     prevent_initial_call=True,
 )
 def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
-              resv_on, resv_i, netback_v, contracts_v,
+              resv_on, resv_i, netback_v, gsoo_exp_v, contracts_v,
               dc_nsw, dc_vic, dc_start, refresh):
     # Every combination: all GSOO baselines x Winter x LNG (dunkelflaute
     # off) -> 27 runs, plus one Step Change + SA Dunkelflaute (2027) case at the
@@ -1632,6 +1666,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     # whole sweep is solved with it, under its own keys, alongside the plain runs.
     datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
     netback = 'on' in (netback_v or [])
+    gsoo_exp = 'on' in (gsoo_exp_v or [])
     respect_contracts = 'on' in (contracts_v or [])
     dr = 0.07 if discount is None else float(discount)
     combos = [(b['value'], w, l, False) for b in BASELINES for w in LEVELS for l in LEVELS]
@@ -1640,7 +1675,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     jobs = []
     for b, w, l, dunkel in combos:
         key = scenario_key(b, w, l, dunkel, reservation, False, foresight, dr, datacentre,
-                           netback, respect_contracts)
+                           netback, respect_contracts, gsoo_exp)
         # Skip already-computed base combos, but always recompute the dunkelflaute
         # case so edits to the event flow through on a re-run.
         if dunkel or key not in data['all_scenarios']:
@@ -1649,7 +1684,8 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
                               dunkelflaute=dunkel, discount_rate=dr,
                               foresight=foresight, reservation=reservation,
                               datacentre=datacentre, netback_pricing=netback,
-                              respect_contracts=respect_contracts)))
+                              respect_contracts=respect_contracts,
+                              gsoo_expansions_only=gsoo_exp)))
     _run_sweep(jobs, data, set_progress)
     resv_note = f' at {round(reservation * 100)}% reservation' if reservation else ''
     return (refresh or 0) + 1, f'✓  Batch complete — {len(combos)} scenarios (all baselines + SA dunkelflaute){resv_note}'
@@ -1669,6 +1705,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     State('foresight-toggle', 'value'),
     State('elastic-toggle', 'value'),
     State('netback-toggle', 'value'),
+    State('gsoo-exp-toggle', 'value'),
     State('contracts-toggle', 'value'),
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
@@ -1687,8 +1724,8 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     prevent_initial_call=True,
 )
 def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
-                          discount, foresight_v, elastic_v, netback_v, contracts_v,
-                          dc_nsw, dc_vic, dc_start, refresh):
+                          discount, foresight_v, elastic_v, netback_v, gsoo_exp_v,
+                          contracts_v, dc_nsw, dc_vic, dc_start, refresh):
     """Every reservation level x every GSOO baseline, at the selected Winter/LNG case.
 
     Two sidebar controls are deliberately ignored, because this button sweeps both
@@ -1706,6 +1743,7 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     foresight = 'on' in (foresight_v or [])
     elastic = 'on' in (elastic_v or [])
     netback = 'on' in (netback_v or [])
+    gsoo_exp = 'on' in (gsoo_exp_v or [])
     respect_contracts = 'on' in (contracts_v or [])
     datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
     dr = 0.07 if discount is None else float(discount)
@@ -1718,7 +1756,7 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     jobs = []
     for base, share in combos:
         key = scenario_key(base, w, l, dunkelflaute, share, elastic, foresight, dr,
-                           datacentre, netback, respect_contracts)
+                           datacentre, netback, respect_contracts, gsoo_exp)
         # Cached combinations are skipped, so a re-run after adding a level costs
         # one solve rather than the whole sweep. Clear Results to force a rebuild.
         if key not in data['all_scenarios']:
@@ -1728,7 +1766,8 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
                               foresight=foresight, reservation=share,
                               elastic_demand=elastic, datacentre=datacentre,
                               netback_pricing=netback,
-                              respect_contracts=respect_contracts)))
+                              respect_contracts=respect_contracts,
+                              gsoo_expansions_only=gsoo_exp)))
     _run_sweep(jobs, data, set_progress)
     shares = ' / '.join(f'{round(x * 100)}%' for x in levels)
     skipped = len(combos) - len(jobs)
@@ -2209,7 +2248,12 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
 
     if not df_active.empty:
         for _, row_t in df_active.iterrows():
-            exp_row = import_exp[import_exp['Target'] == row_t['Node']]
+            # Rival terminals can share a landing point (Viva and Vopak both front
+            # Geelong), so pick the one that was actually built rather than the
+            # first row for the node -- otherwise the tooltip names the loser.
+            _at_node = import_exp[import_exp['Target'] == row_t['Node']]
+            _built = _at_node[_at_node['Name'].isin(built_now)]
+            exp_row = _built if not _built.empty else _at_node
             e_cap = int(exp_row.iloc[0]['NewCapacity']) if not exp_row.empty else '?'
             e_capex = f"${exp_row.iloc[0]['CapEx']/1e6:,.0f}M" if not exp_row.empty else '?'
             proj_name = exp_row.iloc[0]['Name'] if not exp_row.empty else row_t['Node']
@@ -2254,9 +2298,21 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
             if row_e.empty:
                 continue
             e = row_e.iloc[0]
-            if e['Type'] == 'Terminal':
-                continue  # terminals rendered separately above
             target = e['Target']
+            if e['Type'] == 'Terminal':
+                # Import-node terminals get their own cyan anchor above. A terminal
+                # landing on a Supply or Demand node (Golden Beach at Gippsland,
+                # Outer Harbor at Adelaide) has no anchor there, so star the node --
+                # without this a built project is simply invisible on the map.
+                if target in set(n_df[n_df['Type'] == 'Import']['Node']) or target not in COORDS:
+                    continue
+                lat, lon = COORDS[target]
+                built_yr = builds_df[builds_df['Project'] == proj]['Year'].iloc[0] if not builds_df.empty else '?'
+                exp_lats.append(lat); exp_lons.append(lon)
+                exp_labels.append(proj.replace('_', ' '))
+                exp_tips.append(f"<b>✦ {proj}</b><br>Type: Terminal<br>Built: {built_yr}<br>"
+                                f"+{e['NewCapacity']} TJ/d<br>CapEx: ${e['CapEx']/1e6:,.0f}M")
+                continue
             arc_row_e = static_data['arcs'][static_data['arcs']['Name'] == target]
             if arc_row_e.empty:
                 continue

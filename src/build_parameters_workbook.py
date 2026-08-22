@@ -1,5 +1,5 @@
 """
-Create data/gary_inputs.xlsx, the single inputs workbook every parameter is read
+Create data/gary_parameters.xlsx, the single parameters workbook every parameter is read
 from (see params.py).
 
 This is a ONE-OFF SCAFFOLD, not part of regenerate_data.py. The workbook is a
@@ -23,7 +23,7 @@ import os
 import pandas as pd
 
 DATA = os.path.join(os.path.dirname(__file__), "data")
-WORKBOOK = os.path.join(DATA, "gary_inputs.xlsx")
+WORKBOOK = os.path.join(DATA, "gary_parameters.xlsx")
 
 # (Group, Parameter, Value, Unit, Source/Note)
 PARAMETERS = [
@@ -59,9 +59,10 @@ PARAMETERS = [
 
     ("Network roles", "lng_nodes", "APLNG,GLNG,QCLNG", "nodes",
      "East coast LNG export trains"),
-    ("Network roles", "import_nodes", "Port_Kembla", "nodes",
+    ("Network roles", "import_nodes", "Port_Kembla,Geelong,Adelaide", "nodes",
      "Regasification terminals: potential supply priced on an international price, "
-     "not a field development cost"),
+     "not a field development cost. Geelong = Viva/Vopak FSRU, Adelaide = AG&P "
+     "Outer Harbor (its gas reaches Victoria over SEA_Gas_Rev)"),
 
     ("Data centre demand", "datacentre_state_node", "NSW:Sydney,VIC:Melbourne",
      "state:node", "Where each state's data centre volume lands"),
@@ -73,6 +74,13 @@ PARAMETERS = [
     ("Capacity model", "terminal_earliest", 2028, "year",
      "Earliest build year for an LNG import terminal"),
     ("Capacity model", "capacity_base_year", 2025, "year", "Discounting base year"),
+    ("Capacity model", "gsoo_expansions_only", "FALSE", "boolean",
+     "Default for the GSOO-only expansion filter. FALSE = the capacity layer may "
+     "choose any candidate in expansion_options.csv; TRUE = only rows with "
+     "Source=GSOO, i.e. the committed set in AEMO's 2026 GSOO/VGPR. Overridden per "
+     "run by the dashboard toggle or --gsoo-expansions-only"),
+    ("Capacity model", "expansion_source_gsoo", "GSOO", "label",
+     "Value of the Source column in expansion_options.csv that counts as GSOO"),
 
     # --- ACIL Allen gas pricing methodology ------------------------------------
     ("ACIL Allen LNG price", "oil_link_fixed", 0.40, "US$/mmbtu",

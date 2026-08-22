@@ -1,7 +1,17 @@
-Name,Type,Target,NewCapacity,CapEx
-Port_Kembla_Terminal,Terminal,Port_Kembla,500,250000000
-VNI_Expansion,Pipeline,VNI,200,80000000
-EGP_Expansion,Pipeline,EGP,200,100000000
-MSP_Expansion,Pipeline,MSP,200,120000000
-SWQP_Expansion,Pipeline,SWQP,200,60000000
-Beetaloo_Dev,Terminal,Beetaloo,450,900000000
+Name,Type,Target,NewCapacity,CapEx,Source,Status,Group,Note
+ECGG_3A_SWQP,Pipeline,SWQP_Rev,58,141000000,GSOO,Committed,,APA ECGG Stage 3A compressor on the SWQP. FID Feb 2026; winter 2028. CapEx is GARY's pro-rata split of the published $260m across 3A's three legs by capacity.
+ECGG_3A_MSP,Pipeline,MSP,10,24000000,GSOO,Committed,,APA ECGG Stage 3A compressor on the MSP mainline. Same $260m pro-rata split.
+ECGG_3A_Culcairn,Pipeline,VNI_Rev,39,95000000,GSOO,Committed,,APA ECGG Stage 3A Young-Culcairn lateral. AEMO notes the 39 TJ/d is shared with southern NSW and Uranquinty so not all reaches the VIC DTS. Same $260m pro-rata split.
+MSEP_Conversion,Pipeline,MSP,22,25000000,GSOO,Committed,,Moomba-Sydney Ethane Pipeline converted to natural gas. NSW approval Oct 2025; commissioned pre-winter 2026. ~20 TJ/d to VIC or ~25 to Sydney; GARY takes the midpoint.
+EGP_Reversal,Pipeline,EGP_Rev,200,220000000,GSOO,Committed,,Jemena EGP reversal stage 1 - bi-directional flow up to 200 TJ/d SOUTH toward Victoria; pre-winter 2026. CapEx not public: GARY's own at the MSEP conversion unit rate ($1.11m/TJ-d).
+SWP_Compression,Pipeline,SWP,45,213000000,GSOO,Committed,SWP_Expansion,APA rule 80 - greenfield compressors at Irrewillipe and Stonehaven plus Winchelsea modification. Iona injection 570->615 TJ/d. AER approved $213m (+$31m early works) 2026; winter 2029.
+SWP_Looping,Pipeline,SWP,45,340000000,Market,Proposed,SWP_Expansion,APA's alternative to SWP_Compression - 88 km of SWP looping plus Winchelsea modification. Same 615 TJ/d but more linepack. APA says compression is ~40% cheaper than partial looping; GARY's CapEx = $213m/0.625.
+Bulloo_Interlink,Pipeline,Bulloo,800,220000000,Market,Pre-FID,,APA ECGG Stage 3B - new SWQP-to-MSP link shortening the north-south corridor by ~240 km. 800 TJ/d N->S. Line pipe purchased; targeted end 2028 subject to FID.
+ECGG_VTS_Expansion,Pipeline,VNI_Rev,294,714000000,Market,Proposed,,APA ECGG future stage - MSP+VTS to 350 TJ/d Young to Wollert (~84% increase). Winter 2029; not committed. CapEx not public: GARY's own at the ECGG Stage 3A unit rate ($2.43m/TJ-d).
+Viva_Geelong_FSRU,Terminal,Geelong,750,1000000000,Market,Pre-FID,Geelong_FSRU,Viva Energy Gas Terminal at Corio Bay. EPBC approval Apr 2026; FID H2 2026; operational winter 2029. 750 TJ/d peak / >120 PJ/yr. AEMO: a Geelong terminal lifts total SWP capacity to ~770 TJ/d. CapEx is GARY's own.
+Vopak_Victoria_FSRU,Terminal,Geelong,750,1000000000,Market,Pre-FID,Geelong_FSRU,Vopak Victoria Energy Terminal in Port Phillip Bay. FSRU secured Sep 2025; EES in progress; targeting pre-winter 2029. Capacity and CapEx are GARY's own - AEMO states the two Geelong terminals behave similarly for the DTS.
+Golden_Beach,Terminal,Gippsland,375,600000000,Market,Pre-FID,,GB Energy Golden Beach Energy Storage - production 125 TJ/d late 2028 then supply 300 TJ/d early 2029 rising to 375 TJ/d late 2029; 42 PJ store. FID targeted H2 2026. CapEx is GARY's own.
+Outer_Harbor_LNG,Terminal,Adelaide,422,900000000,Market,Pre-FID,,AG&P Outer Harbor FSRU at Port Adelaide - 400 mmscfd (~422 TJ/d). ~90 of its ~110 PJ/yr is aimed at Victoria (60 PJ to Iona + 30 PJ to the Port Campbell pipeline) via SEA Gas reverse flow. Commissioning late 2027 for winter 2028. CapEx is GARY's own.
+SEA_Gas_Reversal,Pipeline,SEA_Gas_Rev,300,150000000,Market,Proposed,,SEA Gas compression and reverse-flow capacity on the Port Campbell-Adelaide pipeline to move Outer Harbor gas east toward Victoria. Capacity mirrors the forward SEA_Gas arc; CapEx is GARY's own.
+Port_Kembla_Terminal,Terminal,Port_Kembla,500,250000000,Market,Built,,Squadron Energy PKET. Mechanically complete but not operating - contracted FSRU redeployed to Egypt; start no earlier than 2027.
+Beetaloo_Dev,Terminal,Beetaloo,450,900000000,Market,Proposed,,Beetaloo development. Note the NGP is only 90 TJ/d so southbound Beetaloo volume is corridor-limited until APA's proposed North East Australia Pipeline exists.

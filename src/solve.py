@@ -20,6 +20,31 @@ def _lever(lever, level, default):
 HORIZON_START = P.get_int('horizon_start', 2025)
 HORIZON_END = P.get_int('horizon_end', 2050)
 
+# Which Source value in expansion_options.csv counts as "in the GSOO".
+GSOO_SOURCE = P.get_str('expansion_source_gsoo', 'GSOO')
+GSOO_ONLY_DEFAULT = str(P.get_str('gsoo_expansions_only', 'FALSE')).strip().upper() in ('TRUE', '1', 'YES')
+
+
+def filter_expansions(expansion, gsoo_only):
+    """The candidate set the capacity layer is allowed to choose from.
+
+    ``expansion_options.csv`` carries every pipeline, reversal and terminal the
+    market has on the table, each tagged in a ``Source`` column: ``GSOO`` for the
+    committed set AEMO counts in the 2026 GSOO/VGPR supply adequacy assessment,
+    ``Market`` for everything found by GARY's own market scan that sits outside
+    that boundary -- pre-FID, proposed, or committed after the GSOO's cut-off.
+
+    Filtering here rather than inside either model layer is deliberate: the two
+    stages must be offered exactly the same menu, or the dispatch layer would be
+    handed a build schedule containing a project it does not know about.
+
+    A file with no ``Source`` column (a clone predating the market scan) is
+    returned untouched, so the filter can never silently empty the candidate set.
+    """
+    if not gsoo_only or 'Source' not in expansion.columns:
+        return expansion
+    return expansion[expansion['Source'].astype(str).str.strip() == GSOO_SOURCE].reset_index(drop=True)
+
 
 def lng_price_scenario(lng_level, baseline):
     """Which ACIL Allen price path the netback is struck off, for an LNG level.
@@ -73,7 +98,7 @@ def load_data(baseline="StepChange"):
 
 def get_lng_mult(scenario, year):
     """LNG export demand multiplier for one year. Levels come from the
-    Scenario_Levers sheet of the inputs workbook (see params.py); the piecewise
+    Scenario_Levers sheet of the parameters workbook (see params.py); the piecewise
     SHAPE stays here because it is model structure, not a parameter."""
     HIGH_LNG_START = 2026
     HIGH_LNG_END = 2030
@@ -126,7 +151,7 @@ BASELINE_LABELS = {'StepChange': 'Step Change', 'Accelerated': 'Accelerated Tran
 
 def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservation=0.0,
               elastic_demand=False, foresight=True, datacentre=None,
-              netback_pricing=False):
+              netback_pricing=False, gsoo_expansions_only=False):
     """One-line description of a scenario, for the terminal header."""
     bits = [BASELINE_LABELS.get(baseline, baseline), f"Winter {winter}", f"LNG {lng}"]
     if dunkelflaute:
@@ -138,6 +163,8 @@ def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservatio
                     f"{datacentre.get('VIC', 0):g} PJ VIC from {datacentre['start_year']}")
     if netback_pricing:
         bits.append("LNG netback pricing")
+    if gsoo_expansions_only:
+        bits.append("GSOO expansions only")
     if elastic_demand:
         bits.append("elastic demand")
     if not foresight:
@@ -149,7 +176,8 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
                    baseline="StepChange", dunkelflaute=False, discount_rate=0.07,
                    foresight=True, reservation=0.0, elastic_demand=False,
                    datacentre=None, netback_pricing=False,
-                   respect_contracts=True, title=None, log=True):
+                   respect_contracts=True, gsoo_expansions_only=None,
+                   title=None, log=True):
     """Solve a scenario over 2025-2050.
 
     ``foresight=True`` (default) uses the two-stage full-horizon method: a
@@ -181,6 +209,13 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     served at any cost. Off by default: it changes every scenario, not just
     reservation runs, so the inelastic case stays the comparison baseline.
 
+    ``gsoo_expansions_only=True`` restricts the capacity layer to the committed
+    expansions AEMO counts in the 2026 GSOO/VGPR, dropping every candidate GARY's
+    own market scan added (Bulloo Interlink, the Geelong FSRUs, Golden Beach,
+    Outer Harbor, the VTS expansion, SWP looping). Use it to see how much of a
+    result rests on projects that are not yet anybody's commitment. ``None``
+    takes the workbook default (``gsoo_expansions_only`` on the Parameters sheet).
+
     Prints a one-line scenario header followed by one line per solved year;
     ``title`` overrides the header text and ``log=False`` silences both, which is
     what parallel sweeps use — year lines from several workers at once interleave
@@ -189,10 +224,15 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     # One header per scenario, then one line per year: with the batch solving 28
     # scenarios x 26 years, the year lines are meaningless without it. Callers that
     # already have a nicer label (the dashboard passes its scenario key) override it.
+    if gsoo_expansions_only is None:
+        gsoo_expansions_only = GSOO_ONLY_DEFAULT
     if log:
-        print(f"\n{title or run_title(winter, lng, baseline, dunkelflaute, reservation, elastic_demand, foresight, datacentre, netback_pricing)}",
+        print(f"\n{title or run_title(winter, lng, baseline, dunkelflaute, reservation, elastic_demand, foresight, datacentre, netback_pricing, gsoo_expansions_only)}",
               flush=True)
     data = load_data(baseline)
+    # Filter ONCE, here, so the capacity layer and the dispatch layer are offered
+    # exactly the same menu -- see filter_expansions.
+    data['expansion'] = filter_expansions(data['expansion'], gsoo_expansions_only)
     years = list(range(HORIZON_START, HORIZON_END + 1))
     if foresight:
         return _solve_foresight(data, years, winter, lng, baseline,
@@ -380,6 +420,12 @@ def main():
                         help="Price-responsive mass-market demand: use the step "
                              "demand curve in curtailment_params.csv instead of "
                              "must-serve distribution volumes")
+    parser.add_argument("--gsoo-expansions-only", action="store_true",
+                        help="Restrict the capacity layer to the expansions AEMO "
+                             "counts as committed in the 2026 GSOO/VGPR, dropping "
+                             "every pre-FID and proposed candidate GARY's own "
+                             "market scan added (Source=Market in "
+                             "expansion_options.csv)")
     parser.add_argument("--myopic", action="store_true",
                         help="Year-by-year solve instead of the two-stage foresight method")
     parser.add_argument("--mip-gap", type=float, default=0.005)
@@ -403,6 +449,7 @@ def main():
         foresight=not args.myopic, reservation=args.reservation / 100.0,
         elastic_demand=args.elastic_demand, datacentre=datacentre,
         netback_pricing=args.netback_pricing,
+        gsoo_expansions_only=args.gsoo_expansions_only,
         respect_contracts=not args.break_lng_contracts)
     print(f"\nSolved {len(results)} years in {time.time() - t0:.1f}s "
           f"using {solvers.describe()}")

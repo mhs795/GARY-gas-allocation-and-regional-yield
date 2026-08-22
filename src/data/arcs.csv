@@ -25,3 +25,7 @@ AGP_N,Tennant_Creek,Darwin,120,0.4
 Beetaloo_Pipe,Beetaloo,Tennant_Creek,400,0.2
 NGP,Tennant_Creek,Moomba,90,0.7
 NGP_Rev,Moomba,Tennant_Creek,90,0.7
+EGP_Rev,Sydney,Gippsland,0,0.6
+SEA_Gas_Rev,Adelaide,Melbourne,0,0.4
+Bulloo,Surat,Moomba,0,0.25
+GEE2MEL,Geelong,Melbourne,750,0.1
