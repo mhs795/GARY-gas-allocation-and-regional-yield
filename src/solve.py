@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import time
 
+import datacentre_series
 import params as P
 import solvers
 from model import GasMarketModel, apply_lng_reservation
@@ -149,6 +150,28 @@ BASELINE_LABELS = {'StepChange': 'Step Change', 'Accelerated': 'Accelerated Tran
                    'SlowerGrowth': 'Slower Growth'}
 
 
+def datacentre_label(datacentre):
+    """One-line description of the data centre lever, for the run header.
+
+    Names the linked file where one is in play, because a series run is only as
+    reproducible as the spreadsheet behind it and the header is where an analyst
+    reading a log finds out which one it was.
+    """
+    series = (datacentre.get('series') or {})
+    cells = [f"{datacentre.get(st, 0):g} PJ {st}"
+             for st in ('NSW', 'VIC')
+             if st not in series and float(datacentre.get(st, 0) or 0) > 0]
+    bits = []
+    if series:
+        source = datacentre.get('source') or 'linked file'
+        bits.append(f"data centres {datacentre_series.describe(series)} "
+                    f"({os.path.basename(source)}, held flat after the last row)")
+    if cells:
+        bits.append(("data centres " if not bits else "")
+                    + " / ".join(cells) + f" from {datacentre['start_year']}")
+    return "  ·  ".join(bits) if bits else "data centres (no volume)"
+
+
 def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservation=0.0,
               elastic_demand=False, foresight=True, datacentre=None,
               netback_pricing=False, gsoo_expansions_only=False):
@@ -159,8 +182,7 @@ def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservatio
     if reservation:
         bits.append(f"{round(reservation * 100)}% reservation")
     if datacentre:
-        bits.append(f"data centres {datacentre.get('NSW', 0):g} PJ NSW / "
-                    f"{datacentre.get('VIC', 0):g} PJ VIC from {datacentre['start_year']}")
+        bits.append(datacentre_label(datacentre))
     if netback_pricing:
         bits.append("LNG netback pricing")
     if gsoo_expansions_only:
@@ -194,7 +216,9 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     the start year on, the volume is added to LARGE INDUSTRIAL demand at Sydney
     and Melbourne, spread across the year on each node's own GPG daily shape —
     see the header block in model.py for what that choice does and does not
-    assume.
+    assume. It may also carry ``'series': {state: {year: PJ/yr}}`` read from a
+    linked spreadsheet (``--dc-file``, or the sidebar box), which replaces the
+    flat cell for the states the file has a column for.
 
     ``netback_pricing=True`` applies ACIL Allen's price formation: the LNG trains
     stop being must-serve demand and become willingness-to-pay blocks valued at the
@@ -405,7 +429,17 @@ def main():
                         help="Extra data centre gas demand in VIC, PJ/yr, added to "
                              "Melbourne industrial demand on the GPG daily shape")
     parser.add_argument("--dc-start", type=int, default=2030, metavar="YEAR",
-                        help="First year the data centre demand appears (default 2030)")
+                        help="First year the CELL data centre demand appears "
+                             "(default 2030). Ignored for a state supplied by "
+                             "--dc-file, whose own rows say when it starts")
+    parser.add_argument("--dc-file", default=None, metavar="PATH",
+                        help="Link a spreadsheet holding a YEAR-BY-YEAR data "
+                             "centre demand series instead of one flat volume: a "
+                             ".csv/.xlsx with a Year column and NSW and/or VIC "
+                             "columns in PJ/yr (or Year/State/PJ rows). Add "
+                             "'#SheetName' to name a sheet. A state the file "
+                             "does not cover falls back to --dc-nsw/--dc-vic. "
+                             "See src/data/datacentre_demand_example.csv")
     parser.add_argument("--netback-pricing", action="store_true",
                         help="ACIL Allen LNG netback price formation: LNG exports "
                              "become willingness-to-pay blocks at the netback and "
@@ -437,10 +471,24 @@ def main():
     print(f"Solver: {solvers.describe()}")
     solvers.require_available()
 
+    series = {}
+    if args.dc_file:
+        # Fail loudly: a mistyped path that quietly solved with no data centre
+        # load would look exactly like a run that had some and it did nothing.
+        try:
+            series = datacentre_series.load(args.dc_file)
+        except datacentre_series.DataCentreSeriesError as exc:
+            parser.error(f"--dc-file: {exc}")
+        print(f"Data centre series: {datacentre_series.describe(series)} "
+              f"from {args.dc_file}")
     datacentre = None
-    if args.dc_nsw > 0 or args.dc_vic > 0:
+    if args.dc_nsw > 0 or args.dc_vic > 0 or series:
         datacentre = {'NSW': args.dc_nsw, 'VIC': args.dc_vic,
                       'start_year': args.dc_start}
+        if series:
+            datacentre['series'] = series
+            datacentre['source'] = args.dc_file
+            datacentre['fingerprint'] = datacentre_series.fingerprint(series)
 
     t0 = time.time()
     results = solve_scenario(

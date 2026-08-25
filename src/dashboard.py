@@ -15,6 +15,7 @@ from dash import dcc, html, Input, Output, State, DiskcacheManager, no_update, c
 import dash_bootstrap_components as dbc
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import datacentre_series
 import params as P
 import results_io
 from model import RESERVATION_LEVELS, VOLL_PER_GJ, lng_foundation_share
@@ -181,6 +182,15 @@ static_data = load_static_data()
 # planned exports past physical liquefaction nameplate and reports the excess as
 # domestic lost load at VOLL.
 NETBACK_DEFAULT = str(P.get_str('netback_pricing_default', 'TRUE')).strip().upper() in ('TRUE', '1', 'YES')
+
+# Default contents of the "link a demand series" box. Empty ships the flat-cell
+# lever exactly as it was; set datacentre_series_path in the parameters workbook
+# to a file an analyst keeps a live pipeline in and the box comes up pointing at
+# it. The path is a default, not a lock -- it is editable in the sidebar, and a
+# missing file is reported there rather than being fatal at startup.
+DC_FILE_DEFAULT = str(P.get_str('datacentre_series_path', 'none') or '').strip()
+if DC_FILE_DEFAULT.lower() in ('none', 'nan', '-'):     # workbook's way of saying unset
+    DC_FILE_DEFAULT = ''
 
 COORDS = {
     'Surat':          [-27.15, 149.07], 'Moomba':        [-28.1,  140.2],
@@ -915,6 +925,10 @@ _LVL_SHORT = {'Low': 'L', 'Medium': 'M', 'High': 'H'}
 # Data centre segment of a scenario key: _DC<nsw>N<vic>V<startyear>, e.g.
 # _DC50N30V2030. Both readers below parse it with this one pattern.
 _DC_RE = r'_DC([\d.]+)N([\d.]+)V(\d{4})'
+# Linked-series segment: _DCS<8 hex>, the fingerprint of the parsed series. The
+# volumes are not recoverable from it -- the per-node split saved with the result
+# is what the map reads -- so it labels the run rather than describing it.
+_DCS_RE = r'_DCS([0-9a-f]{8})'
 # Which node each state's data centre load lands on. Mirrors
 # model.DATACENTRE_STATE_NODE, which reads the pair off the parameters workbook; this
 # copy exists only to decode scenarios solved before the per-node split was saved.
@@ -927,9 +941,11 @@ def datacentre_by_node(res, key):
     Prefers the split the model now saves. Scenarios solved before that only
     carry the system-wide total, so for those the volumes are read back off the
     scenario key, which encodes the NSW/VIC PJ split and the start year -- the
-    same numbers the solve was handed. The year gate comes from the saved total:
-    it is zero before the start year, so a run that has not switched on yet
-    reports nothing rather than back-dating the load.
+    same numbers the solve was handed. That fallback is for FLAT-CELL runs only;
+    a linked-series key carries a hash rather than volumes, but every run that
+    could have one is new enough to have saved the split. The year gate comes
+    from the saved total: it is zero before the start year, so a run that has not
+    switched on yet reports nothing rather than back-dating the load.
     """
     saved = res.get('datacentre_by_node_tj')
     if saved:
@@ -964,9 +980,16 @@ def short_key(k):
     mo = re.search(r'_Reserve(\d+)(incl)?', k)
     if mo:
         parts.append(f'Res{mo.group(1)}%' + ('+contract' if mo.group(2) else ''))
+    dcs = re.search(_DCS_RE, k)
+    if dcs:
+        parts.append(f'DC series {dcs.group(1)}')
     dc = re.search(_DC_RE, k)
     if dc:
-        parts.append(f'DC {dc.group(1)}/{dc.group(2)} PJ @{dc.group(3)}')
+        # With a series alongside, only the states still on a cell are non-zero.
+        cells = ' / '.join(f'{v} PJ' for v in (dc.group(1), dc.group(2))
+                           if float(v) > 0) if dcs else \
+                f'{dc.group(1)}/{dc.group(2)} PJ'
+        parts.append(('DC + ' if dcs else 'DC ') + f'{cells} @{dc.group(3)}')
     if '_GSOOExp' in k:
         parts.append('GSOO exp')
     if '_Netback' in k:
@@ -980,6 +1003,22 @@ def short_key(k):
     return '  ·  '.join(p for p in parts if p)
 
 
+def _dc_cell_phrase(mo, has_series):
+    """Label for the cell part of a data centre key segment.
+
+    Alone it names both states. Next to a linked series it names only the states
+    still on a cell -- the others read 0 in the key because the file answers for
+    them, and "0 PJ NSW" next to a series that puts 18 PJ on Sydney would say the
+    opposite of what the run did.
+    """
+    nsw, vic, year = mo.group(1), mo.group(2), mo.group(3)
+    if not has_series:
+        return f'  ·  Data centres {nsw} PJ NSW / {vic} PJ VIC from {year}'
+    cells = [f'{v} PJ {st}' for v, st in ((nsw, 'NSW'), (vic, 'VIC'))
+             if float(v) > 0]
+    return f'  ·  plus {" / ".join(cells)} from {year}' if cells else ''
+
+
 def pretty_key(k):
     """Human-readable label for a scenario key Base_<base>_Winter_<w>_LNG_<l>."""
     base = _base_of(k) or None
@@ -989,9 +1028,11 @@ def pretty_key(k):
     rest = re.sub(r'_Reserve(\d+)(incl)?',
                   lambda mo: f'  ·  {mo.group(1)}% reservation'
                              + (' incl. contracted' if mo.group(2) else ''), rest)
-    rest = re.sub(_DC_RE,
-                  lambda mo: f'  ·  Data centres {mo.group(1)} PJ NSW / '
-                             f'{mo.group(2)} PJ VIC from {mo.group(3)}', rest)
+    has_series = bool(re.search(_DCS_RE, rest))
+    rest = re.sub(_DCS_RE,
+                  lambda mo: f'  ·  Data centres from linked series {mo.group(1)}',
+                  rest)
+    rest = re.sub(_DC_RE, lambda mo: _dc_cell_phrase(mo, has_series), rest)
     rest = (rest.replace('_Winter_', 'Winter ').replace('_LNG_', '  ·  LNG ')
                 .replace('_Dunkelflaute', '  ·  SA Dunkelflaute 2027')
                 .replace('_GSOOExp', '  ·  GSOO expansions only')
@@ -1181,6 +1222,25 @@ sidebar = html.Div(className='md-sidebar', children=[
             dcc.Slider(id='dc-start-slider', min=2025, max=2050, step=1, value=2030,
                        marks={y: str(y) for y in range(2025, 2051, 5)},
                        tooltip={'placement': 'bottom', 'always_visible': True})),
+
+        # The other way to state the same load: a year-by-year series out of the
+        # analyst's own spreadsheet, for a build-out with a shape rather than one
+        # flat volume. The file is read at solve time and never written to; a
+        # state it covers overrides the cell above, a state it does not keeps it.
+        html.Span('Or link a demand series (optional)', className='md-input-label'),
+        dbc.Input(id='dc-file-input', type='text', debounce=True, value=DC_FILE_DEFAULT,
+                  placeholder='/path/to/data_centre_pipeline.xlsx',
+                  style={'fontSize': '11px', 'marginBottom': '4px'}),
+        html.Div(id='dc-file-status',
+                 style={'marginBottom': '4px', 'fontSize': '10px',
+                        'lineHeight': '1.35'}),
+        html.Div('A .csv or .xlsx with a Year column and NSW and/or VIC columns '
+                 'in PJ/yr (add #SheetName for a particular sheet). Zero before '
+                 'the first row, a straight ramp between rows, held flat after '
+                 'the last. Overrides the box above for the states it covers; '
+                 'clear it to go back to the flat volumes.',
+                 style={'marginBottom': '16px', 'fontSize': '10px',
+                        'color': '#888', 'lineHeight': '1.35'}),
 
         dbc.Checklist(id='gsoo-exp-toggle',
                       options=[{'label': ' GSOO expansions only', 'value': 'on'}],
@@ -1397,18 +1457,63 @@ def reservation_share(toggle_value, slider_index):
     return RESERVATION_LEVELS[max(0, min(i, len(RESERVATION_LEVELS) - 1))]
 
 
-def datacentre_spec(nsw_pj, vic_pj, start_year):
-    """Sidebar inputs -> the data centre lever, or None when both volumes are 0.
+def datacentre_spec(nsw_pj, vic_pj, start_year, path=None):
+    """Sidebar inputs -> the data centre lever, or None when nothing is set.
+
+    ``path`` optionally links a spreadsheet holding a year-by-year series (see
+    datacentre_series.py). A state with a column in that file takes its volumes
+    from it; a state without one keeps using its cell, so a file covering only
+    NSW leaves the VIC box doing exactly what it did before.
 
     None rather than a zero-volume dict on purpose: it is what keeps the scenario
     key (and therefore every cached result solved before this lever existed)
     unchanged whenever the boxes are left empty.
+
+    Raises ``DataCentreSeriesError`` if a path is given and cannot be read. That
+    is deliberate -- a mistyped path is indistinguishable, in the results, from a
+    data centre scenario in which the load happened not to matter.
     """
     nsw = float(nsw_pj or 0)
     vic = float(vic_pj or 0)
-    if nsw <= 0 and vic <= 0:
+    series = datacentre_series.load(path) if (path or '').strip() else {}
+    if nsw <= 0 and vic <= 0 and not series:
         return None
-    return {'NSW': nsw, 'VIC': vic, 'start_year': int(start_year or 2030)}
+    spec = {'NSW': nsw, 'VIC': vic, 'start_year': int(start_year or 2030)}
+    if series:
+        spec['series'] = series
+        spec['source'] = (path or '').strip()
+        spec['fingerprint'] = datacentre_series.fingerprint(series)
+    return spec
+
+
+def datacentre_segment(datacentre):
+    """Data centre part of a scenario key: ``_DC<nsw>N<vic>V<year>``, ``_DCS<hash>``.
+
+    A state supplied by a linked series contributes 0 to the cell segment (its
+    cell is not being used), and the segment is dropped entirely when no cell is
+    in play -- which keeps every key solved before this lever, and before the
+    series option, byte-identical to what it was.
+
+    The series contributes a hash of its NUMBERS instead of its filename: a file
+    is not addressable in a key (its name would break the segment parsing, and
+    two analysts' copies of the same pipeline have different paths), and hashing
+    the numbers is what makes editing a volume file the next solve separately
+    rather than overwrite a result built on the old ones.
+    """
+    if not datacentre:
+        return ''
+    series = datacentre.get('series') or {}
+    nsw = 0.0 if 'NSW' in series else float(datacentre.get('NSW', 0) or 0)
+    vic = 0.0 if 'VIC' in series else float(datacentre.get('VIC', 0) or 0)
+    cell = (f"_DC{nsw:g}N{vic:g}V{datacentre['start_year']}") if (nsw or vic) else ''
+    if not series:
+        return cell
+    # Series segment FIRST so both labels below read in that order: the file is
+    # the substantive statement, any surviving cell is the "plus" on the end.
+    # The two patterns cannot match each other -- _DC wants a digit next, _DCS
+    # wants an 'S' -- so their order in the key is free.
+    return ('_DCS' + (datacentre.get('fingerprint')
+                      or datacentre_series.fingerprint(series))) + cell
 
 
 def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
@@ -1420,8 +1525,7 @@ def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
     disk are filed under it — so every caller builds its keys here rather than
     inline, or a sweep silently writes keys the dropdown can't read back.
     """
-    dc = (f"_DC{datacentre.get('NSW', 0):g}N{datacentre.get('VIC', 0):g}"
-          f"V{datacentre['start_year']}") if datacentre else ''
+    dc = datacentre_segment(datacentre)
     return (f'Base_{baseline}_Winter_{winter}_LNG_{lng}'
             + ('_Dunkelflaute' if dunkelflaute else '')
             + ((f'_Reserve{round(reservation * 100)}'
@@ -1627,6 +1731,7 @@ def show_tab(active):
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
     State('dc-start-slider', 'value'),
+    State('dc-file-input', 'value'),
     State('refresh-counter', 'data'),
     background=True,
     running=[
@@ -1642,7 +1747,7 @@ def show_tab(active):
 )
 def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on, resv_i,
                  discount, foresight_v, elastic_v, netback_v, gsoo_exp_v, contracts_v,
-                 dc_nsw, dc_vic, dc_start, refresh):
+                 dc_nsw, dc_vic, dc_start, dc_file, refresh):
     w, l = LEVELS[wi], LEVELS[li]
     baseline = baseline or 'StepChange'
     dunkelflaute = bool(dunkel) and 'on' in dunkel
@@ -1653,7 +1758,12 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
     netback = 'on' in (netback_v or [])
     gsoo_exp = 'on' in (gsoo_exp_v or [])
     respect_contracts = 'on' in (contracts_v or [])
-    datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
+    try:
+        datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start, dc_file)
+    except datacentre_series.DataCentreSeriesError as exc:
+        # Stop rather than solve without the load: a run that silently dropped a
+        # linked series would be indistinguishable from one where it did nothing.
+        return no_update, f'✗  Data centre series — {exc}'
     def _cb(yr, p):
         pct = int(p * 100)
         set_progress((pct, f'Solving {yr}… {pct}%'))
@@ -1680,6 +1790,34 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
 )
 def toggle_reservation_slider(v):
     return {'display': 'block'} if v and 'on' in v else {'display': 'none'}
+
+
+@app.callback(
+    Output('dc-file-status', 'children'),
+    Output('dc-file-status', 'style'),
+    Input('dc-file-input', 'value'),
+)
+def check_datacentre_file(path):
+    """Read the linked series as soon as it is typed and say what it found.
+
+    Here rather than only at solve time because the alternative is finding out
+    that a path is wrong, or that a workbook's NSW column is called something
+    the reader does not recognise, several minutes into a run. It also names
+    which states the file answers for, since those are the ones whose cell above
+    has stopped mattering.
+    """
+    base = {'marginBottom': '4px', 'fontSize': '10px', 'lineHeight': '1.35'}
+    if not (path or '').strip():
+        return '', {**base, 'display': 'none'}
+    try:
+        series = datacentre_series.load(path)
+    except datacentre_series.DataCentreSeriesError as exc:
+        return f'✗  {exc}', {**base, 'color': '#E53935'}
+    cells = [st for st in ('NSW', 'VIC') if st not in series]
+    note = (f'  ·  {" and ".join(cells)} still from the box above'
+            if cells else '')
+    return (f'✓  {datacentre_series.describe(series)}{note}',
+            {**base, 'color': '#00897B'})
 
 
 def _run_sweep(jobs, data, set_progress):
@@ -1730,6 +1868,7 @@ def _run_sweep(jobs, data, set_progress):
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
     State('dc-start-slider', 'value'),
+    State('dc-file-input', 'value'),
     State('refresh-counter', 'data'),
     background=True,
     running=[
@@ -1745,7 +1884,7 @@ def _run_sweep(jobs, data, set_progress):
 )
 def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
               resv_on, resv_i, netback_v, gsoo_exp_v, contracts_v,
-              dc_nsw, dc_vic, dc_start, refresh):
+              dc_nsw, dc_vic, dc_start, dc_file, refresh):
     # Every combination: all GSOO baselines x Winter x LNG (dunkelflaute
     # off) -> 27 runs, plus one Step Change + SA Dunkelflaute (2027) case at the
     # central Winter/LNG so it sits alongside its plain Step Change counterpart.
@@ -1759,7 +1898,12 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     reservation = reservation_share(resv_on, resv_i)
     # The data centre lever rides along the same way the reservation does: the
     # whole sweep is solved with it, under its own keys, alongside the plain runs.
-    datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
+    try:
+        datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start, dc_file)
+    except datacentre_series.DataCentreSeriesError as exc:
+        # Stop rather than solve without the load: a run that silently dropped a
+        # linked series would be indistinguishable from one where it did nothing.
+        return no_update, f'✗  Data centre series — {exc}'
     netback = 'on' in (netback_v or [])
     gsoo_exp = 'on' in (gsoo_exp_v or [])
     respect_contracts = 'on' in (contracts_v or [])
@@ -1805,6 +1949,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
     State('dc-start-slider', 'value'),
+    State('dc-file-input', 'value'),
     State('refresh-counter', 'data'),
     background=True,
     running=[
@@ -1820,7 +1965,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
 )
 def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
                           discount, foresight_v, elastic_v, netback_v, gsoo_exp_v,
-                          contracts_v, dc_nsw, dc_vic, dc_start, refresh):
+                          contracts_v, dc_nsw, dc_vic, dc_start, dc_file, refresh):
     """Every reservation level x every GSOO baseline, at the selected Winter/LNG case.
 
     Two sidebar controls are deliberately ignored, because this button sweeps both
@@ -1840,7 +1985,12 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     netback = 'on' in (netback_v or [])
     gsoo_exp = 'on' in (gsoo_exp_v or [])
     respect_contracts = 'on' in (contracts_v or [])
-    datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start)
+    try:
+        datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start, dc_file)
+    except datacentre_series.DataCentreSeriesError as exc:
+        # Stop rather than solve without the load: a run that silently dropped a
+        # linked series would be indistinguishable from one where it did nothing.
+        return no_update, f'✗  Data centre series — {exc}'
     dr = 0.07 if discount is None else float(discount)
     levels = [0.0] + list(RESERVATION_LEVELS)
     # Baseline outer, reservation inner: an interrupted sweep then leaves whole

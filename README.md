@@ -49,7 +49,7 @@ The first run will take 2–3 minutes while dependencies install. After that, op
 2. Set **Winter Stress** and **LNG Demand** levels (these layer on top of the chosen baseline)
 2. Optionally switch on **Gas reservation** and pick the share of LNG exports to reserve (5/10/20/30%),
    and/or **Price-responsive demand**
-2b. Optionally enter **Data centre gas demand** in PJ/yr for NSW and VIC and set the year it starts
+2b. Optionally enter **Data centre gas demand** in PJ/yr for NSW and VIC and set the year it starts — or link a spreadsheet under **Or link a demand series** to give a year-by-year series instead of one flat volume (see [Data centre gas demand](#data-centre-gas-demand))
 2c. **LNG netback pricing (ACIL Allen)** is **on by default** — exports and imports are priced off the international market, and **Global LNG Market** selects a netback price path rather than scaling export volume. Switch it off to revert to must-serve exports (see the warning under [LNG netback price formation](#lng-netback-price-formation-acil-allen-methodology))
 2d. With a reservation on, **Respect LNG foundation contracts** decides whether it may only take uncontracted export gas (capped at 7%) or may break take-or-pay SPAs
 2e. Optionally switch on **GSOO expansions only** to restrict the capacity model to the expansions AEMO counts as committed in the 2026 GSOO/VGPR, dropping every pre-FID and proposed candidate — see [Network expansion candidates](#network-expansion-candidates)
@@ -318,7 +318,7 @@ generated, and `regenerate_data.py` never rewrites it.
 
 | Sheet | Holds |
 |---|---|
-| `Parameters` | scalars and short lists: VOLL, curtailment strikes, the winter window, the SA dunkelflaute event, reservation levels, network roles, data centre nodes, capacity-model settings, and every ACIL Allen pricing assumption |
+| `Parameters` | scalars and short lists: VOLL, curtailment strikes, the winter window, the SA dunkelflaute event, reservation levels, network roles, data centre nodes and the optional linked data centre series path, capacity-model settings, and every ACIL Allen pricing assumption |
 | `Scenario_Levers` | the Winter multipliers, the LNG volume multipliers used when netback pricing is off, and the `LNG_Netback` price-path mapping used when it is on |
 | `LNG_Anchors` | ACIL Allen's per-scenario Brent / LNG price / spot share anchors |
 | `Segment_Weights` | ACIL Allen's contract/spot weights per customer segment |
@@ -836,10 +836,16 @@ contract leg only — ACIL Allen's Run 2 explicitly removes it. Weights live in
 
 ## Data centre gas demand
 
-A "what if" lever for hyperscale data centre load. Enter an annual volume in PJ for
-**NSW** and for **VIC** and set the year it starts; from that year on the volume is
-added to **large-industrial** demand at **Sydney** and **Melbourne** and held for the
-rest of the horizon.
+A "what if" lever for hyperscale data centre load, stated in either of two ways:
+
+- a **flat volume** — an annual figure in PJ for **NSW** and for **VIC** plus the year
+  it starts; from that year on it is added to **large-industrial** demand at **Sydney**
+  and **Melbourne** and held for the rest of the horizon;
+- a **linked spreadsheet** — a year-by-year series per state, read at solve time out of
+  a file you keep the pipeline in. See [Linking a demand series](#linking-a-demand-series).
+
+Everything below is the same either way; the two differ only in how much shape you get
+to state.
 
 ```bash
 python src/solve.py --dc-nsw 50 --dc-vic 30 --dc-start 2030
@@ -874,9 +880,66 @@ to that node's own gas-powered generation profile — day *d* gets
 > centre's own boilers or fuel cells, and the peak days are what the capacity layer
 > sizes against.
 
-Runs are cached separately — scenario keys gain a `_DC<nsw>N<vic>V<year>` segment — so a
-data centre case sits alongside its counterpart without one. Leaving both boxes at 0
-produces the same key as before the lever existed, so every cached scenario stays valid.
+### Linking a demand series
+
+The flat cell answers *"what would N PJ/yr of this do to the east coast market"*. A
+build-out has a shape — a first site, a second, a plateau once the campus is full — so
+the volume can instead be read year by year out of a spreadsheet you keep the pipeline
+in. Everything above still applies: same node, same industrial tier, same GPG daily
+shape, same firmness. The file only changes **how much, in which year**.
+
+In the dashboard, put a path in **Or link a demand series** under the two boxes; the
+line beneath it reads the file as you type and reports what it found. On the command
+line:
+
+```bash
+python src/solve.py --dc-file ~/work/data_centre_pipeline.xlsx
+python src/solve.py --dc-file ~/work/pipeline.xlsx#Sydney --dc-vic 5   # sheet + VIC cell
+```
+
+The file needs a `Year` column and an `NSW` and/or `VIC` column in PJ/yr:
+
+| Year | NSW | VIC |
+|------|-----|-----|
+| 2028 | 0   | 0   |
+| 2030 | 3   | 1   |
+| 2033 | 9   | 4   |
+| 2040 | 18  | 9   |
+
+`.csv`, `.xlsx` and `.xlsm` all work; add `#SheetName` to a path to name a sheet, or
+GARY takes the first sheet with a usable `Year` column. A financial-year label
+(`2032-33`, `FY2032`) is read as its **leading** year, since GARY's horizon is calendar
+years. A column headed in TJ (`NSW (TJ)`) is converted. A long-format extract with
+`Year, State, PJ` rows works too. `src/data/datacentre_demand_example.csv` is a template.
+
+**A state the file covers stops using its cell**, and a state it does not cover keeps
+using it — so a file with only an NSW column leaves the VIC box doing exactly what it
+did before, and nothing is counted twice. `--dc-start` likewise applies only to the
+states still on a cell; a file says for itself when its load starts.
+
+Rows may be sparse, and the three gaps are filled like this:
+
+- **before the first row** — zero. The first row is when the load switches on;
+- **between rows** — linear, i.e. a straight ramp between the two stated years. To mean
+  *nothing until it opens*, put an explicit zero row the year before;
+- **after the last row** — **held flat** at the last value. A series ending in 2040 is a
+  data centre still running in 2050, not one that closes.
+
+> **The file is read, never written.** GARY keeps no copy of it, which is the point of
+> linking rather than importing — but it also means a series run is only reproducible
+> while that spreadsheet still says what it said. So the scenario key carries an
+> 8-character **hash of the numbers** (`_DCS<hash>`), not the filename: change a volume
+> and the next solve is filed separately instead of overwriting a result built on the
+> old ones, while re-saving or reordering the workbook changes nothing. The path itself
+> is saved with each result, and the run header names it.
+
+Set `datacentre_series_path` in `data/gary_parameters.xlsx` to have the sidebar box come
+up already pointing at a file you maintain; `none` (the shipped value) leaves it empty.
+
+Runs are cached separately — scenario keys gain a `_DC<nsw>N<vic>V<year>` segment, a
+`_DCS<hash>` segment, or both — so a data centre case sits alongside its counterpart
+without one. Leaving both boxes at 0 with no file linked produces the same key as before
+the lever existed, so every cached scenario stays valid.
 
 ## Endogenous demand
 
@@ -1124,5 +1187,5 @@ python src/migrate_results.py            # rewrites in place, keeps a .bak
 - **Horizon:** 2025–2050 (annual dispatch, 365 days/year)
 - **Solve method:** two-stage full-horizon — a perfect-foresight capacity-expansion layer (NPV over representative days) sets the build schedule, then each year is dispatched at 365-day resolution as a pure LP for nodal prices; a myopic year-by-year mode is also available as a toggle
 - **Baselines:** selectable AEMO **2026 GSOO** scenario — **Step Change** (central), **Accelerated Transition**, or **Slower Growth** (demand re-based on the GSOO; daily shapes from GBB actuals)
-- **Scenario levers:** Winter stress × LNG demand (9 combinations) layered on the chosen baseline, plus the SA Dunkelflaute event, the gas reservation, data centre gas demand in NSW/VIC, LNG netback price formation and price-responsive demand; the batch runs all 3 baselines × 9 = 27 scenarios
+- **Scenario levers:** Winter stress × LNG demand (9 combinations) layered on the chosen baseline, plus the SA Dunkelflaute event, the gas reservation, data centre gas demand in NSW/VIC (flat or from a linked spreadsheet), LNG netback price formation and price-responsive demand; the batch runs all 3 baselines × 9 = 27 scenarios
 

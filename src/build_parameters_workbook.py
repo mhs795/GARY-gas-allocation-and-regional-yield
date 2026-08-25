@@ -66,6 +66,14 @@ PARAMETERS = [
 
     ("Data centre demand", "datacentre_state_node", "NSW:Sydney,VIC:Melbourne",
      "state:node", "Where each state's data centre volume lands"),
+    ("Data centre demand", "datacentre_series_path", "none", "file path",
+     "Optional: a spreadsheet holding a YEAR-BY-YEAR data centre demand series "
+     "(Year column + NSW/VIC columns in PJ/yr), used instead of the flat cells "
+     "for the states it covers. \"none\" = the sidebar box starts empty and the "
+     "lever behaves as it always has. Set it to a path an analyst keeps a live "
+     "pipeline in and the box comes up pointing there. This is a DEFAULT, not a "
+     "lock: the box is editable and --dc-file overrides it. See "
+     "src/data/datacentre_demand_example.csv for the layout"),
 
     ("Capacity model", "discount_rate_default", 0.07, "fraction",
      "NPV discount rate for the perfect-foresight capacity MIP"),

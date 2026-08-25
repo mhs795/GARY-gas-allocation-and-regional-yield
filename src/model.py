@@ -26,6 +26,7 @@ import pandas as pd
 import os
 import re
 
+import datacentre_series
 import params as P
 import results_io
 import solvers
@@ -197,10 +198,24 @@ RESERVATION_LEVELS = P.get_list('reservation_levels', [0.05, 0.10, 0.20, 0.30], 
 
 
 # --- Data centre gas demand --------------------------------------------------
-# A "what if" lever for hyperscale data centre load: an annual volume in PJ for
-# NSW and for VIC, switched on in a chosen year and held for the rest of the
-# horizon. It answers "what would N PJ/yr of new data centre gas demand in these
-# two states do to the east coast market", nothing finer.
+# A "what if" lever for hyperscale data centre load in NSW and VIC. The volume is
+# stated in either of two ways, and everything below this paragraph is the same
+# whichever is used -- they differ only in how much shape the analyst has to say:
+#
+#   SIMPLE CELL      one annual volume in PJ per state, switched on in a chosen
+#                    year and held flat for the rest of the horizon. Answers
+#                    "what would N PJ/yr of this do to the east coast market",
+#                    nothing finer. Still the default.
+#   LINKED SERIES    a year-by-year volume per state, read at solve time out of a
+#                    spreadsheet the analyst keeps the pipeline in. Answers the
+#                    same question about a build-out with a shape: a first site,
+#                    a second, a plateau. See datacentre_series.py for the file
+#                    layouts, and for what it does between and beyond the rows.
+#
+# A state with a column in the linked file takes its volumes from the file; a
+# state without one falls back to its cell. So a file with only an NSW column
+# leaves the VIC cell doing exactly what it did before, and nothing is ever
+# counted twice.
 #
 # It enters as LARGE INDUSTRIAL demand. That is what a data centre's gas call is
 # -- a firm, round-the-clock load at a handful of large sites, not
@@ -231,10 +246,11 @@ RESERVATION_LEVELS = P.get_list('reservation_levels', [0.05, 0.10, 0.20, 0.30], 
 # days are what the capacity layer sizes the network against, so this choice
 # shows up in builds, not just in dispatch.
 #
-# It steps on IN FULL at the start year, with no ramp. The slider asks "what if
-# this much load is there from year X"; a built-in ramp would quietly answer a
-# different question, and a ramp that matters to a conclusion belongs in the
-# demand trajectory, not in a sensitivity lever.
+# From a CELL it steps on IN FULL at the start year, with no ramp. The slider
+# asks "what if this much load is there from year X"; a built-in ramp would
+# quietly answer a different question, and a ramp that matters to a conclusion
+# belongs in the analyst's own series -- which is what the linked spreadsheet is
+# for, and there the ramp is stated rather than assumed.
 #
 # The volume is also kept as its own series (``GasMarketModel.dc_demand``) so it
 # can be netted out of the industrial tier in both directions. Its consumption is
@@ -246,12 +262,29 @@ DATACENTRE_STATE_NODE = P.get_pairs('datacentre_state_node',
                                     [('NSW', 'Sydney'), ('VIC', 'Melbourne')])
 
 
+def datacentre_volume(spec, state, year):
+    """This state's data centre volume in PJ for ``year``, from cell or file.
+
+    The linked series wins wherever it has a column for the state: a file that
+    names NSW answers for NSW in every year (zero before its first row), and the
+    NSW cell is then not consulted at all. A state the file does not mention
+    falls back to the cell, which is a flat volume from ``start_year`` on.
+    """
+    series = (spec.get('series') or {}).get(state)
+    if series:
+        return float(datacentre_series.value_for(series, year))
+    if int(year) < int(spec.get('start_year', 2025)):   # cell not switched on yet
+        return 0.0
+    return float(spec.get(state, 0) or 0)
+
+
 def datacentre_profile(spec, year, gpg_demand):
     """Data centre load for one year, as ``{(node, day): TJ}``.
 
-    ``spec`` is ``{'NSW': PJ/yr, 'VIC': PJ/yr, 'start_year': yyyy}``. Returns an
-    empty dict when the lever is off, both volumes are zero, or the year is
-    before the start year.
+    ``spec`` is ``{'NSW': PJ/yr, 'VIC': PJ/yr, 'start_year': yyyy}``, optionally
+    with ``'series': {state: {year: PJ/yr}}`` from a linked spreadsheet, which
+    takes precedence for the states it covers (see ``datacentre_volume``).
+    Returns an empty dict when the lever is off or nothing is switched on yet.
 
     Each state's annual volume is distributed over the 365 days in proportion to
     that node's GPG demand, so the shape follows gas-fired generation rather than
@@ -259,11 +292,9 @@ def datacentre_profile(spec, year, gpg_demand):
     """
     if not spec:                                        # lever off entirely
         return {}
-    if int(year) < int(spec.get('start_year', 2025)):   # not switched on yet
-        return {}
     out = {}
     for state, node in DATACENTRE_STATE_NODE:           # NSW->Sydney, VIC->Melbourne
-        pj = float(spec.get(state, 0) or 0)             # this state's annual volume
+        pj = datacentre_volume(spec, state, year)       # this year's volume
         if pj <= 0:
             continue
         total_tj = pj * 1000.0                          # PJ/yr -> TJ/yr
@@ -475,7 +506,9 @@ class GasMarketModel:
         self.elastic_demand = elastic_demand
         # {day: TJ} of export volume withheld and offered domestically at $0.
         self.reserved_by_day = dict(reserved_by_day or {})
-        # Data centre lever: {'NSW': PJ/yr, 'VIC': PJ/yr, 'start_year': yyyy}.
+        # Data centre lever: {'NSW': PJ/yr, 'VIC': PJ/yr, 'start_year': yyyy},
+        # optionally carrying 'series': {state: {year: PJ/yr}} read from a linked
+        # spreadsheet, which supersedes the cell for the states it covers.
         self.datacentre = dict(datacentre) if datacentre else None
         # LNG netback price formation (ACIL Allen / GasMark) -- see the header
         # block. Off by default: it changes every scenario, not just export ones,
@@ -1272,6 +1305,11 @@ class GasMarketModel:
         for (_n, _d), _v in self.dc_demand.items():
             _dc_by_node[_n] = _dc_by_node.get(_n, 0.0) + float(_v)
         res['datacentre_by_node_tj'] = _dc_by_node
+        # Where the volumes came from, when they came from a linked spreadsheet.
+        # The scenario key carries only a hash of the numbers -- a path is not
+        # something a key can hold -- so this is the only record in the result of
+        # which file a series run was solved against.
+        res['datacentre_source'] = (self.datacentre or {}).get('source') or ''
         res['reserved_served_tj'] = float(sum(rp[t] or 0 for t in m.T))
         res['reserved_offered_tj'] = float(sum(self.reserved_by_day.values()))
 

@@ -1,0 +1,18 @@
+# Template for the data centre lever's "link a spreadsheet" option (see
+# src/datacentre_series.py). Point the sidebar box or --dc-file at a copy of this
+# file, or at your own workbook with the same columns, and GARY reads a year-by-
+# year volume per state instead of one flat cell.
+#
+# Year   calendar year, or a financial-year label like 2032-33 (read as 2032)
+# NSW    NSW data centre gas demand, PJ/yr -- lands at Sydney
+# VIC    VIC data centre gas demand, PJ/yr -- lands at Melbourne
+#
+# Rows may be sparse: zero before the first, a straight ramp between rows, held
+# flat at the last value after the last row. The numbers below are ILLUSTRATIVE
+# ONLY -- they are a shape to copy, not a forecast of anything.
+Year,NSW,VIC
+2028,0,0
+2030,3,1
+2033,9,4
+2036,14,7
+2040,18,9
