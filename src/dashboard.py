@@ -1406,6 +1406,35 @@ def get_filtered(key, end_year):
     return [r for r in data['all_scenarios'].get(key, []) if r['Year'] <= end_year]
 
 
+def served_volume(res, nodes):
+    """Gas that physically arrived at each of `nodes` on each day, TJ.
+
+    Net inflow -- arrivals less what left again -- so gas that only passed
+    through on its way somewhere else (Melbourne -> Sydney, Sydney -> Port
+    Kembla) is not counted as consumed at the transit node. For Demand and LNG
+    nodes, which carry no production and no storage, net inflow is exactly the
+    gas consumed or exported there, which is the weight any delivered-price
+    average wants.
+
+    Returns a Node/Day-indexed 'Vol' Series, or None when the year has no flow
+    data at all.
+    """
+    _flow = res['flow']
+    if _flow.empty:
+        return None
+    # Names are stored as categoricals with per-frame category sets, so From/To
+    # and Node do not align as indexes. Compare and group on plain strings.
+    nodes = {str(n) for n in nodes}
+    f = _flow[['From', 'To', 'Day', 'Value']].astype({'From': str, 'To': str})
+    inflow  = (f[f['To'].isin(nodes)]
+               .groupby(['To', 'Day'])['Value'].sum())
+    outflow = (f[f['From'].isin(nodes)]
+               .groupby(['From', 'Day'])['Value'].sum())
+    inflow.index.names = outflow.index.names = ['Node', 'Day']
+    served = inflow.sub(outflow, fill_value=0.0).clip(lower=0).rename('Vol')
+    return None if served.empty else served
+
+
 def delivered_price(res):
     """Volume-weighted delivered price across the demand centres, $/GJ.
 
@@ -1426,21 +1455,13 @@ def delivered_price(res):
     Returns None when a year has no priced delivery at all, so the caller can
     fall back rather than divide by zero.
     """
-    _prices, _flow = res['prices'], res['flow']
-    if _prices.empty or _flow.empty:
+    _prices = res['prices']
+    if _prices.empty:
         return None
     demand_nodes = set(static_data['nodes']
                        .loc[static_data['nodes']['Type'] == 'Demand', 'Name'])
-    # Names are stored as categoricals with per-frame category sets, so From/To
-    # and Node do not align as indexes. Compare and group on plain strings.
-    f = _flow[['From', 'To', 'Day', 'Value']].astype({'From': str, 'To': str})
-    inflow  = (f[f['To'].isin(demand_nodes)]
-               .groupby(['To', 'Day'])['Value'].sum())
-    outflow = (f[f['From'].isin(demand_nodes)]
-               .groupby(['From', 'Day'])['Value'].sum())
-    inflow.index.names = outflow.index.names = ['Node', 'Day']
-    served = inflow.sub(outflow, fill_value=0.0).clip(lower=0).rename('Vol')
-    if served.empty:
+    served = served_volume(res, demand_nodes)
+    if served is None:
         return None
     merged = (_prices.astype({'Node': str})
               .merge(served.reset_index(), on=['Node', 'Day']))
@@ -2601,6 +2622,8 @@ def update_prices(key, end_year, active_tab, theme):
     price_nodes = static_data['nodes'][static_data['nodes']['Type'].isin(['Demand', 'LNG'])]['Name'].tolist()
     dpr = pd.concat(frames)
     dpr = dpr[dpr['Node'].isin(price_nodes)].copy()
+    dpr['Node'] = dpr['Node'].astype(str)
+    dpr['Day']  = dpr['Day'].astype(int)
     dpr['Date'] = pd.to_datetime(dpr['Year'].astype(str) + dpr['Day'].astype(int).astype(str).str.zfill(3),
                                  format='%Y%j')
     # Monthly-average price (~12 points/year): smooths daily noise while keeping
@@ -2623,6 +2646,53 @@ def update_prices(key, end_year, active_tab, theme):
     hit     = [n for n in price_nodes if day_max.get(n, 0) >= VOLL_PER_GJ - 1e-6]
     no_hit  = [n for n in price_nodes if n not in hit]
 
+    # Weights for the average line: gas actually consumed (Demand) or exported
+    # (LNG) at each node each day, so the average lands on the price buyers
+    # actually paid for the gas that moved. Per node-DAY, not per node, is what
+    # lets winter count properly -- that is when both the volumes and the prices
+    # are high, and a flat average over days would wash it out.
+    vframes = []
+    for r in filtered:
+        v = served_volume(r, price_nodes)
+        if v is None:
+            continue
+        vframes.append(v.reset_index().assign(Year=r['Year']))
+    if vframes:
+        vol = pd.concat(vframes, ignore_index=True)
+        vol['Node'] = vol['Node'].astype(str)
+        vol['Day']  = vol['Day'].astype(int)
+        dpr = dpr.merge(vol, on=['Node', 'Day', 'Year'], how='left')
+        dpr['Vol'] = dpr['Vol'].fillna(0.0)
+    # Scenarios solved before flows were saved (and, in principle, a horizon in
+    # which nothing flows) leave no weights to use. Rather than drop the line,
+    # fall back to equal weights and say so in its name, so the chart is never
+    # silently showing a plain mean labelled as weighted.
+    weighted = bool(vframes) and float(dpr['Vol'].sum()) > 0
+    if not weighted:
+        dpr['Vol'] = 1.0
+    wavg_name = ('Volume-weighted avg' if weighted
+                 else 'Unweighted avg \u2014 no flow data')
+    # Neutral, deliberately outside the series colourway: the average is a
+    # summary of the lines, not another node.
+    wavg_colour = '#ECEFF3' if theme == 'dark' else '#1A1D21'
+
+    def _weighted_avg(period, nodes):
+        """Volume-weighted mean price per period over `nodes`, from DAILY rows.
+
+        Taken off the daily prices rather than off the plotted period means, so
+        a node-day with no delivery carries no weight and a big winter day
+        carries its full one.
+        """
+        sub = dpr[dpr['Node'].isin(nodes)]
+        if sub.empty:
+            return None
+        g = (sub.assign(_pv=sub['Price'] * sub['Vol'])
+                .groupby(period)[['_pv', 'Vol']].sum())
+        g = g[g['Vol'] > 0]
+        if g.empty:
+            return None
+        return (g['_pv'] / g['Vol']).rename('Price').reset_index()
+
     def _price_fig(df, period, nodes, title):
         sub = df[df['Node'].isin(nodes)].sort_values(period)
         if sub.empty:
@@ -2632,6 +2702,13 @@ def update_prices(key, end_year, active_tab, theme):
         f = px.line(sub, x=period, y='Price', color='Node', title=title,
                     template=tmpl, labels={'Price': '$/GJ', period: ''},
                     render_mode='svg')
+        w = _weighted_avg(period, nodes)
+        if w is not None and len(w) > 1:
+            f.add_scatter(x=w[period], y=w['Price'], mode='lines',
+                          name=wavg_name,
+                          line=dict(color=wavg_colour, width=3, dash='dash'),
+                          hovertemplate='%{x}<br>' + wavg_name
+                                        + ': $%{y:.2f}/GJ<extra></extra>')
         f.update_yaxes(rangemode='tozero')
         return f
 
