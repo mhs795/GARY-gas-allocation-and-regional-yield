@@ -1,3 +1,4 @@
+import base64
 import os, re, sys
 import logging
 # Background callbacks poll the server twice a second while a solve runs, so
@@ -40,6 +41,35 @@ CHART_DL = [
 ]
 
 
+def _trace_array(v):
+    """Read one trace's x/y into a plain list, whatever shape it arrives in.
+
+    Plotly 6 no longer puts numeric arrays in the figure as JSON lists: it
+    encodes them as {'dtype': 'f4', 'bdata': '<base64>'} typed arrays. Taking
+    len() of that dict returns 2 -- the key count -- which is how every chart
+    download silently turned into two rows reading "dtype" and "bdata". A
+    figure round-tripped through the browser can also come back with a typed
+    array serialised as an index-keyed object, so that form is decoded too.
+    """
+    if v is None:
+        return None
+    if isinstance(v, dict):
+        bdata = v.get('bdata')
+        if bdata is not None:
+            dtype = str(v.get('dtype') or 'f8')
+            shape = v.get('shape')
+            if shape and len([d for d in str(shape).split(',') if d.strip()]) > 1:
+                return None      # 2-D data has no single column to become
+            # Plotly writes little-endian; say so rather than trust the host.
+            np_dtype = np.dtype(('<' + dtype) if len(dtype) == 2 else dtype)
+            return np.frombuffer(base64.b64decode(bdata), dtype=np_dtype).tolist()
+        # {"0": .., "1": ..} -- a JSON-serialised typed array
+        if v and all(str(k).lstrip('-').isdigit() for k in v):
+            return [v[k] for k in sorted(v, key=lambda k: int(k))]
+        return None
+    return list(v)
+
+
 def _fig_dict_to_df(fig):
     """Pull a Plotly figure dict's plotted series into a tidy wide table.
 
@@ -50,17 +80,18 @@ def _fig_dict_to_df(fig):
         return pd.DataFrame()
     series, xref, seen = [], None, {}
     for i, tr in enumerate(fig['data']):
-        y = tr.get('y')
-        if y is None or len(y) == 0:
+        y = _trace_array(tr.get('y'))
+        if not y or all(v is None for v in y):
             continue
-        y = list(y)
-        if all(v is None for v in y):
-            continue
-        x = tr.get('x')
+        x = _trace_array(tr.get('x'))
         if x is not None and len(x) == len(y) and xref is None:
-            xref = list(x)
+            xref = x
         if len(y) > 5000:
             step = int(np.ceil(len(y) / 5000))
+            # Sample the shared x on the same stride, or the two stop lining up
+            # and the x column is dropped for a length mismatch.
+            if xref is not None and len(xref) == len(y):
+                xref = xref[::step]
             y = y[::step]
         name = str(tr.get('name') or f'series_{i + 1}').strip()
         if name in seen:
@@ -71,7 +102,9 @@ def _fig_dict_to_df(fig):
         series.append((name, pd.Series(y)))
     if not series:
         return pd.DataFrame()
-    df = pd.concat({n: s for n, s in series}, axis=1)
+    # Concat the renamed Series, not a dict: a dict makes pandas sort the column
+    # names, which scatters the traces out of the order they are drawn.
+    df = pd.concat([s.rename(n) for n, s in series], axis=1)
     if xref is not None and len(xref) == len(df):
         df.insert(0, 'x', xref)
     return df
