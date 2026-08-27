@@ -489,6 +489,7 @@ def main():
             datacentre['series'] = series
             datacentre['source'] = args.dc_file
             datacentre['fingerprint'] = datacentre_series.fingerprint(series)
+            datacentre['label'] = datacentre_series.label(args.dc_file)
 
     t0 = time.time()
     results = solve_scenario(

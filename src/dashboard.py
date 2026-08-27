@@ -231,6 +231,12 @@ ARC_WAYPOINTS = {
     # Geelong FSRU (Viva at Refinery Pier / Vopak in Port Phillip Bay) into the
     # DTS via the Lara-Brooklyn corridor -- NOT via Iona and the SWP.
     'GEE2MEL': [[-38.10,144.42],[-38.02,144.41],[-37.95,144.55],[-37.90,144.66],[-37.85,144.80],[-37.81,144.96]],
+    # NEAP (APA's proposed North to East Australia Pipeline): a NEW 1561 km corridor
+    # from the Beetaloo south-east across the Barkly and western Queensland to the
+    # SWQP, deliberately NOT via Mt Isa -- bypassing the NGP and the Carpentaria
+    # southbound leg is the whole point of the project. Indicative: APA has a survey
+    # permit but no published route.
+    'NEAP': [[-16.30,133.40],[-17.20,134.60],[-18.30,136.20],[-19.30,137.90],[-20.20,139.30],[-21.50,140.40],[-23.00,141.20],[-24.60,141.70],[-25.90,141.80],[-26.60,143.50],[-27.10,146.00],[-27.30,147.80],[-27.40,149.20]],
     # --- Northern Territory (Amadeus Basin to Darwin Pipeline + NGP; AEMO gas map v2021) ---
     # AGP: Mereenie (Amadeus Basin) -> Alice Springs -> N along the Stuart Hwy corridor
     # -> Tennant Creek -> Katherine -> Darwin.
@@ -925,10 +931,12 @@ _LVL_SHORT = {'Low': 'L', 'Medium': 'M', 'High': 'H'}
 # Data centre segment of a scenario key: _DC<nsw>N<vic>V<startyear>, e.g.
 # _DC50N30V2030. Both readers below parse it with this one pattern.
 _DC_RE = r'_DC([\d.]+)N([\d.]+)V(\d{4})'
-# Linked-series segment: _DCS<8 hex>, the fingerprint of the parsed series. The
-# volumes are not recoverable from it -- the per-node split saved with the result
-# is what the map reads -- so it labels the run rather than describing it.
-_DCS_RE = r'_DCS([0-9a-f]{8})'
+# Linked-series segment: _DCS<name>, taken from the linked file's own name (see
+# datacentre_series.label). The volumes are not recoverable from it -- the
+# per-node split saved with the result is what the map reads -- so it labels the
+# run rather than describing it. Still matches the 8-hex fingerprints that
+# earlier runs used, so cached results from before the rename keep decoding.
+_DCS_RE = r'_DCS([A-Za-z0-9]+)'
 # Which node each state's data centre load lands on. Mirrors
 # model.DATACENTRE_STATE_NODE, which reads the pair off the parameters workbook; this
 # copy exists only to decode scenarios solved before the per-node split was saved.
@@ -1483,22 +1491,23 @@ def datacentre_spec(nsw_pj, vic_pj, start_year, path=None):
         spec['series'] = series
         spec['source'] = (path or '').strip()
         spec['fingerprint'] = datacentre_series.fingerprint(series)
+        spec['label'] = datacentre_series.label(path)
     return spec
 
 
 def datacentre_segment(datacentre):
-    """Data centre part of a scenario key: ``_DC<nsw>N<vic>V<year>``, ``_DCS<hash>``.
+    """Data centre part of a scenario key: ``_DC<nsw>N<vic>V<year>``, ``_DCS<name>``.
 
     A state supplied by a linked series contributes 0 to the cell segment (its
     cell is not being used), and the segment is dropped entirely when no cell is
     in play -- which keeps every key solved before this lever, and before the
     series option, byte-identical to what it was.
 
-    The series contributes a hash of its NUMBERS instead of its filename: a file
-    is not addressable in a key (its name would break the segment parsing, and
-    two analysts' copies of the same pipeline have different paths), and hashing
-    the numbers is what makes editing a volume file the next solve separately
-    rather than overwrite a result built on the old ones.
+    The series contributes its FILE'S NAME, sanitised (datacentre_series.label):
+    a run reads as "the NSW pipeline" rather than as an opaque hash. The
+    fingerprint is still computed and saved on the spec, but it no longer keys
+    the run -- so editing a volume now overwrites that name's cached result
+    instead of filing a new one. The file names a scenario you re-run.
     """
     if not datacentre:
         return ''
@@ -1512,8 +1521,8 @@ def datacentre_segment(datacentre):
     # the substantive statement, any surviving cell is the "plus" on the end.
     # The two patterns cannot match each other -- _DC wants a digit next, _DCS
     # wants an 'S' -- so their order in the key is free.
-    return ('_DCS' + (datacentre.get('fingerprint')
-                      or datacentre_series.fingerprint(series))) + cell
+    return ('_DCS' + (datacentre.get('label')
+                      or datacentre_series.label(datacentre.get('source')))) + cell
 
 
 def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,

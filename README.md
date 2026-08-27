@@ -383,11 +383,12 @@ snapshot with a cut-off, not a standing fact.
 | `SWP_Looping` | `SWP` | +45 TJ/d | $340m ‡ | 2029 | APA's alternative to `SWP_Compression`: 88 km of looping; more linepack. **Mutually exclusive** with it |
 | `Viva_Geelong_FSRU` | `Geelong` **(new node)** | 750 TJ/d | $1.0bn ‡ | Winter 2029, FID H2 2026 | Viva Energy Gas Terminal, Corio Bay; EPBC approval Apr 2026. AEMO: a Geelong terminal lifts total SWP capacity to ~770 TJ/d |
 | `Vopak_Victoria_FSRU` | `Geelong` | 750 TJ/d ‡ | $1.0bn ‡ | Pre-winter 2029 | Vopak Victoria Energy Terminal, Port Phillip Bay; FSRU secured Sep 2025. **Mutually exclusive** with Viva — AEMO states the two behave similarly for the DTS |
-| `Golden_Beach` | `Gippsland` | 375 TJ/d | $600m ‡ | Late 2029, FID H2 2026 | GB Energy Golden Beach Energy Storage; 125 TJ/d production late 2028 → 300 → 375 TJ/d; 42 PJ store |
+| `Golden_Beach` | `Gippsland_Potential` | 375 TJ/d | $600m ‡ | Late 2029, FID H2 2026 | GB Energy Golden Beach Energy Storage; 125 TJ/d production late 2028 → 300 → 375 TJ/d; 42 PJ store |
 | `Outer_Harbor_LNG` | `Adelaide` **(new supply)** | 422 TJ/d | $900m ‡ | Winter 2028 | AG&P Outer Harbor FSRU, Port Adelaide; 400 mmscfd. ~90 of its ~110 PJ/yr is aimed at Victoria (60 PJ to Iona + 30 PJ to the Port Campbell pipeline) |
 | `SEA_Gas_Reversal` | `SEA_Gas_Rev` **(new arc)** | 300 TJ/d | $150m ‡ | With Outer Harbor | SEA Gas compression + reverse flow on the Port Campbell–Adelaide pipeline, to move Outer Harbor gas east |
 | `Port_Kembla_Terminal` | `Port_Kembla` | 500 TJ/d | $250m | ≥2027 | Squadron Energy PKET; mechanically complete, FSRU redeployed to Egypt |
-| `Beetaloo_Dev` | `Beetaloo` | 450 TJ/d | $900m | Proposed | Beetaloo development. Corridor-limited: the NGP is only 90 TJ/d until APA's proposed North East Australia Pipeline exists |
+| `NEAP` | `NEAP` **(new arc)** | 200 TJ/d ‡ | $2.0bn ‡ | 2030s, investigation | APA's North to East Australia Pipeline; 1561 km Beetaloo→SWQP, 100% APA. **The only candidate that relieves the Beetaloo corridor** — it bypasses the NGP and the 65 TJ/d Carpentaria southbound leg. APA publishes no capacity; the 50 TJ/d figure in circulation is survey-permit material and implies $40m per TJ/d, so GARY sizes it itself. CapEx at Jemena's NGP unit rate ($800m / 622 km) |
+| `Beetaloo_Dev` | `Beetaloo` | 450 TJ/d | $900m | Proposed | Beetaloo development. **Without `NEAP` this field cannot deliver more than 40 TJ/d anywhere** — `Beetaloo_Pipe` is the real Sturt Plateau Pipeline (37 km, 40 TJ/d, $66.5m, in service 2026) and the corridor beyond it is capped at 65 TJ/d by the Carpentaria southbound leg, which the GSOO says will not be expanded |
 
 ‡ Not public — GARY's own, derived as stated in the row's `Note`.
 § Sized to land GARY's corridor on APA's stated **350 TJ/d** endpoint: 350 less
@@ -927,17 +928,25 @@ Rows may be sparse, and the three gaps are filled like this:
 
 > **The file is read, never written.** GARY keeps no copy of it, which is the point of
 > linking rather than importing — but it also means a series run is only reproducible
-> while that spreadsheet still says what it said. So the scenario key carries an
-> 8-character **hash of the numbers** (`_DCS<hash>`), not the filename: change a volume
-> and the next solve is filed separately instead of overwriting a result built on the
-> old ones, while re-saving or reordering the workbook changes nothing. The path itself
-> is saved with each result, and the run header names it.
+> while that spreadsheet still says what it said. The scenario key carries the linked
+> file's **own name** (`_DCS<name>`), so a run reads as *the NSW pipeline* rather than as
+> an opaque hash: `datacentre_demand_NSW.csv` keys as `_DCSNSW`. The shared
+> `datacentre_demand_` prefix is stripped and the rest is sanitised to letters and
+> digits, because the key is split on `_` and parsed by position. A sheet name joins it,
+> so `book.xlsx#Q3` keys as `_DCSbookQ3`.
+>
+> **The trade-off:** a name is stable across edits, so changing a volume in the file now
+> **overwrites** that name's cached result instead of filing a new one. That is the point
+> — the file names a scenario you re-run — but it means the cache is only as current as
+> the last solve of that name. The hash of the numbers is still computed and saved with
+> the result, as is the path, and the run header names both. Keys from before this
+> change (`_DCS1a2b3c4d`) still decode, so older cached results stay readable.
 
 Set `datacentre_series_path` in `data/gary_parameters.xlsx` to have the sidebar box come
 up already pointing at a file you maintain; `none` (the shipped value) leaves it empty.
 
 Runs are cached separately — scenario keys gain a `_DC<nsw>N<vic>V<year>` segment, a
-`_DCS<hash>` segment, or both — so a data centre case sits alongside its counterpart
+`_DCS<name>` segment, or both — so a data centre case sits alongside its counterpart
 without one. Leaving both boxes at 0 with no file linked produces the same key as before
 the lever existed, so every cached scenario stays valid.
 
@@ -1183,7 +1192,7 @@ python src/migrate_results.py            # rewrites in place, keeps a .bak
 ## Technical Details
 
 - **Optimisation:** Pyomo, with a selectable solver backend — HiGHS (`appsi_highs`, default) or GLPK (`glpsol`)
-- **Network:** Nodal pipeline model covering eastern Australia **plus the Northern Territory** — the Amadeus and Beetaloo basins feed Darwin, and the NT links to the east-coast grid via the Northern Gas Pipeline (Tennant Creek → Mt Isa → Ballera → Moomba). Western Australia is a separate, physically isolated gas market and is **not** included.
+- **Network:** Nodal pipeline model covering eastern Australia **plus the Northern Territory** — the Amadeus and Beetaloo basins feed Darwin, and the NT links to the east-coast grid via the Northern Gas Pipeline (Tennant Creek → Mt Isa → Ballera → Moomba), whose southbound capacity is set by the Carpentaria leg at 65 TJ/d. APA's proposed NEAP is carried as a candidate that bypasses that corridor. NT capacities and tariffs are the 2026 GSOO's; the east-coast arcs are still unsourced placeholders at roughly 0.2–0.4× the GSOO's posted tariffs, so the two are **not** on a like-for-like cost basis. Western Australia is a separate, physically isolated gas market and is **not** included.
 - **Horizon:** 2025–2050 (annual dispatch, 365 days/year)
 - **Solve method:** two-stage full-horizon — a perfect-foresight capacity-expansion layer (NPV over representative days) sets the build schedule, then each year is dispatched at 365-day resolution as a pure LP for nodal prices; a myopic year-by-year mode is also available as a toggle
 - **Baselines:** selectable AEMO **2026 GSOO** scenario — **Step Change** (central), **Accelerated Transition**, or **Slower Growth** (demand re-based on the GSOO; daily shapes from GBB actuals)

@@ -277,6 +277,38 @@ def fingerprint(series):
     return hashlib.sha1('|'.join(parts).encode()).hexdigest()[:8]
 
 
+# Repo convention: every linked file is named `datacentre_demand_<something>`,
+# so the shared prefix carries no information and is stripped before the label.
+_LABEL_PREFIX_RE = re.compile(r'^(?:data[\s_-]*cent(?:re|er)[\s_-]*)?(?:demand[\s_-]*)?', re.I)
+
+
+def label(path, fallback='Series'):
+    """Short label for a linked series file, taken from its NAME.
+
+    ``datacentre_demand_NSW.csv`` -> ``NSW``. This is what goes in the scenario
+    key, so a run reads as "the NSW pipeline" rather than as an opaque hash.
+
+    A sheet suffix joins it (``book.xlsx#Q3`` -> ``bookQ3``) so two sheets of one
+    workbook do not collide. Sanitised to ``[A-Za-z0-9]``: the scenario key is
+    split on ``_`` and parsed by position, so a label carrying a separator would
+    break both readers.
+
+    NOTE the trade-off against `fingerprint` below, which this replaced in the
+    key: two different versions of one filename now share a key, so editing a
+    volume OVERWRITES the cached result rather than filing a new one. That is the
+    point -- the file names a scenario you re-run -- but it means the cache is
+    only as current as the last solve of that name.
+    """
+    file_path, sheet = split_sheet(path or '')
+    stem = os.path.splitext(os.path.basename(file_path))[0]
+    name = _LABEL_PREFIX_RE.sub('', stem)
+    if sheet:
+        name = f'{name}{sheet}'
+    return (re.sub(r'[^A-Za-z0-9]', '', name)
+            or re.sub(r'[^A-Za-z0-9]', '', stem)
+            or fallback)
+
+
 def describe(series, max_states=2):
     """One-line summary of a parsed series, e.g. 'NSW 2->12 PJ 2029-2040'."""
     if not series:
