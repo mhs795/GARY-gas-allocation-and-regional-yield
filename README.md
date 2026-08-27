@@ -411,6 +411,35 @@ this work, which meant they could not be tested even in principle:
 Reversal arcs carry base capacity 0 and exist only if their project is built, so
 none of them changes a run in which the project is not selected.
 
+### What the `Cost` column in `arcs.csv` is
+
+**The variable component of haulage — not a posted tariff.** GARY charges pipeline
+*capital* separately, once, on the projects it builds (`exp_capex` = CapEx × 0.08 in
+the objective). An existing pipe's capital is sunk, so its arc cost must carry only
+what an extra GJ actually costs to move: compressor fuel, energy, variable O&M.
+
+The convention across the network is **≈ $0.43/GJ per 1000 km of route**, which works
+out at about **26% of the GSOO's posted reference tariffs** — a reasonable estimate of
+the variable share, since a posted tariff is mostly a capacity charge recovering
+capital. The ratio is consistent arc by arc:
+
+| | GARY | GSOO posted | ratio |
+|---|---|---|---|
+| `MSP` | 0.50 | 1.3992 | 2.80× |
+| `MAPS` | 0.40 | 0.9740 | 2.43× |
+| `SEA_Gas` | 0.40 | 1.1030 | 2.76× |
+| `EGP` | 0.60 | 1.5841 | 2.64× |
+| `SWQP` | 0.30 | 1.5265 | 5.09× |
+| | | **median** | **2.70×** |
+
+> **Do not mix the two bases.** Dropping a posted tariff into this column for one
+> region prices that region's gas on a basis the rest of the network does not share,
+> and the difference shows up directly as a fake nodal price premium — a posted NGP
+> tariff put a $3.35/GJ wedge on every NT node before this was caught. Either the
+> whole network moves to posted tariffs *and* the capital treatment is reworked so
+> builds are not charged twice, or every arc stays on the variable-cost convention
+> above. GARY is the second.
+
 ### Mutual exclusion
 
 Rival projects that deliver the **same** capacity share a `Group` and at most one
