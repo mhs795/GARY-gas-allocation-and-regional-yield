@@ -486,6 +486,24 @@ def apply_lng_reservation(demand_df, share, respect_contracts=True, scale_demand
             float(applied))
 
 
+def _declined_capacity(row, year):
+    """A field's deliverability in ``year``: base capacity, declined, and zero once
+    it is finished.
+
+    ``EndYear`` (optional in supply.csv) is the first year the field no longer
+    produces — for a source whose life is set by a contract or a reserve run-out
+    rather than by a decline curve. Blacktip is the case it was added for: the
+    PWC gas sale agreement runs out in the mid-2030s and no decline rate
+    expresses "and then it stops". Blank means no end.
+    """
+    cap = float(row['Capacity'])
+    end = row.get('EndYear')
+    if end is not None and str(end).strip() not in ('', 'nan', 'None'):
+        if year >= int(float(end)):
+            return 0.0
+    return cap * ((1 + (row.get('DeclineRate') or 0)) ** (year - 2025))
+
+
 class GasMarketModel:
     def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, baseline="StepChange", dunkelflaute=False, builds_fixed=None, elastic_demand=False, reserved_by_day=None, datacentre=None, netback_pricing=False, code_price_cap=True, netback_scenario=None,
                  reservation_applied=0.0, respect_contracts=True):
@@ -1039,7 +1057,7 @@ class GasMarketModel:
                     return m.production[node, is_pot, t] == 0
                 return m.production[node, is_pot, t] <= sum(
                     m.build[e] * exp_data[e]['NewCapacity'] for e in rel_exp)
-            declined = cap * ((1 + supply_dict[node, is_pot].get('DeclineRate', 0)) ** (self.year - 2025))
+            declined = _declined_capacity(supply_dict[node, is_pot], self.year)
             # The reserved tranche is a slice of the SAME field, priced at zero --
             # not extra gas. Both draw on one physical deliverability limit.
             if node in lng_source:

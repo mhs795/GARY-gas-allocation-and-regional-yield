@@ -107,12 +107,17 @@ STRIKES = {"GPG": 22.0, "Industrial": 120.0}
 # Interconnected System (Channel Island, Weddell, Katherine, Pine Creek) at the Darwin
 # node, plus Owen Springs (Alice Springs) off the Amadeus Basin. MeanDemand is a
 # representative TJ/day; the map scales these shares to each scenario-year's served gas.
+# MeanDemand is the AER's 2024-25 delivery-point estimate (AAR 2026-31, Table 2-1).
+# Weddell is only 1.4 because it now buys most of its gas direct from the LNG
+# producers at Wickham Point, off the AGP and so outside GARY's network.
 NT_GPG_FACILITIES = [
-    ("Channel Island Power Station", "Darwin",  "NT", 26.0),
-    ("Weddell Power Station",        "Darwin",  "NT",  9.0),
-    ("Katherine Power Station",      "Darwin",  "NT",  4.0),
-    ("Pine Creek Power Station",     "Darwin",  "NT",  3.0),
-    ("Owen Springs Power Station",   "Amadeus", "NT",  6.0),
+    ("Channel Island Power Station", "Darwin",  "NT", 24.4),
+    ("Pine Creek Power Station",     "Darwin",  "NT",  5.5),
+    ("Katherine Power Station",      "Darwin",  "NT",  2.1),
+    ("Weddell Power Station",        "Darwin",  "NT",  1.4),
+    ("Tanami power stations",        "Amadeus", "NT",  8.1),
+    ("Owen Springs Power Station",   "Amadeus", "NT",  1.6),
+    ("Tennant Creek Power Station",  "Amadeus", "NT",  1.3),
 ]
 
 

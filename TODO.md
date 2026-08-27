@@ -1,0 +1,79 @@
+# GARY — open items
+
+Things known to be wrong, unfinished, or resting on an assumption worth revisiting.
+Each entry says what the issue is, how big it is, and what closing it would take.
+
+## 1. Brownfield expansions over-recover existing pipeline capital
+
+Since arcs moved to posted tariffs (World B), an expansion that adds capacity to an
+**existing** arc pays that arc's posted tariff on the incremental flow *and* its own
+`CapEx × 0.08`. The posted tariff recovers the existing pipe's capital, struck against
+the pipe's existing throughput — so expanding it collects that capital component on a
+larger volume than the tariff was set for. A regulator would reset the tariff down.
+GARY holds it fixed.
+
+Not a double-charge of the *same* capital, but a real over-recovery. Upper bound if the
+increment runs flat out all year:
+
+| Expansion | Arc | +TJ/d | CapEx/yr | Phantom/yr | Ratio |
+|---|---|---|---|---|---|
+| `MSEP_Conversion` | MSP | 25 | $2.0m | $9.4m | 4.72× |
+| `ECGG_3A_SWQP` | SWQP_Rev | 58 | $11.3m | $23.9m | 2.12× |
+| `ECGG_3A_MSP` | MSP | 10 | $1.9m | $3.8m | 1.97× |
+| `ECGG_VTS_Expansion` | VNI_Rev | 93 | $18.1m | $35.2m | 1.95× |
+| `ECGG_3A_Culcairn` | VNI_Rev | 39 | $7.6m | $14.8m | 1.94× |
+| `SWP_Compression` | SWP | 45 | $17.0m | $8.5m | 0.50× |
+| `SWP_Looping` | SWP | 45 | $27.2m | $8.5m | 0.31× |
+
+**Live exposure is one project.** Everything above 1.9× is *committed*, so `already_built`
+forces it in and the bias never influences a decision. Of the optional set, only
+**`ECGG_VTS_Expansion` is materially penalised** and will be under-built. New arcs
+(`Bulloo`, `EGP_Rev`, `SEA_Gas_Rev`, `NEAP`) carry variable cost and are clean.
+
+**To close it:** make an arc's cost depend on build state, so an expanded arc charges a
+blended post-expansion tariff instead of the pre-expansion one plus separate capex.
+Touches `flow_cap_rule` and the objective in both `model.py` and `capacity_model.py`.
+
+## 2. `Surat_Potential` is permanently zero
+
+`supply_cap_rule` matches `Target == Node`, and no Terminal option targets
+`Surat_Potential`, so its 3,000 TJ/d at $10/GJ can never be produced. `Gippsland_Potential`
+had the same fault and was fixed by repointing `Golden_Beach` at it. Wiring 3,000 TJ/d of
+undeveloped Queensland CSG live is a modelling decision, not a bug fix — it needs a view
+on what unlocks it and at what capex.
+
+## 3. No earliest-build year for pipeline candidates
+
+`terminal_earliest` (2028) gates Type=Terminal only. `NEAP` is a 2030s project per APA
+and nothing stops the model building it in 2026. Needs a per-row year column in
+`expansion_options.csv` honoured by both models.
+
+## 4. NGP reversal is modelled as normal supply
+
+The AER is explicit that reverse flow into the NT is "not a normal operational case…
+expected to only be utilised in emergencies when gas producers are unable to supply gas
+into the AGP" (AAR 2026-31). GARY runs `NGP_Rev` as ordinary least-cost supply every year.
+Real in 2025 — PWC is doing exactly this because Blacktip has collapsed — but the model
+treats an emergency arrangement as the steady state.
+
+## 5. Wickham Point / Weddell is outside the network
+
+Weddell Power Station now takes most of its gas direct from the LNG producers at Wickham
+Point rather than through the AGP, which is why its AGP delivery is only 1.4 TJ/d. That
+route bypasses every pipe GARY models. Defensible to exclude (as Darwin LNG, Ichthys and
+WA are excluded), but it means the Darwin node carries AGP-delivered load, not total NT
+gas burn — so NT demand here is not comparable to published NT consumption figures.
+
+## 6. Blacktip cost is GARY's own
+
+$8.00/GJ, chosen because the field is running at roughly 15% of design through the same
+fixed plant. No published figure. It sets Darwin's price directly whenever Blacktip is
+marginal, so it is worth replacing with a sourced number.
+
+## 7. AGP posted tariff split by length is unverified
+
+The GSOO lists one AGP tariff (0.40, both directions). GARY splits the pipeline into
+`AGP_S`/`AGP_N` and pro-rates by route length, which assumes 0.40 is a full-haul figure.
+The AER access arrangement would settle it. Note 0.40 over 1,658 km is $0.24/1000 km
+against a posted median of $1.63 — seven times cheap, which is itself odd and may mean
+the number is zonal rather than full-haul.

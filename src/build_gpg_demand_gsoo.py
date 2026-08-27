@@ -49,12 +49,41 @@ MODEL_REGIONS = list(REGION_NODES)
 DROP_NODES = {"Gladstone"}  # Yarwun -> industrial
 
 # --- Northern Territory GPG (not in the NEM, so absent from the GSOO NEM data) ---
-# NT domestic gas is principally power generation (AER Amadeus Gas Pipeline demand
-# review): the Darwin-Katherine Interconnected System stations at the Darwin node, plus
-# Owen Springs (Alice Springs) at the Amadeus Basin node. Tropical -> roughly flat
-# across the year (no southern winter peak); gently declining (~0.8%/yr) as rooftop
-# solar displaces gas. Scenario-independent. Per-station split: gpg_facilities.csv.
-NT_GPG_BASE_TJD = {"Darwin": 42.0, "Amadeus": 6.0}   # node totals in 2026
+# NT domestic gas is principally power generation. Sized from the AER's Amadeus Gas
+# Pipeline access arrangement review (AAR 2026-31, June 2025), Table 2-1 "Average
+# annual demand by delivery point", 2024-25 estimate, in TJ/day:
+#
+#   Darwin 26.3 | Pine Creek 5.5 | Katherine 2.1 | Daly Waters 8.2 | Elliot 0.1
+#   Tennant Creek 1.3 | Tanami Road 8.1 | Palm Valley (Alice Springs) 1.6
+#   -> 53.2 TJ/d of NT domestic load (the Warrego 8.1 is gas leaving on the NGP,
+#      not NT demand)
+#
+# Daly Waters (8.2) is EXCLUDED: the AER's stated forecast assumption is that
+# "the delivery of gas to the Daly Waters delivery point is expected to end prior to
+# the access arrangement period", i.e. before GARY's 2026 base year. NT domestic
+# demand is therefore 45.0 TJ/d, not 53.2.
+#
+# GARY has three NT nodes, so delivery points are assigned by which side of Tennant
+# Creek they sit on. NORTH of it reaches load over AGP_N and is carried at the Darwin
+# node: Channel Island 24.4 + Weddell-via-AGP 1.4 + Pine Creek 5.5 + Katherine 2.1
+# = 33.4 GPG, plus 0.6 of distribution/Townend Road that build_demand_gsoo adds as
+# commercial. SOUTH of it is Amadeus: Tanami Road 8.1 + Palm Valley (Alice Springs)
+# 1.6 + Tennant Creek 1.3 = 11.0.
+#
+# OUT OF SCOPE: Weddell now takes most of its gas direct from the LNG producers at
+# Wickham Point rather than through the AGP, which is why its AGP delivery is only
+# 1.4. That supply route bypasses every pipe GARY models, so it sits outside the
+# network the same way Darwin LNG, Ichthys and WA do. GARY carries what the AGP
+# delivers, not total NT gas burn.
+#
+# Note Darwin's AGP-delivered demand fell 40.4 -> 26.3 TJ/d over 2021-22 to 2024-25,
+# but much of that is Weddell Power Station buying direct from the LNG producers at
+# Wickham Point rather than through the AGP -- a change of ROUTE, not of consumption.
+# GARY models neither Wickham Point nor that switch, so the node carries the load.
+# The AER's own forecast assumption is that "local demand is not expected to change
+# significantly", which is what the gentle decline below represents (rooftop solar).
+# Tropical -> roughly flat across the year. Per-station split: gpg_facilities.csv.
+NT_GPG_BASE_TJD = {"Darwin": 33.4, "Amadeus": 11.0}   # node totals in 2026
 NT_GPG_DECLINE = 0.008
 
 # Gas winter (Jun-Aug) and summer (Dec-Feb) day-of-year windows.

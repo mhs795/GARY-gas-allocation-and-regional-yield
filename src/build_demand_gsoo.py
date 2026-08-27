@@ -32,10 +32,12 @@ CITY_NODES = {"Sydney", "Melbourne", "Adelaide", "Brisbane"}
 YEARS = np.arange(2025, 2051)
 
 # NT (Darwin) city-gate commercial / light-industrial load only — small, and held
-# flat (AER: "forecast to remain at current levels"). The bulk of NT gas demand is
-# power generation, which is modelled separately as a curtailable GPG tier at the
-# Darwin and Amadeus nodes (see build_gpg_demand_gsoo.py / gpg_facilities.csv).
-NT_DARWIN_COMMERCIAL_TJD = 4.0
+# flat (AER: "local demand is not expected to change significantly"). Sized from the
+# AER AGP access arrangement review (AAR 2026-31, Table 2-1, 2024-25): the Darwin
+# distribution system (0.3) plus Townend Road (0.2) plus Elliot (0.1). The bulk of NT
+# gas demand is power generation, modelled separately as a curtailable GPG tier at
+# the Darwin and Amadeus nodes (see build_gpg_demand_gsoo.py / gpg_facilities.csv).
+NT_DARWIN_COMMERCIAL_TJD = 0.6
 
 # Baseline scenarios -> output filename slug. Mirrors build_gsoo_scenarios.SCENARIOS.
 SCENARIOS = ["StepChange", "Accelerated", "SlowerGrowth"]

@@ -15,7 +15,7 @@ import pyomo.environ as pyo
 
 import params as P
 import solvers
-from model import IMPORT_NODES, LNG_NODES, VOLL_PER_GJ, WINTER_DAYS
+from model import IMPORT_NODES, LNG_NODES, VOLL_PER_GJ, WINTER_DAYS, _declined_capacity
 
 # Day-of-year (1..365, non-leap) -> calendar month.
 _MONTH_OF_DAY = {}
@@ -373,7 +373,7 @@ class CapacityExpansionModel:
                     return m.production[node, is_pot, y, i] == 0
                 return m.production[node, is_pot, y, i] <= pyo.quicksum(
                     active(e, y) * exp_data[e]['NewCapacity'] for e in rel)
-            declined = cap * ((1 + supply_dict[node, is_pot].get('DeclineRate', 0)) ** (y - 2025))
+            declined = _declined_capacity(supply_dict[node, is_pot], y)
             # Reserved gas is a zero-cost slice of the same field, not extra gas.
             if node in self.lng_source:
                 return m.production[node, is_pot, y, i] + m.reserved_prod[y, i] <= declined

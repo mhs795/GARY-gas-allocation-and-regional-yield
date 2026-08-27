@@ -413,102 +413,36 @@ none of them changes a run in which the project is not selected.
 
 ### What the `Cost` column in `arcs.csv` is
 
-**The variable component of haulage — not a posted tariff.** GARY charges pipeline
-*capital* separately, once, on the projects it builds (`exp_capex` = CapEx × 0.08 in
-the objective). An existing pipe's capital is sunk, so its arc cost must carry only
-what an extra GJ actually costs to move: compressor fuel, energy, variable O&M.
+**It depends on whether the arc already exists**, and the two classes must not be mixed.
 
-The convention across the network is **≈ $0.43/GJ per 1000 km of route**, which works
-out at about **26% of the GSOO's posted reference tariffs** — a reasonable estimate of
-the variable share, since a posted tariff is mostly a capacity charge recovering
-capital. The ratio is consistent arc by arc:
+| Arc class | `Cost` is | Capital comes from |
+|---|---|---|
+| **Existing** (base capacity > 0) | the **posted GSOO reference tariff** | already inside that tariff |
+| **New** (base capacity 0, exists only if built) | **variable haulage only**, ~26% of a posted equivalent | `exp_capex` = CapEx × 0.08 |
 
-| | GARY | GSOO posted | ratio |
-|---|---|---|---|
-| `MSP` | 0.50 | 1.3992 | 2.80× |
-| `MAPS` | 0.40 | 0.9740 | 2.43× |
-| `SEA_Gas` | 0.40 | 1.1030 | 2.76× |
-| `EGP` | 0.60 | 1.5841 | 2.64× |
-| `SWQP` | 0.30 | 1.5265 | 5.09× |
-| | | **median** | **2.70×** |
+This follows ACIL Allen, whose GasMark model GARY is calibrated against and whose
+scenario assumptions list pipeline tariffs as *"According to 2023 GSOO"* — the same
+sheet GARY reads. Their objective maximises producer + consumer surplus *"minus the sum
+of the transportation, conversion, and storage costs"*, with transport priced at those
+tariffs. GasMark has no pipeline capital term at all because its pipeline set is
+exogenous; GARY builds pipelines endogenously, so new arcs need one.
 
-> **Do not mix the two bases.** Dropping a posted tariff into this column for one
-> region prices that region's gas on a basis the rest of the network does not share,
-> and the difference shows up directly as a fake nodal price premium — a posted NGP
-> tariff put a $3.35/GJ wedge on every NT node before this was caught. Either the
-> whole network moves to posted tariffs *and* the capital treatment is reworked so
-> builds are not charged twice, or every arc stays on the variable-cost convention
-> above. GARY is the second.
+**Why new arcs must stay on variable cost:** their capital is charged once, explicitly,
+through `exp_capex`. Putting a capital-recovering posted tariff in `Cost` as well would
+charge it twice. `Bulloo`, `EGP_Rev`, `SEA_Gas_Rev` and `NEAP` are all variable-basis.
 
-### Mutual exclusion
+**Where the tariffs come from.** 19 of 27 existing arcs map to a published GSOO tariff
+(the Victorian DTS at 0.6965 covers `Longford`, `SWP` and `VGP`). `NGP`/`NGP_Rev` are two
+published legs in series — NGP plus the Carpentaria northern or southern flow. `AGP_S`
+and `AGP_N` split the AGP's single posted 0.40 by route length. The remaining eight are
+short laterals with no published tariff, derived at the posted median of **$1.63/GJ per
+1000 km**: the LNG feeders, Port Kembla, Silver Springs, Beetaloo and Geelong.
 
-Rival projects that deliver the **same** capacity share a `Group` and at most one
-may be built (`build_group_once`, enforced in both solve stages):
-
-- `SWP_Expansion` — compression *or* looping, two routes to one 615 TJ/d Iona limit
-- `Geelong_FSRU` — Viva *or* Vopak, two FSRUs for one landing point
-
-Without this the solver takes both and books the capacity twice.
-
-### The GSOO-only toggle
-
-Sidebar switch **GSOO expansions only**, CLI `--gsoo-expansions-only`, key segment
-`_GSOOExp`. Off by default, so a plain run sees the whole market. On, the capacity
-layer may only build rows tagged `Source=GSOO`.
-
-```bash
-python src/solve.py --winter High --lng Medium                          # all candidates
-python src/solve.py --winter High --lng Medium --gsoo-expansions-only   # committed only
-```
-
-Filtering happens once in `solve.filter_expansions`, before either stage runs, so
-the investment and dispatch layers are always offered the identical menu. The
-default lives on the `Parameters` sheet as `gsoo_expansions_only`, and the label
-that counts as "in the GSOO" is `expansion_source_gsoo` — so neither is hardcoded.
-
-On stressed 2030-horizon Step Change / Winter High / LNG Medium the two settings
-diverge as expected: the committed-only run builds `ECGG_3A_MSP`, `MSEP_Conversion`
-and `SWP_Compression`, while the full set adds `EGP_Reversal`, `SEA_Gas_Reversal`
-and `Port_Kembla_Terminal`.
-
-### What was deliberately left out
-
-| Candidate | Why not |
-|---|---|
-| **MSP off-peak expansion** (+80–120 TJ/d, $15m, committed) | Summer only. GARY has no seasonal arc capacity, so entering it would inflate *winter* capacity — the one thing that matters here |
-| **Riverina Storage Pipeline** | Its transport benefit is the same 350 TJ/d Culcairn target already carried by `ECGG_VTS_Expansion`; entering both would double-count |
-| **Iona HUGS Phase 1 / HUGS2** | Storage, held as a node attribute (`Iona` `MaxWithdrawal` is already 570 TJ/d), not an arc or terminal |
-| **Narrabri + Hunter Gas Pipeline** | NSW supply. `Sydney` is a pure demand node in GARY, so there is nowhere to attach it without new supply topology |
-| **APA North East Australia Pipeline** | Early planning only; no public capacity or cost to source a row from |
-| **WAG pipeline conversion** | Complements a Geelong FSRU downstream of `GEE2MEL`; no separate capacity figure published |
-
-### Two base capacities the candidate set corrected
-
-Sourcing the candidates surfaced two arcs whose base capacity was wrong, both now
-fixed. Each moves every baseline result, so they are called out rather than buried:
-
-| Arc | Was | Now | Why |
-|---|---|---|---|
-| `SWP` | 400 TJ/d | **570 TJ/d** | The real Iona injection limit into the DTS is 570 (615 after `SWP_Compression`), and `nodes.csv` already gave `Iona` a `MaxWithdrawal` of 570. The arc, not the storage node, was binding — about 30% tighter than reality. AEMO's own framing is that Port Campbell production cannot all reach the DTS *because of the SWP limit*, which is only the right story once the arc carries the right number |
-| `MSP` | 590 TJ/d | **565 TJ/d** | 590 is the *post*-MSEP figure (APA: 565 → 590 on conversion). Carrying `MSEP_Conversion` as an expansion on top of 590 double-counted the project. Base is now pre-conversion and MSEP earns its +25 |
-
-One nearby figure was left alone: `SEA_Gas` is 300 TJ/d against a real Port
-Campbell→Adelaide capacity of 314. GARY's arc runs Melbourne→Adelaide rather than
-from Port Campbell, so the 4.7% gap is calibration noise on an arc that does not
-serve Victoria, not an error to correct.
-
-### Sources
-
-- AEMO, [*2026 Gas Statement of Opportunities*](https://www.aemo.com.au/-/media/files/gas/national_planning_and_forecasting/gsoo/2026/2026-gas-statement-of-opportunities.pdf), March 2026
-- AEMO, [*Victorian Gas Planning Report Update*](https://www.aemo.com.au/-/media/files/gas/national_planning_and_forecasting/vgpr/2026/2026-victorian-gas-planning-report-update.pdf), March 2026 — committed/potential project lists, SWP capacity, the ~770 TJ/d Geelong figure
-- APA, [East Coast Gas Grid Expansion Plan](https://www.apa.com.au/operations-and-projects/gas/gas-transmission/east-coast-grid-expansion-ecge) — Stage 3A/3B capacities and costs
-- APA, [AER approval of the $213m South West Pipeline expansion](https://www.apa.com.au/news/asx-and-media-releases/apa-welcomes-aer-decision-to-approve-213-million-expansion-of-south-west-pipeline-in-victoria)
-- APA, [Bulloo Interlink Pipeline project](https://www.apa.com.au/operations-and-projects/gas/gas-transmission/bulloo-interlink-pipeline-project)
-- Viva Energy, [federal environmental approval for the Geelong gas terminal](https://www.vivaenergy.com.au/media/news/2026/viva-energy-s-proposed-gas-terminal-receives-federal-environmental-approval)
-- Resources Victoria, [Golden Beach Energy Storage Project](https://resources.vic.gov.au/landholders-and-community/key-site-updates/golden-beach-energy-storage-project)
-- Lochard Energy, [next phase of Iona expansion](https://www.lochardenergy.com.au/lochard-energy-plans-next-phase-of-expansion-to-strengthen-victorias-energy-security/)
-- AG&P LNG / Venice Energy, [Outer Harbor LNG Project](https://veniceenergy.com/outer-harbor-lng-project/)
-- Squadron Energy, [Port Kembla Energy Terminal](https://squadronenergy.com/news/port-kembla-energy-terminal-ready-to-supply-gas-to-australias-eastern-states/)
+> **Known bias.** An expansion on an *existing* arc pays that arc's posted tariff on its
+> incremental flow as well as its own CapEx, so the existing pipe's capital is recovered
+> across more throughput than the tariff was struck for. It biases against brownfield
+> expansion. After committed projects are forced in, the only materially affected
+> candidate is `ECGG_VTS_Expansion`. See `TODO.md` item 1.
 
 ## LNG netback price formation (ACIL Allen methodology)
 
