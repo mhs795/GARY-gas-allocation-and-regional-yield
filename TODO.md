@@ -107,7 +107,7 @@ The AER access arrangement would settle it. Note 0.40 over 1,658 km is $0.24/100
 against a posted median of $1.63 — seven times cheap, which is itself odd and may mean
 the number is zonal rather than full-haul.
 
-## 9. Long-run prices are about half ACIL Allen's — the south never gets short
+## 9. ~~Long-run prices are about half ACIL Allen's~~ — DEMAND SIDE FIXED 28 Aug 2026
 
 Benchmarked 28 Aug 2026 against ACIL Allen, *Wholesale natural gas prices for AEMO*,
 Final Report, **14 November 2025** (the report behind the 2026 GSOO). Step Change, 2050:
@@ -206,11 +206,27 @@ Figure 5/38 forecasts southern annual supply gaps under Step Change of 1.3 PJ (2
 12.2 PJ (2030), 28.2 PJ (2031) and 11.4 PJ (2032) with existing, committed and anticipated
 supply. GARY's central Step Change case has **zero** shortage in every year.
 
-**To close it:** split city-gate node demand into a true ResComm share and an embedded
-industrial share, and apply the GSOO's two indices to them separately.
-`demand_decomposition_validation.csv` already has the per-node city-gate vs large-industrial
-breakdown to size the split from. Then re-check the 2026 level gap, and only after that
-revisit whether supply-side depletion (item 1) is still needed to match ACIL.
+**FIXED (demand side), 28 Aug 2026.** `build_demand_gsoo.py` now splits the city-gate
+bucket between the GSOO's ResComm and Industrial trajectories, and calibrates it to the
+GSOO base-year level. Domestic demand now tracks the GSOO within 0.2% in every year:
+
+| TJ/d | 2026 | 2030 | 2035 | 2040 | 2045 |
+|---|---|---|---|---|---|
+| GARY, before | 1,096 | 960 | 830 | 561 | 496 |
+| GARY, after | 1,255 | 1,147 | 1,058 | 819 | **751** |
+| 2026 GSOO | 1,253 | 1,145 | 1,057 | 817 | **750** |
+
+The calibration scales the observed GBB city-gate trace by ~1.23, which puts load the
+Bulletin Board cannot see — distribution-connected users, regional networks, Tasmania —
+onto the four capital-city nodes. Regional load therefore sits in the capitals, and the
+scaled series no longer agrees node-by-node with `demand_decomposition_validation.csv`
+(that file validates the raw trace).
+
+**Still open:** whether this alone closes the price gap to ACIL. It should push the south
+toward needing import cargoes, but that has to be measured on the re-run, not assumed —
+three earlier hypotheses about this gap were each tested and each turned out wrong. If
+prices are still materially below ACIL after this, supply-side depletion (item 1) is next.
+
 
 ## 10. `industrial_facilities.csv` is dead
 
@@ -220,5 +236,13 @@ Brisbane, Iona Industrial, Port Kembla Steel) that **no code reads**. It was sup
 
 The switch silently dropped load the old file carried and the GBB does not: Incitec Pivot
 Brisbane at 35 TJ/d, Iona Industrial at 15, Port Kembla Steel at 2.7. Brisbane and Surat
-now have no industrial demand at all. Either fold the missing facilities into the
-generated file, or delete the dead one so it stops looking authoritative.
+still have no metered industrial demand.
+
+**Do NOT simply fold these back in.** Two reasons. The city-gate calibration added under
+item 9 now absorbs *all* non-metered industrial load implicitly, so adding a facility to
+the generated file without re-deriving that calibration would double count it — the
+builder holds metered industrial out of the embedded total, so the arithmetic stays
+consistent only if both are regenerated together. And the file is stale: Incitec Pivot's
+Gibson Island plant ceased manufacturing at the end of 2022, which is why the GBB no
+longer registers it. **Verify each facility is still operating before restoring any of
+them.** The safe action is to delete the dead file so it stops looking authoritative.

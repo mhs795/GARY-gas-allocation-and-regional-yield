@@ -54,6 +54,13 @@ def _gsoo_index(annual, scenario, sector, lo=2026, hi=2045, base=2026):
     return idx
 
 
+def _gsoo_level(annual, scenario, sector, year=2026):
+    """A GSOO sector's absolute level in ``year``, TJ/day."""
+    row = annual[(annual.Scenario == scenario) & (annual.Sector == sector)
+                 & (annual.Year == year)]
+    return float(row["PJ_per_year"].iloc[0]) * 1000.0 / 365.0
+
+
 def build(scenario="StepChange"):
     annual = pd.read_csv(os.path.join(GSOO, "annual_sector.csv"))
     base_trace = pd.read_csv(os.path.join(DATA, "demand_profiles.csv"))
@@ -68,11 +75,52 @@ def build(scenario="StepChange"):
     scaling_factor = lng_params["lng_daily_target"] / aplng_trace["Demand"].mean()
 
     rescomm_idx = _gsoo_index(annual, scenario, "ResComm")
+    industrial_idx = _gsoo_index(annual, scenario, "Industrial")
     lng_idx = _gsoo_index(annual, scenario, "LNG")
+
+    # --- What the city-gate bucket actually contains -------------------------
+    # A city node's demand is DISTRIBUTION DELIVERY (confirmed per node in
+    # demand_decomposition_validation.csv), so it is not pure residential and
+    # commercial load: a large amount of commercial and small-industrial gas
+    # rides the distribution network, and the GSOO counts that in Industrial.
+    #
+    # This used to be indexed entirely on the ResComm trajectory, which falls to
+    # 0.21 of its 2026 level by 2045 against Industrial's 0.76. Sending ~240 TJ/d
+    # of slow-declining load down the steep residential curve made GARY's domestic
+    # demand 66% of the GSOO's by 2045 instead of matching it -- and a market that
+    # short of load never needs an import cargo, which is why GARY priced the whole
+    # east coast at the export netback. See TODO.md item 9.
+    #
+    # So: split the bucket, and index each half on its own sector.
+    base_rc = _gsoo_level(annual, scenario, "ResComm")
+    base_ind = _gsoo_level(annual, scenario, "Industrial")
+    # Whatever GARY already meters separately as industrial is NOT embedded here.
+    try:
+        _ind = pd.read_csv(os.path.join(DATA, f"industrial_demand_profile_{scenario}.csv"))
+        metered_ind = float(_ind[_ind.Year == 2026]["Demand"].sum()) / 365.0
+    except (FileNotFoundError, KeyError, IndexError):
+        metered_ind = 0.0
+    embedded_ind = max(0.0, base_ind - metered_ind)
+    citygate_target = base_rc + embedded_ind
+    observed = float(daily_trace[daily_trace["Node"].isin(CITY_NODES)]
+                     .groupby("Node")["Demand"].mean().sum())
+    # CALIBRATION. The observed GBB city-gate trace sees 696 TJ/d against a target
+    # of ~848: the Bulletin Board does not register distribution-connected users,
+    # regional networks outside the four city nodes, or Tasmania at all. Scaling
+    # the trace closes that coverage gap by putting the unobserved load on the
+    # nodes GARY does have. It is a real simplification -- regional load ends up in
+    # the capitals -- and it breaks the node-level agreement with
+    # demand_decomposition_validation.csv, which was a check on the RAW trace.
+    calib = citygate_target / observed if observed > 0 else 1.0
+    rc_share = base_rc / citygate_target if citygate_target > 0 else 1.0
+    print(f"  city-gate: observed {observed:.0f} -> target {citygate_target:.0f} TJ/d "
+          f"(x{calib:.3f}); {rc_share:.1%} ResComm / {1 - rc_share:.1%} embedded industrial "
+          f"(metered industrial {metered_ind:.0f} TJ/d held out)")
 
     rows = []
     for year in YEARS:
         ci = rescomm_idx(year)
+        ii = industrial_idx(year)
         li = lng_idx(year)
 
         # LNG nodes: shared Curtis Island shape, split, scaled to GSOO LNG trajectory.
@@ -82,10 +130,12 @@ def build(scenario="StepChange"):
                 rows.append({"Year": int(year), "Day": int(r["Day"]), "Node": node,
                              "Demand": round(max(0.0, val), 4)})
 
-        # Other (city) nodes: distribution demand on the GSOO ResComm trajectory.
+        # Other (city) nodes: calibrated distribution delivery, split between the
+        # GSOO's ResComm and Industrial trajectories in the shares fixed above.
+        blended = rc_share * ci + (1.0 - rc_share) * ii
         for _, r in daily_trace[daily_trace["Node"] != "APLNG"].iterrows():
             node = r["Node"]
-            factor = ci if node in CITY_NODES else 1.0
+            factor = calib * blended if node in CITY_NODES else 1.0
             rows.append({"Year": int(year), "Day": int(r["Day"]), "Node": node,
                          "Demand": round(max(0.0, r["Demand"] * factor), 4)})
 

@@ -798,6 +798,45 @@ contract leg only — ACIL Allen's Run 2 explicitly removes it. Weights live in
 [ACIL Allen, *Natural gas price forecasts for the Final 2023 IASR and for the 2024 GSOO* (14 Jul 2023)](https://www.aemo.com.au/-/media/files/major-publications/isp/2023/iasr-supporting-material/acil-allen-natural-gas-price-forecasts.pdf) ·
 [ACCC LNG netback price series](https://www.accc.gov.au/inquiries-and-consultations/gas-inquiry-2017-30/lng-netback-price-series)
 
+## Domestic demand and the GSOO sectors
+
+GARY's demand is built bottom-up from the Gas Bulletin Board — city-gate deliveries,
+registered industrial facilities, GPG stations — and then indexed forward on the GSOO's
+sector trajectories. Two things about that need stating, because getting them wrong is
+what made GARY's prices half of ACIL Allen's until 28 Aug 2026.
+
+**A city node is distribution delivery, not residential load.** `demand_decomposition_validation.csv`
+confirms it per node: Melbourne's node demand is the DTS delivery, with registered
+industrial and GPG *additive* on top. So the bucket carries a large amount of commercial
+and small-industrial gas that the GSOO counts under **Industrial**, not ResComm — and the
+two decline at very different rates. Over 2026→2045 in Step Change, ResComm falls to
+**0.21** of its base level while Industrial only falls to **0.76**.
+
+`build_demand_gsoo.py` therefore splits the city-gate bucket and indexes each half on its
+own sector. The split is derived, not assumed: whatever the model already meters
+separately as industrial is held out, and the remainder of the GSOO's Industrial sector is
+what must be embedded in distribution delivery.
+
+**The Bulletin Board does not see everything.** The observed city-gate trace is ~693 TJ/d
+against a GSOO-implied ~852: the GBB does not register distribution-connected users,
+regional networks outside the four city nodes, or Tasmania at all. The builder scales the
+trace by ~1.23 to close that, which puts the unobserved load on the nodes GARY does have.
+
+> **This is a real simplification.** Regional load ends up in the capital-city nodes, and
+> the scaling breaks the node-level agreement with `demand_decomposition_validation.csv` —
+> that file validates the RAW trace, not the calibrated series.
+
+Together these land domestic demand within **0.2% of the GSOO in every year**:
+
+| TJ/d | 2026 | 2030 | 2035 | 2040 | 2045 |
+|---|---|---|---|---|---|
+| GARY domestic | 1,255 | 1,147 | 1,058 | 819 | 751 |
+| 2026 GSOO domestic | 1,253 | 1,145 | 1,057 | 817 | 750 |
+
+Before the split, the same figures ran 1,096 / 960 / 830 / 561 / **496** — 66% of the GSOO
+by 2045. A market that short of load never calls on an import cargo, which is why every
+node priced at the export netback. See `TODO.md` item 9.
+
 ## Data centre gas demand
 
 A "what if" lever for hyperscale data centre load, stated in either of two ways:
