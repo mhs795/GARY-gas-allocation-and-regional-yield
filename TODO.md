@@ -151,19 +151,44 @@ feed-pipe tariff, to the cent. Exports run at or near liquefaction nameplate thr
 - *Not* supply volume. ACIL's Step Change assumes MORE supply than GARY has (Beetaloo at
   ~50 PJ/a, Narrabri by 2030) and still lands $5–6/GJ higher.
 
-**What is still open.** GARY's south simply is not short: by 2050 domestic east-coast demand
-is roughly 400 TJ/d against 3,423 TJ/d of production, and Gippsland (31) + Iona (96) +
-Moomba (185) covers the southern load without help. ACIL's south *is* short enough to need
-$12.29 import cargoes. The difference must therefore sit in southern demand levels,
-southern supply decline rates, or storage — and which of those it is has NOT been isolated.
-That is the next thing to check, and it should be checked rather than assumed: three
-successive hypotheses about this gap (divertibility, corridor, supply volume) have each
-been tested and each turned out to be wrong.
+**FOUND IT — GARY carries a third less domestic demand than the GSOO by the 2040s, and
+it is a bucket-assignment error.** Measured 28 Aug 2026, Step Change:
 
-Item 1's Surat point still stands as a contributing factor — 3,111 TJ/d in 2050 at
-$4.00/GJ with no reserve stock — but on its own it does not explain a southern market that
-never calls on an import terminal it can already afford.
+| TJ/d | 2026 | 2030 | 2035 | 2040 | 2045 |
+|---|---|---|---|---|---|
+| GARY domestic (ECGM) | 1,096 | 960 | 830 | 561 | **496** |
+| 2026 GSOO domestic | 1,253 | 1,145 | 1,057 | 817 | **750** |
+| ratio | 0.87 | 0.84 | 0.79 | 0.69 | **0.66** |
 
-**To close it:** compare GARY's southern demand and southern supply trajectories directly
-against ACIL's, year by year, before changing anything. Then give supply a depleting
-reserve stock with a cost that escalates as it draws down (item 1).
+GPG matches the GSOO exactly (195 TJ/d in 2026). The gap is entirely in the other two
+sectors, and it is not a level error — it is which bucket the load sits in.
+
+| 2026, TJ/d | fast-declining bucket | slow-declining bucket | total |
+|---|---|---|---|
+| GSOO | ResComm **454** | Industrial **604** | 1,058 |
+| GARY | city-gate **695** | metered industrial **205** | 900 |
+
+The decline indices themselves are applied correctly — GARY's city-gate index over
+2026→2045 is 0.210 against the GSOO's ResComm 0.210, and its industrial index is 0.766
+against the GSOO's 0.763. The problem is that `build_demand_gsoo.py` applies the ResComm
+index to **all** city-gate demand (`factor = ci if node in CITY_NODES else 1.0`), and
+`demand_decomposition_validation.csv` shows that city-gate node demand is *distribution
+delivery* — which carries a large amount of embedded commercial and small-industrial load
+that the GSOO counts as Industrial and declines at 0.763, not 0.210.
+
+So roughly 240 TJ/d of slow-declining load is being sent down the steep residential curve.
+Holding the GSOO's own indices constant and only fixing the buckets closes the 2045 gap
+exactly: 95 + 461 + 193 = **749** against the GSOO's 750, versus GARY's actual 495.
+
+**This is why the south never gets short**, why import parity never binds, and therefore
+why GARY prices the whole east coast at export netback like ACIL's Brisbane. It is also a
+level gap of 158 TJ/d in 2026 (900 vs 1,058) that is separate from the mix problem and
+still needs explaining.
+
+**To close it:** split city-gate node demand into a true ResComm share and an embedded
+industrial share, and apply the GSOO's two indices to them separately.
+`demand_decomposition_validation.csv` already has the per-node city-gate vs large-industrial
+breakdown to size the split from. Then re-check the 2026 level gap, and only after that
+revisit whether supply-side depletion (item 1) is still needed to match ACIL.
+
+
