@@ -134,19 +134,36 @@ follow the LNG netback lower… increasingly reliant on northern gas (LNG netbac
 transport) and higher cost LNG imports"*, while *"Brisbane hovers at a price around the
 LNG netback price"*. **GARY reproduces ACIL's Brisbane across the entire east coast.**
 
-Imports are available to GARY at the correct price and are simply never needed, because
-the south never gets short. Why:
+The netback mechanism itself is working exactly as designed. In 2050 Surat prices at
+$6.34 against a netback of $7.12 and an `APLNG_Pipe` tariff of $0.7842 — netback less the
+feed-pipe tariff, to the cent. Exports run at or near liquefaction nameplate throughout
+(3,016 TJ/d exported in 2050 against 3,680 nameplate).
 
-- Surat never depletes — 3,111 TJ/d in 2050 at $4.00/GJ, no reserve stock (items 1, 3).
-- Export volume is too freely divertible. ACIL: *"LNG exporters' commitments are crucial
-  in keeping long term prices relatively stable"*. Worth checking whether GARY's 93%
-  foundation share actually binds the way that implies.
-- The corridor is never upgraded because it never has to be. ACIL assumes *"a number of
-  pipelines taking gas from the NT and Queensland need to be upgraded"*.
+**What has been ruled out** (checked 28 Aug 2026, Step Change / Winter Medium / LNG Medium):
 
-Note ACIL's Step Change also assumes Beetaloo at ~50 PJ/a and Narrabri by 2030 — MORE
-supply than GARY has — and still lands $5–6/GJ higher. Supply volume is not the cause.
+- *Not* export volume being freely divertible. With `respect_contracts` true — the default,
+  and true in all 47 cached runs — `from_foundation` is 0, so 93% of planned export volume
+  stays in `node_demand` as must-serve and cannot be diverted at any price. Only the spot
+  tail is contestable. An earlier version of this note claimed otherwise; it was wrong.
+- *Not* the north–south corridor. In 2050 MSP runs a mean of 173 TJ/d against 590 of
+  capacity, MAPS 44 against 249, SWP 130 against 570 — **zero days at capacity on any of
+  them** — and SWQP carries nothing. Gas is not being held back by pipes.
+- *Not* supply volume. ACIL's Step Change assumes MORE supply than GARY has (Beetaloo at
+  ~50 PJ/a, Narrabri by 2030) and still lands $5–6/GJ higher.
 
-**To close it:** give supply a depleting reserve stock with a cost that escalates as it
-draws down, and check the foundation-contract binding. If the south still never needs
-imports after that, the corridor capacities are the next place to look.
+**What is still open.** GARY's south simply is not short: by 2050 domestic east-coast demand
+is roughly 400 TJ/d against 3,423 TJ/d of production, and Gippsland (31) + Iona (96) +
+Moomba (185) covers the southern load without help. ACIL's south *is* short enough to need
+$12.29 import cargoes. The difference must therefore sit in southern demand levels,
+southern supply decline rates, or storage — and which of those it is has NOT been isolated.
+That is the next thing to check, and it should be checked rather than assumed: three
+successive hypotheses about this gap (divertibility, corridor, supply volume) have each
+been tested and each turned out to be wrong.
+
+Item 1's Surat point still stands as a contributing factor — 3,111 TJ/d in 2050 at
+$4.00/GJ with no reserve stock — but on its own it does not explain a southern market that
+never calls on an import terminal it can already afford.
+
+**To close it:** compare GARY's southern demand and southern supply trajectories directly
+against ACIL's, year by year, before changing anything. Then give supply a depleting
+reserve stock with a cost that escalates as it draws down (item 1).
