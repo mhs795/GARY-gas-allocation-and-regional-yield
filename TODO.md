@@ -25,16 +25,45 @@ increment runs flat out all year:
 | `SWP_Compression` | SWP | 45 | $17.0m | $8.5m | 0.50× |
 | `SWP_Looping` | SWP | 45 | $27.2m | $8.5m | 0.31× |
 
-**Live exposure is one project.** Everything above 1.9× is *committed*, so `already_built`
-forces it in and the bias never influences a decision. Of the optional set, only
-**`ECGG_VTS_Expansion` is materially penalised** and will be under-built. New arcs
-(`Bulloo`, `EGP_Rev`, `SEA_Gas_Rev`, `NEAP`) carry variable cost and are clean.
+**Exposure is much wider than first thought, and it is measured.** An earlier version of
+this note claimed committed projects were force-built and so immune. They are not — see
+item 2 below. Comparing the 28 Aug runs before and after the tariff change, across all
+47 scenarios:
+
+| Project | Built before | Built after | Change |
+|---|---|---|---|
+| `ECGG_3A_MSP` (committed) | 38 | 22 | **−16** |
+| `EGP_Reversal` (committed) | 10 | 3 | **−7** |
+| `Bulloo_Interlink` (new arc) | 3 | 6 | **+3** |
+| everything else | — | — | unchanged |
+
+The direction is exactly the predicted distortion: brownfield expansions on posted-tariff
+arcs get built less, new arcs (which carry variable cost and are clean) get built more.
+Prices barely moved — 2050 mean +$0.17/GJ — and shortage is identical at 17,146 TJ over
+9 scenarios. **The tariff rebasing changed which pipelines get built, not what gas costs.**
+
+New arcs (`Bulloo`, `EGP_Rev`, `SEA_Gas_Rev`, `NEAP`) carry variable cost and are clean.
 
 **To close it:** make an arc's cost depend on build state, so an expanded arc charges a
 blended post-expansion tariff instead of the pre-expansion one plus separate capex.
 Touches `flow_cap_rule` and the objective in both `model.py` and `capacity_model.py`.
 
-## 2. `Surat_Potential` is permanently zero
+## 2. Committed projects are not committed
+
+`expansion_options.csv` has a `Status` column carrying `Committed` / `Pre-FID` / `Proposed`
+/ `Built`. **No code reads it.** `already_built` is only the accumulator of what the model
+chose in previous years, so it makes a build persist — it does not force anything in.
+
+So a project with FID taken and steel in the ground is optimised on exactly the same terms
+as a speculative one, and can simply not be built. `ECGG_3A_MSP` and `EGP_Reversal` are
+both committed and both dropped sharply when the tariffs changed (item 1).
+
+**To close it:** force `Status == 'Committed'` rows to build by their commissioning year.
+That needs the per-row year column item 3 also wants. It would fix reality *and* neutralise
+the brownfield bias for exactly the projects where it is worst, since a forced build does
+not care that its economics are understated.
+
+## 3. `Surat_Potential` is permanently zero
 
 `supply_cap_rule` matches `Target == Node`, and no Terminal option targets
 `Surat_Potential`, so its 3,000 TJ/d at $10/GJ can never be produced. `Gippsland_Potential`
@@ -42,13 +71,13 @@ had the same fault and was fixed by repointing `Golden_Beach` at it. Wiring 3,00
 undeveloped Queensland CSG live is a modelling decision, not a bug fix — it needs a view
 on what unlocks it and at what capex.
 
-## 3. No earliest-build year for pipeline candidates
+## 4. No earliest-build year for pipeline candidates
 
 `terminal_earliest` (2028) gates Type=Terminal only. `NEAP` is a 2030s project per APA
 and nothing stops the model building it in 2026. Needs a per-row year column in
 `expansion_options.csv` honoured by both models.
 
-## 4. NGP reversal is modelled as normal supply
+## 5. NGP reversal is modelled as normal supply
 
 The AER is explicit that reverse flow into the NT is "not a normal operational case…
 expected to only be utilised in emergencies when gas producers are unable to supply gas
@@ -56,7 +85,7 @@ into the AGP" (AAR 2026-31). GARY runs `NGP_Rev` as ordinary least-cost supply e
 Real in 2025 — PWC is doing exactly this because Blacktip has collapsed — but the model
 treats an emergency arrangement as the steady state.
 
-## 5. Wickham Point / Weddell is outside the network
+## 6. Wickham Point / Weddell is outside the network
 
 Weddell Power Station now takes most of its gas direct from the LNG producers at Wickham
 Point rather than through the AGP, which is why its AGP delivery is only 1.4 TJ/d. That
@@ -64,13 +93,13 @@ route bypasses every pipe GARY models. Defensible to exclude (as Darwin LNG, Ich
 WA are excluded), but it means the Darwin node carries AGP-delivered load, not total NT
 gas burn — so NT demand here is not comparable to published NT consumption figures.
 
-## 6. Blacktip cost is GARY's own
+## 7. Blacktip cost is GARY's own
 
 $8.00/GJ, chosen because the field is running at roughly 15% of design through the same
 fixed plant. No published figure. It sets Darwin's price directly whenever Blacktip is
 marginal, so it is worth replacing with a sourced number.
 
-## 7. AGP posted tariff split by length is unverified
+## 8. AGP posted tariff split by length is unverified
 
 The GSOO lists one AGP tariff (0.40, both directions). GARY splits the pipeline into
 `AGP_S`/`AGP_N` and pro-rates by route length, which assumes 0.40 is a full-haul figure.
