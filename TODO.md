@@ -106,3 +106,41 @@ The GSOO lists one AGP tariff (0.40, both directions). GARY splits the pipeline 
 The AER access arrangement would settle it. Note 0.40 over 1,658 km is $0.24/1000 km
 against a posted median of $1.63 — seven times cheap, which is itself odd and may mean
 the number is zonal rather than full-haul.
+
+## 9. Long-run prices are about half ACIL Allen's
+
+Benchmarked 28 Aug 2026 against ACIL Allen, *Gas, liquid fuel, coal and renewable gas
+projections*, 25 February 2025 (report to AEMO), Step Change:
+
+| | ACIL Feb 2025 | GARY |
+|---|---|---|
+| Brent | US$65 **flat** | 70 → 68 → 63 → **58** |
+| Asian LNG | A$11.00 **flat** | 13.99 → 11.27 → 10.50 → **9.99** |
+| Early 2030s delivered | $11–13/GJ | ~$7.3–8.4/GJ |
+| End of projection | **$14–15/GJ** | **$7.82/GJ** |
+
+Two causes, and the second is most of it.
+
+**The anchors do not match.** `LNG_Anchors` in the parameters workbook is sourced
+"ACIL Allen (Nov 2025)", but no such report could be found — the latest ACIL report to
+AEMO is Feb 2025, and its Step Change is a FLAT Brent 65 / LNG A$11.00, not GARY's
+declining path. Either the source is a non-public vintage or the citation is wrong.
+Worth resolving, because the netback is A$ LNG price less the $2.87 export deduction and
+therefore maps 1:1 onto every long-run price.
+
+**Nothing in GARY makes prices rise.** ACIL has prices climbing to $14–15/GJ because the
+southern cities end up on "LNG netback plus transport and higher cost LNG imports" —
+import parity sets their price. In GARY, import nodes ($14/GJ) are almost never marginal:
+Surat runs at capacity every year but is still 3,111 TJ/d in 2050, and divertible export
+volume covers the rest more cheaply, so price tracks the netback DOWN. Combined with
+items 1, 3 and the absence of reserve depletion or cost escalation, GARY has no upward
+mechanism at all.
+
+The tell: ACIL's Brisbane "hovers at a price around the LNG netback price", which is
+exactly what GARY does — everywhere. GARY reproduces ACIL's Brisbane across the whole
+east coast because nothing forces the southern divergence ACIL models.
+
+**To close it:** (a) resolve the anchor provenance; (b) give supply a reserve stock that
+depletes and a cost that escalates with it; (c) check why import parity never binds —
+if LNG foundation volume is genuinely 93% contracted, the model should not be able to
+divert as freely as it does.
