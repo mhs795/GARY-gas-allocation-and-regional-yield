@@ -381,27 +381,12 @@ class CapacityExpansionModel:
             return m.production[node, is_pot, y, i] <= declined
         m.supply_cap = pyo.Constraint(m.Supply, m.YR, rule=supply_cap_rule)
 
-        # RESERVES. Deliverability says how fast a basin can flow; reserves say how
-        # much is there at all. Without this the capacity layer sizes the network
-        # against an infinite supply of $3.65/GJ Surat gas and never sees a reason
-        # to build anything else -- which is exactly what it did. Weighted by the
-        # representative days so the sum is annual TJ, then PJ.
-        #
-        # The dispatch layer steps a basin from its 2P cost to its 2C cost as it
-        # depletes (model._supply_cost). This screening layer cannot: the step
-        # depends on cumulative production, which is endogenous here, and a step
-        # function of a variable is not linear. It therefore prices every tranche at
-        # the cheap 2P cost and relies on the stock limit alone. That makes the
-        # capacity screen OPTIMISTIC about late-horizon gas relative to the dispatch
-        # it hands over to.
-        _res = {s_: _reserves_pj(supply_dict[s_]) for s_ in
-                [(r['Node'], r['IsPotential']) for _, r in self.supply.iterrows()]}
-        m.ReserveSupply = pyo.Set(initialize=[s_ for s_, v in _res.items() if v is not None
-                                              and v > 0], dimen=2)
-        m.reserve_cap = pyo.Constraint(
-            m.ReserveSupply,
-            rule=lambda m, n, ip: pyo.quicksum(
-                wt[y, i] * m.production[n, ip, y, i] for (y, i) in YR) <= _res[(n, ip)] * 1000.0)
+        # NO cumulative reserve constraint here, deliberately. It was tried on
+        # 28 Aug 2026 and removed the same day: with no backfill supply in GARY
+        # (Surat_Potential cannot produce, Gippsland_Potential only unlocks via a
+        # Golden_Beach nobody builds) a hard stock limit starves the south and the
+        # dispatch layer then prices at value-of-lost-load. Depletion is carried as
+        # a COST step instead -- see model._supply_cost and _declined_capacity.
 
         # Exports draw only on commercial gas, so the free reserved gas cannot
         # simply flow to the trains. See the header block in model.py.

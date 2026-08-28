@@ -544,21 +544,30 @@ def _declined_capacity(row, year, cumulative_pj=0.0):
       source whose life is set by a contract or a licence rather than by a decline
       curve -- Blacktip, whose PWC gas sale agreement runs out in the mid-2030s,
       and no decline rate expresses "and then it stops";
-    * REMAINING RESERVES. A basin cannot deliver gas it does not have. Once
-      cumulative production reaches 2P + 2C the field is finished, however good its
-      wells were.
+    Reserves deliberately do NOT cap deliverability here -- they only decide when a
+    basin steps to its 2C cost (see _supply_cost). A hard stock cutoff was tried on
+    28 Aug 2026 and was wrong: it drove Iona to zero by 2036 and Moomba by 2048,
+    producing 6,419 TJ of shortage and Melbourne prices of $104-115/GJ, which is
+    value-of-lost-load curtailment rather than a market.
+
+    AEMO's own Figure 27 says why. Southern EXISTING fields do collapse on its
+    numbers -- 304 PJ/yr in 2025 to 5 PJ/yr by 2044 -- but committed and anticipated
+    developments backfill them, rising to ~280 PJ/yr and holding. GARY has no such
+    backfill: Surat_Potential can never produce (TODO item 3) and
+    Gippsland_Potential only unlocks via Golden_Beach, which no scenario builds. So
+    a hard cutoff models the collapse without the replacement, which is not what
+    AEMO forecasts and not a market anyone would run.
+
+    Treating 2C deliverability as sustained-but-dearer is the closer approximation:
+    contingent resources are gas that needs developing, and the cost step is what
+    paying to develop it looks like. Revisit when GARY has real backfill supply.
     """
     cap = float(row['Capacity'])
     end = row.get('EndYear')
     if end is not None and str(end).strip() not in ('', 'nan', 'None'):
         if year >= int(float(end)):
             return 0.0
-    declined = cap * ((1 + (row.get('DeclineRate') or 0)) ** (year - 2025))
-    total = _reserves_pj(row)
-    if total is not None:
-        remaining_tjd = max(0.0, total - cumulative_pj) * 1000.0 / 365.0
-        declined = min(declined, remaining_tjd)
-    return max(0.0, declined)
+    return max(0.0, cap * ((1 + (row.get('DeclineRate') or 0)) ** (year - 2025)))
 
 
 class GasMarketModel:

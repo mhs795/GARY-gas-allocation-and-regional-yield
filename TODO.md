@@ -230,18 +230,30 @@ $3.65 -> $6.65; Gippsland steps $5.16 -> $15.76, Otway $7.27 -> $15.62.
 
 Central scenario now, against ACIL Nov 2025 Step Change:
 
-| $/GJ | 2026 | 2030 | 2035 | 2040 | 2050 |
-|---|---|---|---|---|---|
-| Brisbane | 5.55 | 7.68 | 11.10 | 9.61 | **8.36** |
-| Sydney | 8.45 | 9.37 | 13.34 | 12.65 | **11.77** |
-| Melbourne | 7.57 | 9.12 | 15.74 | 15.71 | **14.68** |
-| mean | 6.41 | 7.89 | 13.22 | 12.49 | **11.90** |
-| netback | 10.58 | 8.40 | 8.02 | 7.63 | 7.12 |
+| $/GJ | 2026 | 2032 | 2040 | 2050 |
+|---|---|---|---|---|
+| Brisbane | 5.55 | 11.34 | 9.61 | **8.36** |
+| Sydney | 8.45 | 13.57 | 12.65 | **11.77** |
+| Melbourne | 7.57 | 15.64 | 14.19 | **13.13** |
+| netback | 10.58 | 8.25 | 7.63 | 7.12 |
 
-The qualitative match is now good: Brisbane sits nearest the netback, Melbourne is the
-dearest market, and `Port_Kembla_Terminal` now builds — import parity binds, which is the
-mechanism ACIL describes and GARY previously lacked entirely. Long-run levels land in
-ACIL's stated $14-15/GJ range for the dearest market.
+Zero shortage in all 26 years. Brisbane sits nearest the netback, Melbourne is the dearest
+market, and `Port_Kembla_Terminal` builds — import parity binds, the mechanism ACIL
+describes and GARY previously lacked. Moomba, Gippsland and Iona now shrink ECONOMICALLY,
+stepping to their 2C cost and pricing themselves out, rather than being cut off.
+
+**A hard reserve cutoff was tried first and was wrong.** Capping deliverability by
+remaining 2P+2C drove Iona to zero by 2036 and Moomba by 2048, produced 6,419 TJ of
+shortage and Melbourne prices of $104-115/GJ — value-of-lost-load curtailment, not a
+market. AEMO's Figure 27 shows why: southern EXISTING production really does collapse on
+its numbers, 304 PJ/yr in 2025 to 5 PJ/yr by 2044, but committed and anticipated
+developments backfill it to ~280 PJ/yr and hold there. GARY has no backfill (item 3), so a
+hard cutoff models the collapse without the replacement. Depletion is therefore carried as
+a cost step only.
+
+**This makes item 3 load-bearing, not cosmetic.** Until `Surat_Potential` can produce and
+the south has an equivalent of AEMO's committed/anticipated tranche, GARY cannot represent
+depletion physically — only as a price signal.
 
 **Still open:** the early years. ACIL has ~$12-13/GJ by 2027; GARY has a 6.41 mean in 2026.
 See item 11 — the $12 Code price cap is implemented as a ceiling, and ACIL's current view
