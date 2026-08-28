@@ -15,7 +15,8 @@ import pyomo.environ as pyo
 
 import params as P
 import solvers
-from model import IMPORT_NODES, LNG_NODES, VOLL_PER_GJ, WINTER_DAYS, _declined_capacity
+from model import (IMPORT_NODES, LNG_NODES, VOLL_PER_GJ, WINTER_DAYS,
+                   _declined_capacity, _reserves_pj)
 
 # Day-of-year (1..365, non-leap) -> calendar month.
 _MONTH_OF_DAY = {}
@@ -373,12 +374,34 @@ class CapacityExpansionModel:
                     return m.production[node, is_pot, y, i] == 0
                 return m.production[node, is_pot, y, i] <= pyo.quicksum(
                     active(e, y) * exp_data[e]['NewCapacity'] for e in rel)
-            declined = _declined_capacity(supply_dict[node, is_pot], y)
+            declined = _declined_capacity(supply_dict[node, is_pot], y, 0.0)
             # Reserved gas is a zero-cost slice of the same field, not extra gas.
             if node in self.lng_source:
                 return m.production[node, is_pot, y, i] + m.reserved_prod[y, i] <= declined
             return m.production[node, is_pot, y, i] <= declined
         m.supply_cap = pyo.Constraint(m.Supply, m.YR, rule=supply_cap_rule)
+
+        # RESERVES. Deliverability says how fast a basin can flow; reserves say how
+        # much is there at all. Without this the capacity layer sizes the network
+        # against an infinite supply of $3.65/GJ Surat gas and never sees a reason
+        # to build anything else -- which is exactly what it did. Weighted by the
+        # representative days so the sum is annual TJ, then PJ.
+        #
+        # The dispatch layer steps a basin from its 2P cost to its 2C cost as it
+        # depletes (model._supply_cost). This screening layer cannot: the step
+        # depends on cumulative production, which is endogenous here, and a step
+        # function of a variable is not linear. It therefore prices every tranche at
+        # the cheap 2P cost and relies on the stock limit alone. That makes the
+        # capacity screen OPTIMISTIC about late-horizon gas relative to the dispatch
+        # it hands over to.
+        _res = {s_: _reserves_pj(supply_dict[s_]) for s_ in
+                [(r['Node'], r['IsPotential']) for _, r in self.supply.iterrows()]}
+        m.ReserveSupply = pyo.Set(initialize=[s_ for s_, v in _res.items() if v is not None
+                                              and v > 0], dimen=2)
+        m.reserve_cap = pyo.Constraint(
+            m.ReserveSupply,
+            rule=lambda m, n, ip: pyo.quicksum(
+                wt[y, i] * m.production[n, ip, y, i] for (y, i) in YR) <= _res[(n, ip)] * 1000.0)
 
         # Exports draw only on commercial gas, so the free reserved gas cannot
         # simply flow to the trains. See the header block in model.py.

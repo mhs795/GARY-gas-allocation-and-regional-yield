@@ -275,6 +275,7 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
     """Reactive year-by-year solve: each year decides builds with no foresight."""
     contracts_all = data['contracts']
     built_projects, results = [], []
+    cumulative = {}          # (Node, IsPotential) -> PJ produced so far
     for i, year in enumerate(years):
         if callback:
             callback(year, i / len(years))
@@ -289,6 +290,7 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
             datacentre=datacentre, netback_pricing=netback_pricing,
             netback_scenario=lng_price_scenario(lng, baseline) if netback_pricing else None,
             reservation_applied=applied, respect_contracts=respect_contracts)
+        gm.cumulative_pj = cumulative
         gm.build_model()
         status = gm.solve(mip_gap=mip_gap)
         if status != "ok":
@@ -300,6 +302,7 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
         yr_res['reservation_respects_contracts'] = respect_contracts
         yr_res['lng_reserved_tj'] = diverted
         yr_res['elastic_demand'] = elastic_demand
+        cumulative = _accumulate(cumulative, yr_res)
         results.append(yr_res)
         built_projects.extend([b for b in yr_res['builds'] if b not in built_projects])
         if log:
@@ -307,6 +310,33 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
     if callback:
         callback(years[-1], 1.0)
     return results
+
+
+def _accumulate(cum, results):
+    """Add one solved year's production (PJ) onto the running per-field totals.
+
+    Depletion is what makes a basin climb its cost curve, so the dispatch loop has
+    to carry produced volume forward from year to year. Keyed the way the model's
+    Supply set is, ``(Node, IsPotential)``.
+
+    get_results tags each row with ``Potential``: True/False for the two supply
+    rows a node can have, or the string ``'Reserved'`` for a domestic reservation's
+    carve-out. Reserved gas is the SAME field's gas priced at zero, not extra gas,
+    so it depletes the commercial row it came out of.
+    """
+    import pandas as _pd
+    prod = results.get('production')
+    # get_results hands back a list of dicts; a cache round-trip hands back a
+    # DataFrame. Accept either -- `or []` on a DataFrame raises.
+    df = prod if isinstance(prod, _pd.DataFrame) else _pd.DataFrame(prod if prod is not None else [])
+    if df.empty or 'Node' not in df.columns:
+        return cum
+    for _, r in df.iterrows():
+        pot = r.get('Potential', False)
+        is_pot = False if isinstance(pot, str) else bool(pot)
+        k = (r['Node'], is_pot)
+        cum[k] = cum.get(k, 0.0) + float(r['Value']) / 1000.0   # TJ -> PJ
+    return cum
 
 
 def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
@@ -387,11 +417,13 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
 
     # --- Pass 3: full 365-day dispatch each year with builds fixed ----------------
     scenario_results = []
+    cumulative = {}          # (Node, IsPotential) -> PJ produced so far
     for i, year in enumerate(years):
         if callback:
             callback(year, (i + 1) / len(years))
         gm = dispatch_models[year]
         gm.builds_fixed = active_by_year[year]
+        gm.cumulative_pj = cumulative
         gm.build_model()
         status = gm.solve(mip_gap=mip_gap)
         if status != "ok":
@@ -403,6 +435,7 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         yr_res['reservation_respects_contracts'] = respect_contracts
         yr_res['lng_reserved_tj'] = diverted_by_year[year]
         yr_res['elastic_demand'] = elastic_demand
+        cumulative = _accumulate(cumulative, yr_res)
         scenario_results.append(yr_res)
         if log:
             print(f"    Year {year} complete", flush=True)

@@ -486,22 +486,79 @@ def apply_lng_reservation(demand_df, share, respect_contracts=True, scale_demand
             float(applied))
 
 
-def _declined_capacity(row, year):
-    """A field's deliverability in ``year``: base capacity, declined, and zero once
-    it is finished.
+def _num(row, key):
+    """A numeric column that may be blank/NaN/absent -> float or None."""
+    v = row.get(key)
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return None if f != f else f          # NaN
 
-    ``EndYear`` (optional in supply.csv) is the first year the field no longer
-    produces — for a source whose life is set by a contract or a reserve run-out
-    rather than by a decline curve. Blacktip is the case it was added for: the
-    PWC gas sale agreement runs out in the mid-2030s and no decline rate
-    expresses "and then it stops". Blank means no end.
+
+def _reserves_pj(row):
+    """Total recoverable gas behind a supply row, PJ, or None if not modelled.
+
+    2P + 2C from AEMO's 2026 GSOO (G26 Reserves Costs assumptions). A row with no
+    reserves figure -- an import terminal, Blacktip -- is unconstrained by stock
+    and limited only by its deliverability and any EndYear.
+    """
+    p2, p3 = _num(row, 'Reserves2P_PJ'), _num(row, 'Reserves2C_PJ')
+    if p2 is None and p3 is None:
+        return None
+    return (p2 or 0.0) + (p3 or 0.0)
+
+
+def _supply_cost(row, cumulative_pj=0.0):
+    """A field's cost in $/GJ once ``cumulative_pj`` has already been produced.
+
+    THE COST CURVE. AEMO publishes two tranches per basin: proved-and-probable
+    reserves at one cost, contingent resources at a higher one (Gippsland $5.16
+    then $15.76; Otway $7.27 then $15.62). Cheap gas is produced first, and when
+    it runs out the basin steps up to what the next tranche actually costs.
+
+    Without this GARY had no upward price mechanism at all -- Surat stayed at
+    $4.00/GJ in 2050 exactly as in 2025, so nothing could ever push the domestic
+    price above the export netback. See TODO.md item 9.
+
+    A step, not a ramp: within any one year the cost is a constant, so each year's
+    LP stays linear.
+    """
+    base = float(row['Cost'])
+    p2 = _num(row, 'Reserves2P_PJ')
+    c2c = _num(row, 'Cost2C')
+    if p2 is None or c2c is None:
+        return base
+    return base if cumulative_pj < p2 else max(base, c2c)
+
+
+def _declined_capacity(row, year, cumulative_pj=0.0):
+    """A field's deliverability in ``year``, TJ/day.
+
+    Three things can bind, and the tightest wins:
+
+    * the DECLINE CURVE on its base capacity -- how fast the wells fall away;
+    * ``EndYear`` (optional), the first year it no longer produces at all. For a
+      source whose life is set by a contract or a licence rather than by a decline
+      curve -- Blacktip, whose PWC gas sale agreement runs out in the mid-2030s,
+      and no decline rate expresses "and then it stops";
+    * REMAINING RESERVES. A basin cannot deliver gas it does not have. Once
+      cumulative production reaches 2P + 2C the field is finished, however good its
+      wells were.
     """
     cap = float(row['Capacity'])
     end = row.get('EndYear')
     if end is not None and str(end).strip() not in ('', 'nan', 'None'):
         if year >= int(float(end)):
             return 0.0
-    return cap * ((1 + (row.get('DeclineRate') or 0)) ** (year - 2025))
+    declined = cap * ((1 + (row.get('DeclineRate') or 0)) ** (year - 2025))
+    total = _reserves_pj(row)
+    if total is not None:
+        remaining_tjd = max(0.0, total - cumulative_pj) * 1000.0 / 365.0
+        declined = min(declined, remaining_tjd)
+    return max(0.0, declined)
 
 
 class GasMarketModel:
@@ -515,6 +572,9 @@ class GasMarketModel:
         self.contracts = contracts_df
         self.year = year
         self.already_built = already_built if already_built else []
+        # {(Node, IsPotential): PJ produced in every earlier year of this run}.
+        # Set by the solve loop before build_model(); empty means a fresh basin.
+        self.cumulative_pj = {}
         # AEMO 2026 GSOO baseline scenario: StepChange / Accelerated / SlowerGrowth.
         # Selects which per-baseline GPG & industrial demand profiles to load.
         self.baseline = baseline
@@ -910,7 +970,9 @@ class GasMarketModel:
             # out in $/TJ and is divided by 1000 again in get_results().
             #
             # Cost of getting gas out of the ground, per field, per day.
-            prod_cost = sum(m.production[s[0], s[1], t] * supply_dict[s]['Cost'] * 1000 for s in m.Supply for t in m.T)
+            prod_cost = sum(m.production[s[0], s[1], t]
+                            * _supply_cost(supply_dict[s], self.cumulative_pj.get(s, 0.0))
+                            * 1000 for s in m.Supply for t in m.T)
             # Cost of moving it: each arc's tariff x what flows down it. This is the
             # term that makes a Melbourne price differ from a Surat price.
             trans_cost = sum(m.flow[a, t] * arc_data[a]['Cost'] * 1000 for a in m.Arcs for t in m.T)
@@ -1057,7 +1119,8 @@ class GasMarketModel:
                     return m.production[node, is_pot, t] == 0
                 return m.production[node, is_pot, t] <= sum(
                     m.build[e] * exp_data[e]['NewCapacity'] for e in rel_exp)
-            declined = _declined_capacity(supply_dict[node, is_pot], self.year)
+            declined = _declined_capacity(supply_dict[node, is_pot], self.year,
+                                          self.cumulative_pj.get((node, is_pot), 0.0))
             # The reserved tranche is a slice of the SAME field, priced at zero --
             # not extra gas. Both draw on one physical deliverability limit.
             if node in lng_source:

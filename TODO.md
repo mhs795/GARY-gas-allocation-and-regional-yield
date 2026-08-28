@@ -222,10 +222,30 @@ onto the four capital-city nodes. Regional load therefore sits in the capitals, 
 scaled series no longer agrees node-by-node with `demand_decomposition_validation.csv`
 (that file validates the raw trace).
 
-**Still open:** whether this alone closes the price gap to ACIL. It should push the south
-toward needing import cargoes, but that has to be measured on the re-run, not assumed —
-three earlier hypotheses about this gap were each tested and each turned out wrong. If
-prices are still materially below ACIL after this, supply-side depletion (item 1) is next.
+**FIXED (supply side too), 28 Aug 2026.** Reserve depletion and a two-tranche cost curve
+were added from AEMO's own numbers (G26 Reserves Costs assumptions): each basin carries 2P
+and 2C reserves in PJ, produces the cheap tranche first, and steps to the 2C cost when it
+is gone. Surat runs out of 2P around 2035 on 33,506 PJ of cumulative production and steps
+$3.65 -> $6.65; Gippsland steps $5.16 -> $15.76, Otway $7.27 -> $15.62.
+
+Central scenario now, against ACIL Nov 2025 Step Change:
+
+| $/GJ | 2026 | 2030 | 2035 | 2040 | 2050 |
+|---|---|---|---|---|---|
+| Brisbane | 5.55 | 7.68 | 11.10 | 9.61 | **8.36** |
+| Sydney | 8.45 | 9.37 | 13.34 | 12.65 | **11.77** |
+| Melbourne | 7.57 | 9.12 | 15.74 | 15.71 | **14.68** |
+| mean | 6.41 | 7.89 | 13.22 | 12.49 | **11.90** |
+| netback | 10.58 | 8.40 | 8.02 | 7.63 | 7.12 |
+
+The qualitative match is now good: Brisbane sits nearest the netback, Melbourne is the
+dearest market, and `Port_Kembla_Terminal` now builds — import parity binds, which is the
+mechanism ACIL describes and GARY previously lacked entirely. Long-run levels land in
+ACIL's stated $14-15/GJ range for the dearest market.
+
+**Still open:** the early years. ACIL has ~$12-13/GJ by 2027; GARY has a 6.41 mean in 2026.
+See item 11 — the $12 Code price cap is implemented as a ceiling, and ACIL's current view
+is that it behaves as a floor.
 
 
 ## 10. `industrial_facilities.csv` is dead
@@ -246,3 +266,21 @@ consistent only if both are regenerated together. And the file is stale: Incitec
 Gibson Island plant ceased manufacturing at the end of 2022, which is why the GBB no
 longer registers it. **Verify each facility is still operating before restoring any of
 them.** The safe action is to delete the dead file so it stops looking authoritative.
+
+## 11. The $12 Gas Market Code cap is modelled as a ceiling; ACIL says it acts as a floor
+
+GARY applies the Code's $12/GJ cap the way the Code is written and the way ACIL's 2023
+report described it — as a ceiling on the LNG netback (`code_price_cap`). ACIL's November
+2025 report revises that view:
+
+> "Our analysis of the code's operation suggests the price cap has not necessarily acted
+> as a price cap, but more like a price floor. Wholesale gas offers and bids have generally
+> been made above $12/GJ, with a minimal number of contracts being struck at $12/GJ or
+> below. The cap has not acted as a cap. It has acted arguably more like a price floor."
+
+This is the most likely remaining cause of GARY's early-year prices sitting below ACIL's:
+they have most markets at $12-13/GJ through to 2027, GARY has a 2026 mean of $6.41.
+
+**To close it:** decide whether GARY should reproduce the Code as written or as observed.
+They are different models of the same policy and the difference is worth $5/GJ in the near
+term, so it should be a documented switch rather than a silent choice.
