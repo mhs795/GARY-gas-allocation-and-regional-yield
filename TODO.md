@@ -107,40 +107,46 @@ The AER access arrangement would settle it. Note 0.40 over 1,658 km is $0.24/100
 against a posted median of $1.63 — seven times cheap, which is itself odd and may mean
 the number is zonal rather than full-haul.
 
-## 9. Long-run prices are about half ACIL Allen's
+## 9. Long-run prices are about half ACIL Allen's — the south never gets short
 
-Benchmarked 28 Aug 2026 against ACIL Allen, *Gas, liquid fuel, coal and renewable gas
-projections*, 25 February 2025 (report to AEMO), Step Change:
+Benchmarked 28 Aug 2026 against ACIL Allen, *Wholesale natural gas prices for AEMO*,
+Final Report, **14 November 2025** (the report behind the 2026 GSOO). Step Change, 2050:
 
-| | ACIL Feb 2025 | GARY |
+| | ACIL Nov 2025 | GARY |
 |---|---|---|
-| Brent | US$65 **flat** | 70 → 68 → 63 → **58** |
-| Asian LNG | A$11.00 **flat** | 13.99 → 11.27 → 10.50 → **9.99** |
-| Early 2030s delivered | $11–13/GJ | ~$7.3–8.4/GJ |
-| End of projection | **$14–15/GJ** | **$7.82/GJ** |
+| Asian LNG price | A$9.99 | A$9.99 — matches |
+| Import injection cost (LNG + 0.80 shipping + 1.50 regas) | **$12.29** | $12.29 — matches |
+| Export netback (LNG less the $2.87 deduction) | — | $7.12 |
+| Melbourne | ~$13–14 | **$7.70** |
+| Mean nodal | $12–14 | **$7.82** |
 
-Two causes, and the second is most of it.
+**The inputs are faithful.** An earlier version of this note claimed the `LNG_Anchors`
+sheet did not match ACIL; that was wrong — it was checked against the Feb 2025 vintage.
+Against the Nov 2025 report the anchors match Table B.4 exactly for all three scenarios,
+the LNG price formula matches Appendix B.9 (fixed 0.40, slope 0.12, FX 0.66, 1.055
+GJ/mmbtu), the spot shares match Table B.3, and `model.py` already reprices the import
+nodes on Table 2.1's injection cost rather than the flat $14 in supply.csv.
 
-**The anchors do not match.** `LNG_Anchors` in the parameters workbook is sourced
-"ACIL Allen (Nov 2025)", but no such report could be found — the latest ACIL report to
-AEMO is Feb 2025, and its Step Change is a FLAT Brent 65 / LNG A$11.00, not GARY's
-declining path. Either the source is a non-public vintage or the citation is wrong.
-Worth resolving, because the netback is A$ LNG price less the $2.87 export deduction and
-therefore maps 1:1 onto every long-run price.
+**The gap is structural.** ACIL's southern markets price off IMPORT PARITY; GARY's price
+off EXPORT NETBACK. That spread — $12.29 against $7.12, about $5.17/GJ — is essentially
+the whole difference. ACIL: *"prices in southern markets in particular generally do not
+follow the LNG netback lower… increasingly reliant on northern gas (LNG netback plus
+transport) and higher cost LNG imports"*, while *"Brisbane hovers at a price around the
+LNG netback price"*. **GARY reproduces ACIL's Brisbane across the entire east coast.**
 
-**Nothing in GARY makes prices rise.** ACIL has prices climbing to $14–15/GJ because the
-southern cities end up on "LNG netback plus transport and higher cost LNG imports" —
-import parity sets their price. In GARY, import nodes ($14/GJ) are almost never marginal:
-Surat runs at capacity every year but is still 3,111 TJ/d in 2050, and divertible export
-volume covers the rest more cheaply, so price tracks the netback DOWN. Combined with
-items 1, 3 and the absence of reserve depletion or cost escalation, GARY has no upward
-mechanism at all.
+Imports are available to GARY at the correct price and are simply never needed, because
+the south never gets short. Why:
 
-The tell: ACIL's Brisbane "hovers at a price around the LNG netback price", which is
-exactly what GARY does — everywhere. GARY reproduces ACIL's Brisbane across the whole
-east coast because nothing forces the southern divergence ACIL models.
+- Surat never depletes — 3,111 TJ/d in 2050 at $4.00/GJ, no reserve stock (items 1, 3).
+- Export volume is too freely divertible. ACIL: *"LNG exporters' commitments are crucial
+  in keeping long term prices relatively stable"*. Worth checking whether GARY's 93%
+  foundation share actually binds the way that implies.
+- The corridor is never upgraded because it never has to be. ACIL assumes *"a number of
+  pipelines taking gas from the NT and Queensland need to be upgraded"*.
 
-**To close it:** (a) resolve the anchor provenance; (b) give supply a reserve stock that
-depletes and a cost that escalates with it; (c) check why import parity never binds —
-if LNG foundation volume is genuinely 93% contracted, the model should not be able to
-divert as freely as it does.
+Note ACIL's Step Change also assumes Beetaloo at ~50 PJ/a and Narrabri by 2030 — MORE
+supply than GARY has — and still lands $5–6/GJ higher. Supply volume is not the cause.
+
+**To close it:** give supply a depleting reserve stock with a cost that escalates as it
+draws down, and check the foundation-contract binding. If the south still never needs
+imports after that, the corridor capacities are the next place to look.
