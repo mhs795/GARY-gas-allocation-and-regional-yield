@@ -181,9 +181,30 @@ Holding the GSOO's own indices constant and only fixing the buckets closes the 2
 exactly: 95 + 461 + 193 = **749** against the GSOO's 750, versus GARY's actual 495.
 
 **This is why the south never gets short**, why import parity never binds, and therefore
-why GARY prices the whole east coast at export netback like ACIL's Brisbane. It is also a
-level gap of 158 TJ/d in 2026 (900 vs 1,058) that is separate from the mix problem and
-still needs explaining.
+why GARY prices the whole east coast at export netback like ACIL's Brisbane. 
+
+**The separate 158 TJ/d level gap in 2026 is a COVERAGE problem.** GARY's non-GPG domestic
+demand is 900 TJ/d against the GSOO's 1,058. Chased 28 Aug 2026; the causes are:
+
+- **Industrial is Gas Bulletin Board only.** `industrial_demand_profile` is built from
+  `industrial_facilities_bbg.csv` — **12 facilities, 210 TJ/d**, at just five nodes
+  (Gladstone 106, Sydney 61, Adelaide 19, Melbourne 14, Gippsland 11). The GBB registers
+  large *transmission-connected* users. Every distribution-connected industrial user is
+  therefore either embedded in city-gate demand (and wrongly declined at the ResComm rate,
+  above) or absent entirely.
+- **No Queensland industrial outside Gladstone.** Brisbane and Surat carry zero industrial
+  load. `industrial_facilities.csv` — a hand-built 8-row file listing Incitec Pivot
+  Brisbane at 35 TJ/d, Iona Industrial at 15 and Port Kembla Steel — is **dead: no code
+  reads it** (see item 10). That load was lost when the GBB-derived file superseded it.
+- **Only four city-gate nodes** (Melbourne 340, Sydney 237, Brisbane 64, Adelaide 54).
+  Regional NSW / VIC / QLD distribution load has nowhere to sit.
+- **No Tasmania node at all**, though the GSOO's ECGM includes TAS. Small — about 1.1% of
+  regional RCI peak, so roughly 10 TJ/d — but it is a real omission.
+
+Corroboration that the GSOO's south is genuinely tighter than GARY's: the 2026 GSOO
+Figure 5/38 forecasts southern annual supply gaps under Step Change of 1.3 PJ (2029),
+12.2 PJ (2030), 28.2 PJ (2031) and 11.4 PJ (2032) with existing, committed and anticipated
+supply. GARY's central Step Change case has **zero** shortage in every year.
 
 **To close it:** split city-gate node demand into a true ResComm share and an embedded
 industrial share, and apply the GSOO's two indices to them separately.
@@ -191,4 +212,13 @@ industrial share, and apply the GSOO's two indices to them separately.
 breakdown to size the split from. Then re-check the 2026 level gap, and only after that
 revisit whether supply-side depletion (item 1) is still needed to match ACIL.
 
+## 10. `industrial_facilities.csv` is dead
 
+An 8-row hand-built file (QAL, Yarwun, Tomago, Whyalla, Orica Kooragang, Incitec Pivot
+Brisbane, Iona Industrial, Port Kembla Steel) that **no code reads**. It was superseded by
+`industrial_facilities_bbg.csv`, generated from the Gas Bulletin Board.
+
+The switch silently dropped load the old file carried and the GBB does not: Incitec Pivot
+Brisbane at 35 TJ/d, Iona Industrial at 15, Port Kembla Steel at 2.7. Brisbane and Surat
+now have no industrial demand at all. Either fold the missing facilities into the
+generated file, or delete the dead one so it stops looking authoritative.
