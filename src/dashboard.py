@@ -1584,8 +1584,9 @@ def delivered_price(res):
     """Volume-weighted delivered price across the demand centres, $/GJ.
 
     The headline price has to be the one buyers face, so it is taken at the
-    Demand nodes -- the same node set the Price Outcomes charts plot -- not at
-    the fields. Weighting an average price by *production* instead answers a
+    Demand nodes -- not at the fields, and not at the LNG trains. The Price
+    Outcomes chart PLOTS the trains as well, but its average line uses this same
+    demand-node set, so the card and the line agree. Weighting an average price by *production* instead answers a
     different question: it lands on the wellhead, where Surat's volume swamps
     everything and the transport differential to Melbourne (~$10/GJ in a tight
     year) never appears at all.
@@ -2793,6 +2794,9 @@ def update_prices(key, end_year, active_tab, theme):
     if not frames:
         return (b,) * 6 + (HIDE,) * 3
     price_nodes = static_data['nodes'][static_data['nodes']['Type'].isin(['Demand', 'LNG'])]['Name'].tolist()
+    # The average line is domestic-only; see _weighted_avg.
+    avg_nodes = set(static_data['nodes']
+                    .loc[static_data['nodes']['Type'] == 'Demand', 'Name'])
     dpr = pd.concat(frames)
     dpr = dpr[dpr['Node'].isin(price_nodes)].copy()
     dpr['Node'] = dpr['Node'].astype(str)
@@ -2843,20 +2847,28 @@ def update_prices(key, end_year, active_tab, theme):
     weighted = bool(vframes) and float(dpr['Vol'].sum()) > 0
     if not weighted:
         dpr['Vol'] = 1.0
-    wavg_name = ('Volume-weighted avg' if weighted
+    wavg_name = ('Domestic volume-weighted avg' if weighted
                  else 'Unweighted avg \u2014 no flow data')
     # Neutral, deliberately outside the series colourway: the average is a
     # summary of the lines, not another node.
     wavg_colour = '#ECEFF3' if theme == 'dark' else '#1A1D21'
 
     def _weighted_avg(period, nodes):
-        """Volume-weighted mean price per period over `nodes`, from DAILY rows.
+        """Volume-weighted mean DOMESTIC price per period, from DAILY rows.
 
         Taken off the daily prices rather than off the plotted period means, so
         a node-day with no delivery carries no weight and a big winter day
         carries its full one.
+
+        RESTRICTED TO DEMAND NODES, even though the chart also plots the three LNG
+        trains. Export volume is roughly four times domestic consumption -- 78% of
+        the weight in 2050 -- so including it produced a line that sat below every
+        domestic node on the chart, and below the headline KPI card, for a reason
+        the reader could not see. The card and this line are now the same figure on
+        the same node set, which is what the card's docstring always claimed.
+        The trains keep their own plotted lines; they just do not set the average.
         """
-        sub = dpr[dpr['Node'].isin(nodes)]
+        sub = dpr[dpr['Node'].isin(set(nodes) & set(avg_nodes))]
         if sub.empty:
             return None
         g = (sub.assign(_pv=sub['Price'] * sub['Vol'])
