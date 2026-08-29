@@ -3,10 +3,15 @@
 [← back to README](../README.md)
 
 `src/data/expansion_options.csv` is the menu the capacity layer chooses from. Each row is
-a real project with a public source; the `Source` column records whether AEMO counts it in
-the **2026 GSOO / Victorian Gas Planning Report Update** as *committed*, or whether it came
-from GARY's own market scan and sits outside that boundary (pre-FID, proposed, or committed
-after the GSOO's cut-off).
+a real project with a public source. The **`Source`** column records **where the candidate
+came from** — `GSOO` if AEMO *names* it in its 2026 GSOO material (the G26 *Field
+Developments* sheet for supply, the GSOO / Victorian Gas Planning Report Update project set
+for pipelines), `Market` if GARY researched it from public announcements or built it
+itself. It is **not** a statement about status: an AEMO-named project tagged `GSOO` may be
+Committed, Anticipated, Proposed or Undeveloped in AEMO's own sheet.
+
+That is exactly what the **GSOO expansions only** toggle selects — the AEMO-sourced menu.
+Off (the default) it offers that plus everything GARY has researched on top.
 
 Each row also carries a short **`Label`** — the name the dashboard shows in the Expansions
 tab and on the map. `Name` stays the stable key that results and lookups join on, so a
@@ -16,7 +21,9 @@ label can be reworded without invalidating anything.
 own in the row's `Note` and in the tables below — the same discipline the netback deduction
 and the foundation share follow.
 
-- [In the GSOO (committed)](#in-the-gsoo-committed)
+- [Named in the GSOO — pipelines](#named-in-the-gsoo--pipelines)
+- [Named in the GSOO — field developments](#named-in-the-gsoo--field-developments)
+- [Named in the GSOO — import terminals](#named-in-the-gsoo--import-terminals)
 - [Outside the GSOO (GARY's market scan)](#outside-the-gsoo-garys-market-scan)
 - [Turning import terminals off](#turning-import-terminals-off)
 - [Four new arcs and one new node](#four-new-arcs-and-one-new-node)
@@ -24,7 +31,7 @@ and the foundation share follow.
 
 ---
 
-## In the GSOO (committed)
+## Named in the GSOO — pipelines
 
 | Project | GARY target | Capacity | CapEx | Date | Source |
 |---|---|---|---|---|---|
@@ -41,25 +48,81 @@ the split is GARY's own, the total is APA's.
 
 > **A boundary case worth knowing about.** `SWP_Compression` was *not* committed in the
 > March 2026 GSOO/VGPR — AEMO's text says so explicitly — but the AER approved the $213m
-> spend afterwards. GARY tags it `GSOO` because it is now committed. It is the clearest
-> illustration of why the toggle exists: **the GSOO's committed set is a snapshot with a
-> cut-off, not a standing fact.**
+> spend afterwards. It is tagged `GSOO` because AEMO names the project. **The GSOO is a
+> snapshot with a cut-off, not a standing fact**, which is why `Source` tracks provenance
+> rather than status.
+
+## Named in the GSOO — field developments
+
+Every one of these is a row on AEMO's **G26 *Field Developments*** sheet, extracted to
+`data/gsoo/field_developments.csv` by `build_field_developments.py`. Each unlocks part of
+its basin's **2C** tranche in `supply.csv`, which cannot produce at all until one is built.
+
+| Project | Basin | Capacity | CapEx | Date | AEMO status |
+|---|---|---|---|---|---|
+| `Golden_Beach` | Gippsland | 375 TJ/d | $15.8bn ¶ | 2029 | Anticipated |
+| `Judith` | Gippsland | 125 TJ/d | $5.3bn ¶ | 2029 | Undeveloped |
+| `Bowen_Gas_Project` | Surat/Bowen | 3,148 TJ/d ◊ | $68.2bn ¶ | 2030 | Proposed |
+| `Mahalo_CSG` | Surat/Bowen | 50 TJ/d | $1.1bn ¶ | 2026 | Not approved for development (FEED) |
+| `Mt_St_Martin` | Surat/Bowen | 22 TJ/d | $0.5bn ¶ | 2027 | Uncertain project |
+| `Otway_Annie` | Otway | 12 TJ/d ◊ | $0.6bn ¶ | 2028 | Potential development |
+| `Otway_Juliet` | Otway | 12 TJ/d ◊ | $0.6bn ¶ | 2028 | Potential development |
+| `Otway_Nestor` | Otway | 10 TJ/d ◊ | $0.5bn ¶ | 2033 | Potential development |
+| `Otway_Elanora` | Otway | 9 TJ/d ◊ | $0.4bn ¶ | 2035 | Potential development |
+| `Otway_Wobbegong` | Otway | 9 TJ/d ◊ | $0.4bn ¶ | 2037 | Potential development |
+| `Beetaloo_Dev` | Beetaloo | 450 TJ/d | **none** ¤ | — | Appraisal |
+| `Beetaloo_Pilot` | Beetaloo | 40 TJ/d | **none** ¤ | 2026 | Appraisal (pilot figure, not full field) |
+| `Carpentaria_Pilot` | Beetaloo | 25 TJ/d | **none** ¤ | 2025 | Committed |
+
+◊ AEMO publishes no deliverability for this development. See
+[`model.md`](model.md#sizing-a-2c-tranches-deliverability) for the sizing rule — AEMO's own
+production forecast where one covers the basin, else the 2C/2P resource ratio.
+
+¶ **CapEx is derived, not published.** AEMO publishes no development capital anywhere in
+the GSOO supply data. It is `(AEMOFullCost − Cost) × Reserves_PJ` for the basin, shared
+pro rata — see [`model.md`](model.md#costing-a-development-what-is-published-and-what-is-not).
+These are basin-scale numbers, not project build costs: `Golden_Beach`'s announced cost is
+near $600m, and its $15.8bn here is its share of developing Gippsland's whole 2C pool.
+
+¤ AEMO publishes no 2P cost for the Beetaloo, so its cost cannot be split. Its supply row
+carries the full $9.15/GJ and these rows carry no derived capital.
+
+> **The Beetaloo rows are useless without `NEAP`.** `Beetaloo_Pipe` is the real Sturt
+> Plateau Pipeline (37 km, 40 TJ/d) and the corridor beyond it is capped at 65 TJ/d by the
+> Carpentaria southbound leg, which the GSOO says will not be expanded. So of the 515 TJ/d
+> these three unlock, only 40 reaches anywhere until APA's North East Australia Pipeline is
+> built — and `NEAP` is `Market`, not `GSOO`. A GSOO-only run therefore has the Beetaloo
+> gas but not the pipe to move it.
+
+## Named in the GSOO — import terminals
+
+AEMO's **G26 *Processing*** sheet names all four regasification terminals, each with
+status *Proposed*. They are `GSOO` on provenance, and the
+[import-terminal switch](#turning-import-terminals-off) is the separate control over
+whether they may be built at all.
+
+| Project | GARY target | Capacity | CapEx | Date | AEMO row |
+|---|---|---|---|---|---|
+| `Port_Kembla_Terminal` | `Port_Kembla` | 500 TJ/d | $250m | ≥2027 | *LNG Regasification Terminal - Port Kembla*. Squadron Energy PKET; mechanically complete, FSRU redeployed to Egypt |
+| `Viva_Geelong_FSRU` | `Geelong` **(new node)** | 750 TJ/d | $1.0bn ‡ | Winter 2029 | *…Viva Energy Gas Terminal*, Corio Bay; EPBC approval Apr 2026. AEMO: a Geelong terminal lifts total SWP capacity to ~770 TJ/d |
+| `Vopak_Victoria_FSRU` | `Geelong` | 750 TJ/d ‡ | $1.0bn ‡ | Pre-winter 2029 | *…Vopak Victoria LNG*, Port Phillip Bay; FSRU secured Sep 2025. **Mutually exclusive** with Viva |
+| `Outer_Harbor_LNG` | `Adelaide` **(new supply)** | 422 TJ/d | $900m ‡ | Winter 2028 | *…Outer Harbor LNG Project*, Port Adelaide; 400 mmscfd. ~90 of its ~110 PJ/yr is aimed at Victoria |
 
 ## Outside the GSOO (GARY's market scan)
+
+Seven candidates AEMO does not name — five pipelines GARY researched from public
+announcements, and two field developments GARY built itself for basins AEMO gives no
+discrete project for.
 
 | Project | GARY target | Capacity | CapEx | Date | Source |
 |---|---|---|---|---|---|
 | `Bulloo_Interlink` | `Bulloo` **(new arc)** | 800 TJ/d N→S | $220m | End 2028, pre-FID | APA ECGG Stage 3B; new SWQP→MSP link, ~240 km shorter corridor; line pipe purchased |
 | `ECGG_VTS_Expansion` | `VNI_Rev` | +93 TJ/d § | $226m ‡ | Winter 2029 | APA ECGG Stage 5; MSP+VTS to 350 TJ/d Young→Wollert |
 | `SWP_Looping` | `SWP` | +45 TJ/d | $340m ‡ | 2029 | APA's alternative to `SWP_Compression`: 88 km of looping; more linepack. **Mutually exclusive** with it |
-| `Viva_Geelong_FSRU` | `Geelong` **(new node)** | 750 TJ/d | $1.0bn ‡ | Winter 2029, FID H2 2026 | Viva Energy Gas Terminal, Corio Bay; EPBC approval Apr 2026. AEMO: a Geelong terminal lifts total SWP capacity to ~770 TJ/d |
-| `Vopak_Victoria_FSRU` | `Geelong` | 750 TJ/d ‡ | $1.0bn ‡ | Pre-winter 2029 | Vopak Victoria Energy Terminal, Port Phillip Bay; FSRU secured Sep 2025. **Mutually exclusive** with Viva — AEMO states the two behave similarly for the DTS |
-| `Golden_Beach` | `Gippsland_Potential` | 375 TJ/d | $600m ‡ | Late 2029, FID H2 2026 | GB Energy Golden Beach Energy Storage; 125 TJ/d production late 2028 → 300 → 375 TJ/d; 42 PJ store |
-| `Outer_Harbor_LNG` | `Adelaide` **(new supply)** | 422 TJ/d | $900m ‡ | Winter 2028 | AG&P Outer Harbor FSRU, Port Adelaide; 400 mmscfd. ~90 of its ~110 PJ/yr is aimed at Victoria (60 PJ to Iona + 30 PJ to the Port Campbell pipeline) |
 | `SEA_Gas_Reversal` | `SEA_Gas_Rev` **(new arc)** | 300 TJ/d | $150m ‡ | With Outer Harbor | SEA Gas compression + reverse flow on the Port Campbell–Adelaide pipeline, to move Outer Harbor gas east |
-| `Port_Kembla_Terminal` | `Port_Kembla` | 500 TJ/d | $250m | ≥2027 | Squadron Energy PKET; mechanically complete, FSRU redeployed to Egypt |
+| `Cooper_2C` | `Moomba` | 282 TJ/d ◊ | $5.1bn ¶ | 2030 | **GARY's own.** AEMO names no discrete Cooper/Eromanga development, but the basin holds 1,603 PJ of 2C that Figure 27's Uncertain category plainly produces |
+| `Amadeus_2C` | `Amadeus` | 47 TJ/d ◊ | $2.0bn ¶ | 2030 | **GARY's own.** The Amadeus fields are "Commercial in confidence" in AEMO's sheet |
 | `NEAP` | `NEAP` **(new arc)** | 200 TJ/d ‡ | $2.0bn ‡ | 2030s, investigation | APA's North to East Australia Pipeline; 1561 km Beetaloo→SWQP, 100% APA. **The only candidate that relieves the Beetaloo corridor** — it bypasses the NGP and the 65 TJ/d Carpentaria southbound leg. APA publishes no capacity; the 50 TJ/d figure in circulation is survey-permit material and implies $40m per TJ/d, so GARY sizes it itself. CapEx at Jemena's NGP unit rate ($800m / 622 km) |
-| `Beetaloo_Dev` | `Beetaloo` | 450 TJ/d | $900m | Proposed | Beetaloo development. **Without `NEAP` this field cannot deliver more than 40 TJ/d anywhere** — `Beetaloo_Pipe` is the real Sturt Plateau Pipeline (37 km, 40 TJ/d, $66.5m, in service 2026) and the corridor beyond it is capped at 65 TJ/d by the Carpentaria southbound leg, which the GSOO says will not be expanded |
 
 ‡ Not public — GARY's own, derived as stated in the row's `Note`.
 § Sized to land GARY's corridor on APA's stated **350 TJ/d** endpoint: 350 less the 218
@@ -83,7 +146,6 @@ hand-maintained column could. It drops exactly four candidates:
 
 | dropped | kept (Type=Terminal, but a field, not an import) |
 |---|---|
-| `Port_Kembla_Terminal`, `Viva_Geelong_FSRU`, `Vopak_Victoria_FSRU`, `Outer_Harbor_LNG` | `Golden_Beach`, `Beetaloo_Dev` |
 
 Filtering happens in `filter_expansions`, before either stage sees the candidate set, so
 the investment and dispatch layers are offered exactly the same menu.

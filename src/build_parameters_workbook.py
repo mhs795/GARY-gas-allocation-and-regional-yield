@@ -104,10 +104,15 @@ PARAMETERS = [
     ("Capacity model", "gsoo_expansions_only", "FALSE", "boolean",
      "Default for the GSOO-only expansion filter. FALSE = the capacity layer may "
      "choose any candidate in expansion_options.csv; TRUE = only rows with "
-     "Source=GSOO, i.e. the committed set in AEMO's 2026 GSOO/VGPR. Overridden per "
-     "run by the dashboard toggle or --gsoo-expansions-only"),
+     "Source=GSOO, i.e. those AEMO NAMES in its 2026 GSOO material (the G26 Field "
+     "Developments sheet for supply, the GSOO/VGPR project set for pipelines) -- "
+     "whatever status AEMO gives them, Committed or Undeveloped alike. Source "
+     "records where a candidate came from, NOT whether it is committed. Market rows "
+     "are ones GARY researched from public announcements or built itself. Overridden "
+     "per run by the dashboard toggle or --gsoo-expansions-only"),
     ("Capacity model", "expansion_source_gsoo", "GSOO", "label",
-     "Value of the Source column in expansion_options.csv that counts as GSOO"),
+     "Value of the Source column in expansion_options.csv that counts as "
+     "AEMO-sourced"),
 
     # --- ACIL Allen gas pricing methodology ------------------------------------
     ("ACIL Allen LNG price", "netback_pricing_default", "TRUE", "boolean",

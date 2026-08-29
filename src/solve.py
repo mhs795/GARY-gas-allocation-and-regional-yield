@@ -46,9 +46,23 @@ def filter_expansions(expansion, gsoo_only, allow_imports=True):
     is identified as a ``Type == 'Terminal'`` row whose ``Target`` is one of
     ``import_nodes`` -- derived rather than flagged, because that is already how
     model.py decides which supply rows to reprice at the injection cost, and a
-    second hand-maintained flag could disagree with it. Field developments
-    (Golden Beach, Beetaloo) are Type=Terminal too but target basin nodes, so they
-    are untouched.
+    second hand-maintained flag could disagree with it. The thirteen FIELD
+    DEVELOPMENTS are Type=Terminal too -- Golden Beach, Judith, the five Otway
+    projects, Bowen Gas Project, Mahalo, Mt St Martin, Cooper, Amadeus and the
+    Beetaloo rows -- but they target BASIN nodes, so the ban leaves them alone.
+
+    ``Source`` says WHERE A CANDIDATE CAME FROM, not what status AEMO gives it:
+    ``GSOO`` means the project is named in AEMO's 2026 GSOO material -- the G26
+    Field Developments sheet for supply, the GSOO/VGPR project set for pipes --
+    whatever its status there, Committed or Undeveloped alike. ``Market`` means
+    GARY researched it from public announcements, or invented it outright, and AEMO
+    does not name it. So ``gsoo_only`` selects the AEMO-sourced menu; the default
+    offers that plus everything GARY has researched on top.
+
+    On the supply side the GSOO menu carries 13 field developments and 4,287 TJ/d of
+    backfill, so a GSOO-only run under the stock limit still has something to build.
+    The two candidates it drops -- Cooper_2C and Amadeus_2C -- are GARY's own, for
+    basins AEMO names no discrete development in.
 
     A file with no ``Source`` column (a clone predating the market scan) is
     returned untouched, so the filter can never silently empty the candidate set.
