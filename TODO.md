@@ -3,6 +3,93 @@
 Things known to be wrong, unfinished, or resting on an assumption worth revisiting.
 Each entry says what the issue is, how big it is, and what closing it would take.
 
+## CLOSED 29 Aug 2026 — items 2, 3, 4 and the contracts input
+
+**Item 2 (Committed projects are not committed) — CLOSED.** `Status == 'Committed'`
+rows are now forced to build by their stated year. This also neutralises item 1's
+brownfield tariff bias for exactly the projects where it was worst, since a forced
+build does not care that its economics are understated.
+
+**Item 3 (`Surat_Potential` is permanently zero) — HALF CLOSED, and the diagnosis
+was wrong.** Both potential rows named a `Node` absent from `nodes.csv`, so
+`supply_at` (built by iterating `m.Nodes`) never picked them up and their
+production appeared in NO balance constraint. `Golden_Beach` could be built and
+still deliver nothing — the note here claimed Gippsland was fixed by repointing
+`Golden_Beach` at it, but the pointer was never the fault. Both rows now sit at the
+real node with `IsPotential=True`, the pattern the import terminals already used.
+Golden Beach delivers. **Surat's 3,000 TJ/d is still gated at zero** because no
+Terminal targets it — that remains a modelling decision (what unlocks it, at what
+capex), but it is now a data row rather than a code change.
+
+**Item 4 (No earliest-build year) — CLOSED.** `expansion_options.csv` gains
+`EarliestYear`, honoured by both models. `terminal_earliest` stays as the fallback
+floor for terminals without one.
+
+**`contracts.csv` — DELETED.** Read, threaded through two call layers behind a
+meaningless `year <= 2040` gate, assigned to an attribute nothing read. Its MSP and
+MAPS baseload minimums were never enforced and its three export rows named nothing
+that exists in the model.
+
+## NEW — the storage layer was not physical
+
+Found and fixed 29 Aug 2026, recorded because the size of it is worth remembering.
+Nothing required a store to be at any level on day 365 while every year opened at
+half full, so the solver emptied all three stores every year and got them back each
+January: **46,200 TJ/yr from nothing, about 11% of domestic supply**, at the
+$0.50/GJ cycling charge — cheaper than any field in the model. And
+`MaxInjection`/`MaxWithdrawal` had sat unread in `nodes.csv` from the beginning, so
+Moomba withdrew at 506 TJ/d against a published 120 and injected at 399 into a
+store AEMO lists as withdrawal-only.
+
+Measured on two full re-solves before the other fixes landed: closing the year and
+enforcing the rates moves the central case **+$0.58/GJ on the system mean** and
++$0.58 on Melbourne in 2050, with no shortage and no change to the build schedule.
+So it was a correctness and credibility defect rather than the explanation for the
+ACIL gap — but it will matter more in a Winter High run, where storage is marginal
+on the days that set the price. **That has not been tested.**
+
+**Still missing from the storage set:** Dandenong LNG (237 TJ/d withdrawal, the
+Victorian peaking facility), Heytesbury/HUGS (45 TJ/d), and Roma Underground
+Storage (54 PJ, 92/75 TJ/d).
+
+## NEW — GPG's shed strike and its raise ladder describe two different generators
+
+A gas generator will pay $22/GJ rather than shed, but only $6.43/GJ (QLD/NSW) or
+$1.43/GJ (VIC/SA) to run more. Same plant, same year, willingness to pay differing
+by 3.4x in Queensland and 15x in Victoria, with no stated basis for the hysteresis.
+
+The two come from different places — `strike_gpg_default` is a hand-set strike,
+the ladder is `gpg_displaced_srmc / heat_rate` — and the README is explicit that
+the ladder is engineering rather than econometrics. But $22 is the first rung of
+the scarcity ladder in every default (inelastic) run, so it sets the clearing price
+in a tight southern winter. Reconcile the two, or document why avoided-shutdown
+value should exceed expansion value by that much.
+
+## NEW — the 93% foundation share is extrapolated 25 years past the contracts
+
+`lng_foundation_share` = 0.93 comes from one quarter of ACCC uncontracted-gas data
+(22 PJ against ~325 PJ, Q1 2026) and is applied flat to 2050. From about 2035 that
+makes GARY export ~1,000 PJ/yr at a netback of $7-8/GJ while Surat's own marginal
+cost is above $10 — fifteen years of exporting below cost, because the volume is
+must-serve. Faithful to a take-or-pay SPA; increasingly unfaithful to the 2040s,
+when the foundation contracts behind that share have largely expired. It is also
+what stops the netback disciplining domestic prices after 2035, which is the
+opposite of what the mechanism was added to do.
+
+## NEW — 2046-2050 is extrapolation and nothing says so
+
+The GSOO horizon ends at 2045, so every demand index clamps there and holds flat.
+ACIL Allen's price series runs to 2050 with real anchors at 2050. The last five
+years of every run therefore pair a frozen 2045 demand shape with a moving netback
+and a moving import injection cost. The dashboard does not mark them.
+
+## NEW — GARY carries 99.9% of AEMO's 2P but only 80% of its 2C
+
+Missing: Gunnedah/Narrabri (2,156 PJ), Galilee-Drummond (2,788 PJ), McArthur
+(2,836 PJ), Bass (135 PJ). ACIL Allen's Step Change assumes Narrabri from 2030.
+This is the same absence as item 3: the backfill tranche that makes AEMO's southern
+supply hold up rather than collapse.
+
 ## 1. Brownfield expansions over-recover existing pipeline capital
 
 Since arcs moved to posted tariffs (World B), an expansion that adds capacity to an
@@ -279,7 +366,28 @@ Gibson Island plant ceased manufacturing at the end of 2022, which is why the GB
 longer registers it. **Verify each facility is still operating before restoring any of
 them.** The safe action is to delete the dead file so it stops looking authoritative.
 
-## 11. The $12 Gas Market Code cap is modelled as a ceiling; ACIL says it acts as a floor
+## 11. The $12 Code cap as ceiling vs floor — REAL, but NOT the near-term gap
+
+**Corrected 29 Aug 2026.** This item previously carried the near-term price gap
+with ACIL Allen. It cannot: **the cap never binds in Step Change.** Checked across
+the generated series — `Netback_Uncapped_AUD_GJ` equals `Netback_Capped_AUD_GJ` in
+all 26 years of Step Change, and in all 26 of Accelerated; it binds only in Slower
+Growth, 2040-2050. Step Change's netback starts at $11.12 and falls.
+
+Switching to a floor reading would lift the 2026 netback from $10.58 to $12 and
+change nothing downstream, because the contestable spot tail already clears in
+full (95 PJ against a 95 PJ ceiling) — a higher bid cannot pull more gas out of
+the domestic market than the trains can liquefy.
+
+The near-term gap is a COST BASIS gap instead, and it is now documented in the
+README under *What a GARY price is, and when it is not a wholesale price*: before
+~2031 no basin has depleted, so every field sits on AEMO's 2P cost (which AEMO
+defines as "largely marginal operating costs, royalties and tax") and neither
+parity anchor binds, so a 2026 dual is opex plus a tariff — about half a contract
+price. Still worth building the floor/ceiling switch as a documented option; just
+do not expect it to close anything.
+
+### The original note follows
 
 GARY applies the Code's $12/GJ cap the way the Code is written and the way ACIL's 2023
 report described it — as a ceiling on the LNG netback (`code_price_cap`). ACIL's November

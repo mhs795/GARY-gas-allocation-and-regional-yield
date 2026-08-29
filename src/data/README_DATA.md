@@ -33,9 +33,14 @@ work. Nothing reads them today.
 
 ## 2. Reference material — committed, read by people not code
 
-`other data/2026 GSOO/` holds AEMO's published 2026 GSOO workbooks. These are the source
-for the NT pipeline capacities and tariffs, Beetaloo production costs, and the demand
-benchmark in `TODO.md` item 9. They are consulted by hand, not parsed at runtime.
+`other data/2026 GSOO/` holds AEMO's published 2026 GSOO workbooks. Two of them **are
+parsed** by `build_gsoo_scenarios.py` as step 2 of the regeneration pipeline —
+`2026-gsoo-report-figures-and-data.xlsx` (annual sector consumption, GPG seasonal
+maxima) and `2026-gsoo-daily-maximum-demand-summary.xlsx` (regional summer/winter
+peaks). A clone therefore needs them present to regenerate. `G26 Reserves Costs
+assumptions.xlsx` and `G26 Processing Transmission Storage Facilities.xlsx` are the
+sources for `supply.csv`'s reserves and costs, `arcs.csv`'s capacities and tariffs and
+`nodes.csv`'s storage figures, and those are transcribed by hand rather than parsed.
 
 ## 3. Generated — gitignored, rebuilt by `regenerate_data.py`
 

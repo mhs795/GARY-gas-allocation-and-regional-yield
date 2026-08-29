@@ -1167,6 +1167,13 @@ sidebar = html.Div(className='md-sidebar', children=[
         slider_group('Southern Winter Stress',
             dcc.Slider(id='winter-slider', min=0, max=2, step=1,
                        marks={i: l for i, l in enumerate(LEVELS)}, value=1)),
+        html.Div('Multiplies Melbourne / Adelaide / Sydney distribution demand over '
+                 'the winter window. \u2039Low\u203a is the GSOO-consistent case at '
+                 '1.0\u00d7; \u2039Medium\u203a (1.5\u00d7, the default) and '
+                 '\u2039High\u203a (2.2\u00d7) are stress cases layered on top of it, '
+                 'not alternative forecasts.',
+                 style={'marginTop': '-14px', 'marginBottom': '18px',
+                        'fontSize': '10px', 'color': '#888', 'lineHeight': '1.35'}),
 
         slider_group('Global LNG Market',
             dcc.Slider(id='lng-slider', min=0, max=2, step=1,

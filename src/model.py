@@ -339,7 +339,12 @@ def datacentre_profile(spec, year, gpg_demand):
 # The blocks live in data/curtailment_params.csv (rows MassMarket_B2..Bn) and are
 # DERIVED, not asserted: build_demand_curves.py fits a constant-elasticity
 # curve Q(P) = Q0 (P/P0)^e to a log-spaced price grid, using
-#   P0 = $13.56/GJ  ACCC Gas Inquiry, producer offers for 2026 supply
+#   P0 = REFERENCE_PRICE, the demand-weighted mean nodal dual of the inelastic
+#                   baseline -- the MODEL'S OWN price, on the Parameters sheet.
+#                   Calibrating against a contract price ($13.56/GJ, ACCC Gas
+#                   Inquiry) was the original mistake here: it put 93.8% of
+#                   node-days below the reference, so the shed blocks almost never
+#                   fired. A dual is a marginal cost; a contract price is not.
 #   e  = -0.180     short-run own-price elasticity of natural gas demand,
 #                   Labandeira, Labeaga & Lopez-Otero (2017), Energy Policy 102,
 #                   549-568, Table 6
@@ -753,8 +758,9 @@ class GasMarketModel:
         #   $120/GJ  industrial   -- stops the process line
         #   mass-market            -- NOT one strike but a ladder of blocks, each
         #                            with its own willingness to pay, fitted to a
-        #                            constant-elasticity curve anchored at $13.56/GJ
-        #                            (see load_demand_blocks). Blocks drop out one
+        #                            constant-elasticity curve anchored on the
+        #                            model's own REFERENCE_PRICE, not on a contract
+        #                            price (see load_demand_blocks). Blocks drop out one
         #                            at a time as the price climbs, which is what
         #                            makes this a demand curve rather than a switch.
         #   $300/GJ  VOLL         -- nothing left to shed, load simply goes unserved

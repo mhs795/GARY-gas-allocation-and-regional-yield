@@ -54,7 +54,7 @@ def create_docs():
         'actuals is preserved (shape correlation 1.0; only the annual level is scaled). GSOO indices are applied '
         'relative to 2026 and clamped to the 2026-2045 GSOO horizon, then held flat to 2050. The Winter, LNG and gas reservation '
         'scenario levers layer multiplicatively on top of whichever baseline is chosen. Queensland LNG export demand is '
-        'calibrated to ~3,650 TJ/day (~1,250 PJ/year) in 2026. ("Progressive Change" is not a 2026 GSOO scenario - it '
+        'calibrated to the GSOO LNG trajectory (~1,371 PJ/year in 2026). ("Progressive Change" is not a 2026 GSOO scenario - it '
         'belongs to the older 2025 GSOO vintage - so the model uses the consistent 2026 GSOO trio above.)'
     )
     table = doc.add_table(rows=1, cols=3)
@@ -64,10 +64,10 @@ def create_docs():
     hdr_cells[2].text = 'Rationale'
 
     data = [
-        ['City nodes (Sydney, Melbourne, Adelaide, Brisbane)', 'GSOO ResComm trajectory (Fig. 17)', 'City-gate distribution demand; electrification-driven decline'],
+        ['City nodes (Sydney, Melbourne, Adelaide, Brisbane)', 'GSOO ResComm + Industrial (Figs. 17/18), split; daily shape rescaled to the regional RC&I peak (daily-max workbook)', 'City-gate demand is distribution delivery, so it carries embedded commercial and small-industrial load that declines far more slowly than residential'],
         ['Gas-powered generation (GPG)', 'GSOO NEM trajectory + regional peaks', 'Annual level anchored to NEM GPG; winter-peaking from regional summer/winter peaks. AEMO publishes one 2026 GSOO GPG annual trajectory, so non-Step-Change baselines scale it by their regional GPG peak ratio vs Step Change'],
         ['Large industrial', 'GSOO industrial trajectory (year index)', 'Indexed on empirical BBLARGE levels (a subset of whole-sector industrial); Yarwun reclassified GPG -> industrial'],
-        ['LNG cluster (APLNG, GLNG, QCLNG)', 'GSOO LNG trajectory (Fig. 19)', '~3,650 TJ/day in 2026; replaces previous flat assumption'],
+        ['LNG cluster (APLNG, GLNG, QCLNG)', 'GSOO LNG trajectory (Fig. 19)', 'Anchored to the GSOO level, not to liquefaction nameplate; train split on AEMO published Mtpa'],
     ]
     for region, rate, reason in data:
         row_cells = table.add_row().cells
