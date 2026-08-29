@@ -2849,26 +2849,35 @@ def update_prices(key, end_year, active_tab, theme):
         dpr['Vol'] = 1.0
     wavg_name = ('Domestic volume-weighted avg' if weighted
                  else 'Unweighted avg \u2014 no flow data')
-    # Neutral, deliberately outside the series colourway: the average is a
-    # summary of the lines, not another node.
+    wavg_all_name = ('Volume-weighted avg incl. LNG exports' if weighted
+                     else 'Unweighted avg incl. LNG exports')
+    # Neutral, deliberately outside the series colourway: an average is a summary
+    # of the lines, not another node. The export-inclusive one is the same hue,
+    # lighter and dotted, so it reads as a variant of the domestic line rather
+    # than as a separate series.
     wavg_colour = '#ECEFF3' if theme == 'dark' else '#1A1D21'
+    wavg_all_colour = '#8B939C' if theme == 'dark' else '#8A9199'
 
-    def _weighted_avg(period, nodes):
+    def _weighted_avg(period, nodes, domestic_only=True):
         """Volume-weighted mean DOMESTIC price per period, from DAILY rows.
 
         Taken off the daily prices rather than off the plotted period means, so
         a node-day with no delivery carries no weight and a big winter day
         carries its full one.
 
-        RESTRICTED TO DEMAND NODES, even though the chart also plots the three LNG
-        trains. Export volume is roughly four times domestic consumption -- 78% of
-        the weight in 2050 -- so including it produced a line that sat below every
-        domestic node on the chart, and below the headline KPI card, for a reason
-        the reader could not see. The card and this line are now the same figure on
-        the same node set, which is what the card's docstring always claimed.
-        The trains keep their own plotted lines; they just do not set the average.
+        ``domestic_only`` restricts the weights to demand nodes, which is what the
+        headline KPI card does, so the two agree. With it False the three LNG
+        trains are included and the figure becomes a whole-market average.
+
+        BOTH ARE DRAWN, because they answer different questions and the gap between
+        them is itself informative. Export volume is roughly four times domestic
+        consumption -- the trains are 78% of the weight in 2050 -- so the
+        export-inclusive line sits below every domestic node on the chart. That is
+        not an error; it is what it means for most of the gas to leave the country
+        at a price below what domestic buyers pay.
         """
-        sub = dpr[dpr['Node'].isin(set(nodes) & set(avg_nodes))]
+        sub = dpr[dpr['Node'].isin(set(nodes) & set(avg_nodes) if domestic_only
+                                   else set(nodes))]
         if sub.empty:
             return None
         g = (sub.assign(_pv=sub['Price'] * sub['Vol'])
@@ -2894,6 +2903,16 @@ def update_prices(key, end_year, active_tab, theme):
                           line=dict(color=wavg_colour, width=3, dash='dash'),
                           hovertemplate='%{x}<br>' + wavg_name
                                         + ': $%{y:.2f}/GJ<extra></extra>')
+        # Only worth a second line where this chart actually carries an LNG node --
+        # otherwise it would duplicate the domestic line exactly.
+        if set(nodes) - set(avg_nodes):
+            wa = _weighted_avg(period, nodes, domestic_only=False)
+            if wa is not None and len(wa) > 1:
+                f.add_scatter(x=wa[period], y=wa['Price'], mode='lines',
+                              name=wavg_all_name,
+                              line=dict(color=wavg_all_colour, width=2, dash='dot'),
+                              hovertemplate='%{x}<br>' + wavg_all_name
+                                            + ': $%{y:.2f}/GJ<extra></extra>')
         f.update_yaxes(rangemode='tozero')
         return f
 
