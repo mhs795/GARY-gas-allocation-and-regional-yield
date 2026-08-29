@@ -872,16 +872,11 @@ there. Treat the long-run agreement as unconfirmed until that is checked.
 
 ### Customer-segment prices
 
-GARY's nodal prices are LP duals — short-run marginal cost plus transport, $4–8/GJ.
-ACIL Allen are explicit that this is not what a customer pays, so they run GasMark
-twice and blend the legs per segment. `src/acil_segment_prices.py` is that layer,
-applied to a solved scenario; it adds no constraint and re-solves nothing.
-
-> **Not wired in.** `segment_prices()` currently has **no caller** — not the
-> dashboard, not `solve.py`, not `batch_solve.py`. Everything GARY displays is the
-> raw dual. Until this layer is connected, any comparison with ACIL Allen's
-> published prices is comparing a marginal cost against a contract price; see
-> *What a GARY price is* above.
+GARY's nodal prices are LP duals — a system marginal cost. ACIL Allen are explicit
+that this is not what a customer pays, so they run GasMark twice and blend the two
+runs per segment. `src/acil_segment_prices.py` is that layer. It is a **post-processing
+step over a solve that already happened**: it adds no constraint, changes no
+quantity and re-solves nothing. It appears at the bottom of the **Prices** tab.
 
 | Segment | Contract | Spot | Premium | Source |
 |---|---|---|---|---|
@@ -890,32 +885,80 @@ applied to a solved scenario; it adds no constraint and re-solves nothing.
 | GPG — CCGT | 80% | 20% | — | §2.7, baseload role |
 | GPG — OCGT | 20% | 80% | $1.00/GJ | §2.7, *"based on their 'peaking' role and their low load factor"* |
 
-The contract leg is the **demand-weighted** annual mean of the daily duals (a flat
-mean lets quiet summer days pull an annual contract price down); the spot leg is
-the plain daily mean. Weights live in `data/acil_segment_weights.csv`.
+Weights live on the `Segment_Weights` sheet, mirrored in `data/acil_segment_weights.csv`.
 
-> **Both legs come from one solve, and it shows.** An earlier version of this note
-> said the spot leg "carries the winter peaks" and that the Code cap applies to the
-> contract leg only. Neither survives measurement. Demand-weighting is what loads
-> winter, so the *contract* leg is the higher one in most years, and the two legs
-> differ by 4c–82c with an unstable sign. And the cap cannot be removed from the
-> spot leg here: it is applied to the netback inside the solve, so both legs
-> inherit it. Reproducing ACIL Allen's Run 1 / Run 2 needs a second solve with
-> `code_price_cap=False` — see *What a GARY price is* above.
+#### How the two legs are built
 
-> **The OCGT premium is a placeholder.** ACIL Allen state that one exists and why
-> — *"the additional costs they typically pay to source high volumes of gas at
-> short notice… reserving pipeline capacity or the costs of storage"* — but do not
-> quantify it. $1.00/GJ is GARY's number, not theirs.
+**Contract leg — one price per node.** The annual mean of the daily duals,
+weighted by **total delivered volume across every tier that pays for gas**:
+distribution, GPG and industrial. A contract is struck once for the year, so the
+price it should reflect is the price of the average gas actually delivered; a flat
+mean over 365 days lets quiet summer days pull it down.
 
-> **ACIL Allen's Step 2 overlay is deliberately not reproduced.** Vertical
-> integration, gentailer portfolio effects, market power, and "inflating" new
-> supply costs toward netback because new entrants price off the next best
-> alternative are judgement applied outside the model, per generator and per
-> contract. None of it is reproducible from published material, and guessing would
-> put a number on this output that looks like ACIL Allen's and isn't. These are
-> their **mechanical** layer only, and will sit below their published forecasts
-> wherever that overlay adds to them.
+> This is a correction. The weights used to come from the GPG and industrial
+> served series **only**, because distribution volume was not emitted anywhere in
+> the results. At Melbourne that meant ~23,000 TJ of GPG-and-industrial standing
+> in for ~175,000 TJ of actual load — 13% of the volume setting the weight for a
+> segment that is 100% contract and the largest load in the model. `model.py` now
+> emits a `distribution` series for exactly this purpose.
+
+**Spot leg — one price per node PER SEGMENT.** The annual mean of the same daily
+duals, weighted by **that segment's own daily profile**. A buyer purchasing at
+spot pays the price on the days it actually consumes, so a winter-peaking
+household and a flat-running refinery face different average spot prices out of
+one price series. Weighting both legs identically — which this module used to do —
+collapsed the segments onto nearly one number: measured, the two legs differed by
+4c–82c with an unstable sign.
+
+GARY does not model CCGT and OCGT demand separately, so those two share the GPG
+profile and differ only through their weights and the OCGT premium.
+
+#### Run 1 and Run 2
+
+ACIL Allen's two runs differ in more than aggregation: Run 1 carries the Gas
+Market Code price cap, Run 2 explicitly removes it. GARY applies that cap to the
+**netback inside the solve**, so it cannot be lifted afterwards — the uncapped leg
+has to come from a second solve with `code_price_cap=False`, which selects the
+`Netback_Uncapped_AUD_GJ` column `build_lng_prices.py` already emits.
+
+`segment_prices()` takes an optional `uncapped_results=` for that second solve and
+records which mode was used in a `TwoRun` column. Without it the capped solve
+feeds both legs.
+
+> **In practice this rarely matters.** The $12 cap **never binds** in Step Change
+> or in Accelerated Transition — `Netback_Uncapped_AUD_GJ` equals
+> `Netback_Capped_AUD_GJ` in all 26 years of both. It binds only in Slower Growth,
+> 2040–2050. So for two of the three baselines the one-solve approximation is
+> exact, and the second run is only worth paying for on Slower Growth.
+
+#### What is deliberately missing — market power and the Step 2 overlay
+
+**These prices are ACIL Allen's mechanical layer only.** On top of everything
+above, ACIL Allen apply a second step that GARY does not reproduce:
+
+- vertical integration and gentailer portfolio effects;
+- **market power**;
+- "inflating" new supply costs toward the netback, because a new entrant prices
+  off its next best alternative rather than off its own cost.
+
+That is judgement applied outside their model, per generator and per contract.
+None of it is reproducible from published material, and guessing at it would put a
+number on this output that looks like ACIL Allen's and is not.
+
+**The consequence is directional and worth stating plainly: GARY's segment prices
+will sit BELOW ACIL Allen's published forecasts wherever that overlay adds to
+them, and the gap is not evidence that either is wrong.** It is the overlay.
+
+Two smaller gaps in the same direction:
+
+- the **$1.00/GJ OCGT premium is GARY's number**. ACIL Allen state that a premium
+  exists and why — *"the additional costs they typically pay to source high
+  volumes of gas at short notice… reserving pipeline capacity or the costs of
+  storage"* — but do not quantify it.
+- the segment layer inherits whatever the duals inherit. If the marginal unit is
+  priced at AEMO's 2P cost — largely operating cost — no reweighting turns that
+  into a full contract price. See *What a GARY price is, and when it is not a
+  wholesale price* above; that is the larger of the two effects in the near term.
 
 **Sources:** [ACIL Allen, *Wholesale natural gas prices for AEMO* (14 Nov 2025)](https://www.aemo.com.au/-/media/files/gas/national_planning_and_forecasting/gsoo/2026/2026-acil-allen-2025-projections.pdf) ·
 [ACIL Allen, *Natural gas price forecasts for the Final 2023 IASR and for the 2024 GSOO* (14 Jul 2023)](https://www.aemo.com.au/-/media/files/major-publications/isp/2023/iasr-supporting-material/acil-allen-natural-gas-price-forecasts.pdf) ·

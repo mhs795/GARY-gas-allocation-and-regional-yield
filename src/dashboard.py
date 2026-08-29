@@ -16,6 +16,7 @@ import dash_bootstrap_components as dbc
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import datacentre_series
+import acil_segment_prices
 import params as P
 import results_io
 from model import RESERVATION_LEVELS, VOLL_PER_GJ, lng_foundation_share
@@ -1434,6 +1435,8 @@ main = html.Div(className='md-main', children=[
                 ]),
                 dcc.Graph(id='price-a-low-graph'),
                 _dl_btn('dl-price-a-low'),
+                html.Hr(style={'margin': '26px 0 14px'}),
+                html.Div(id='segment-price-content'),
             ]),
 
             # Expansions
@@ -2938,6 +2941,79 @@ def update_prices(key, end_year, active_tab, theme):
     hi_style = SHOW if hit else HIDE
     return (fig_high, fig_low, fig_q_high, fig_q_low, fig_a_high, fig_a_low,
             hi_style, hi_style, hi_style)
+
+@app.callback(
+    Output('segment-price-content', 'children'),
+    Input('result-selector', 'value'),
+    Input('horizon-slider',  'value'),
+    Input('main-tabs',       'active_tab'),
+    Input('theme-store',     'data'),
+)
+def update_segment_prices(key, end_year, active_tab, theme):
+    """ACIL Allen-style customer-segment prices for the selected scenario.
+
+    A post-processing layer over duals the solve already produced: it adds no
+    constraint and re-solves nothing. See acil_segment_prices.py, and the README
+    section "What a GARY price is, and when it is not a wholesale price" for why
+    a dual is not a price a customer pays.
+    """
+    if active_tab != 'tab-price' or not key:
+        return no_update
+    filtered = get_filtered(key, end_year)
+    if not filtered:
+        return no_update
+    tmpl = 'gary_dark' if theme == 'dark' else CHART_TEMPLATE
+    try:
+        seg = acil_segment_prices.segment_prices(filtered)
+    except Exception as exc:                       # never take the tab down
+        return md_alert(f'Segment prices unavailable: {exc}', 'warning')
+    if seg.empty:
+        return md_alert('No segment prices for this scenario.', 'info')
+
+    demand_nodes = sorted(static_data['nodes']
+                          .loc[static_data['nodes']['Type'] == 'Demand', 'Name'])
+    seg = seg[seg['Node'].isin(demand_nodes)]
+    if seg.empty:
+        return md_alert('No segment prices at the demand nodes.', 'info')
+
+    LABEL = {'ResidentialCommercial': 'Residential / commercial',
+             'Industrial': 'Industrial', 'GPG_CCGT': 'GPG — CCGT',
+             'GPG_OCGT': 'GPG — OCGT'}
+    seg = seg.assign(Segment=seg['Segment'].map(lambda x: LABEL.get(x, x)))
+    fig = px.line(seg.sort_values('Year'), x='Year', y='Price',
+                  color='Segment', facet_col='Node',
+                  facet_col_wrap=2, template=tmpl, render_mode='svg',
+                  labels={'Price': '$/GJ'},
+                  title='Customer-segment prices (ACIL Allen weighting) — $/GJ')
+    fig.for_each_annotation(lambda a: a.update(text=a.text.split('=')[-1]))
+    fig.update_yaxes(rangemode='tozero', matches=None)
+    fig.update_layout(height=680)
+
+    two_run = bool(seg['TwoRun'].any()) if 'TwoRun' in seg.columns else False
+    caveat = (
+        'These are GARY\u2019s nodal duals reweighted onto ACIL Allen\u2019s '
+        'contract/spot split per customer segment \u2014 100/0 residential and '
+        'commercial, 90/10 industrial, 80/20 CCGT, 20/80 OCGT plus a $1.00/GJ '
+        'short-notice premium. The contract leg is weighted by total delivered '
+        'volume at the node; each segment\u2019s spot leg is weighted by that '
+        'segment\u2019s own daily profile. '
+        + ('Run 1 / Run 2 are separate solves. '
+           if two_run else
+           'Both legs come from ONE solve, so ACIL Allen\u2019s uncapped Run 2 is '
+           'approximated by the capped run \u2014 identical wherever the $12 Code '
+           'cap does not bind, which is all of Step Change and all of Accelerated. ')
+        + 'ACIL Allen\u2019s Step 2 overlay \u2014 vertical integration, gentailer '
+          'portfolio effects, MARKET POWER, and inflating new supply costs toward '
+          'netback \u2014 is NOT reproduced: it is judgement applied outside their '
+          'model, per generator and per contract, and is not reproducible from '
+          'published material. These are their mechanical layer only and will sit '
+          'BELOW their published forecasts wherever that overlay adds to them. '
+          'The $1.00/GJ OCGT premium is GARY\u2019s number, not theirs.')
+    return html.Div([
+        dcc.Graph(figure=fig, style={'marginBottom': '4px'}),
+        md_alert(caveat, 'warning'),
+    ])
+
 
 # ---------------------------------------------------------------------------
 # Expansions

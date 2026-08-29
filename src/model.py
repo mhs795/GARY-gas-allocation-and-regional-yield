@@ -1309,7 +1309,7 @@ class GasMarketModel:
 
     def get_results(self):
         m = self.model
-        res = {k: [] for k in ['prices', 'production', 'flow', 'storage', 'shortage', 'builds', 'gpg', 'industrial', 'massmarket', 'demand_raise', 'lng']}
+        res = {k: [] for k in ['prices', 'production', 'flow', 'storage', 'shortage', 'builds', 'gpg', 'industrial', 'distribution', 'massmarket', 'demand_raise', 'lng']}
         demand_dict = self.demand.set_index(['Node', 'Day'])['Demand'].to_dict()
         supply_at = {n: [s for s in m.Supply if s[0] == n] for n in m.Nodes}
 
@@ -1391,6 +1391,30 @@ class GasMarketModel:
                 cur = float(ind_cv[n, t] or 0)
                 if dem > 0.001:
                     res['industrial'].append({'Day': t, 'Node': n, 'Demand': float(dem), 'Served': float(dem - cur), 'Curtailed': cur})
+            # DISTRIBUTION (mass-market) volume, per node-day. Emitted because
+            # nothing else in the results carries it: gpg and industrial each have
+            # a served series and distribution did not, so any volume-weighted
+            # price average could only weight by the two tiers that are 8-23% of a
+            # city node's load. It is the residential/commercial segment's own
+            # weight, and that segment is 100% contract in ACIL Allen's split.
+            #
+            # Served is demand less any mass-market block that priced itself out,
+            # less node shortage. Attributing all of a node's shortage here is
+            # deliberate: GPG and industrial have their own curtailment variables
+            # and shed at their strikes long before anything reaches VOLL, so what
+            # is left unserved at a city node is distribution load (or firm load
+            # that cannot shed, which is priced the same way).
+            for n in m.MMNodes:
+                dem = demand_dict.get((n, t), 0.0)
+                if dem <= 0.001:
+                    continue
+                shed = sum(float(mm_cv[n, b, t] or 0) for b in m.MMBlocks)
+                short = float(sv[n, t] or 0)
+                res['distribution'].append({
+                    'Day': t, 'Node': n, 'Demand': float(dem),
+                    'Served': float(max(0.0, dem - shed - short)),
+                    'Curtailed': shed})
+
             # Mass-market blocks: only rows that actually shed, so an unstressed
             # year costs nothing to store (18 nodes x 3 blocks x 365 days would).
             for n in m.MMNodes:

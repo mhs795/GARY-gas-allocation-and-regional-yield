@@ -111,45 +111,84 @@ def load_weights(data_dir=DATA):
     return out
 
 
-def _legs(year_result):
-    """Contract and spot price legs for one solved year, as {node: $/GJ} each.
+# Which volume series weights each segment's spot leg. A segment buys spot when
+# it consumes, so the price it faces is its OWN profile's weighted average of the
+# daily duals -- not a flat mean of the year. This is what makes an OCGT's spot
+# price differ from a refinery's: GARY does not model CCGT and OCGT demand
+# separately, so the two share the GPG profile and differ through their weights
+# and the OCGT premium, which is stated below.
+SEGMENT_VOLUME = {
+    'ResidentialCommercial': 'distribution',
+    'Industrial':            'industrial',
+    'GPG_CCGT':              'gpg',
+    'GPG_OCGT':              'gpg',
+}
 
-    The contract leg is demand-weighted across days, the spot leg is a plain
-    daily mean. Nodes with no throughput are dropped rather than carried at a
-    degenerate dual (the Beetaloo problem -- see get_results in model.py).
+
+def _volume(year_result, series):
+    """Served volume per (Day, Node) for one tier, or None if absent."""
+    df = year_result.get(series)
+    if df is None or len(df) == 0:
+        return None
+    col = 'Served' if 'Served' in df.columns else 'Value'
+    return (df[['Day', 'Node', col]].rename(columns={col: 'W'})
+            .astype({'Node': str}))
+
+
+def _weighted(prices, weights):
+    """{node: volume-weighted mean dual}, falling back to a flat mean per node."""
+    flat = prices.groupby('Node', observed=True)['Price'].mean().to_dict()
+    if weights is None:
+        return dict(flat)
+    w = weights.groupby(['Day', 'Node'], observed=True)['W'].sum().reset_index()
+    m = prices.astype({'Node': str}).merge(w, on=['Day', 'Node'], how='left')
+    m['W'] = m['W'].fillna(0.0)
+    out = {}
+    for node, g in m.groupby('Node', observed=True):
+        tot = float(g['W'].sum())
+        out[node] = (float((g['Price'] * g['W']).sum() / tot) if tot > 0
+                     else float(flat.get(node, g['Price'].mean())))
+    for node, v in flat.items():          # nodes the weights never mention
+        out.setdefault(str(node), float(v))
+    return out
+
+
+def _legs(year_result, segments):
+    """Contract leg and per-segment spot legs for one solved year.
+
+    Returns ``(contract {node: $/GJ}, spot {segment: {node: $/GJ}})``.
+
+    CONTRACT LEG -- one number per node, the annual mean of the daily duals
+    weighted by TOTAL served volume across every tier that pays for gas. A
+    contract is struck once for the year, so the price it reflects is the price of
+    the average gas actually delivered; a flat mean over 365 days lets quiet
+    summer days pull it down.
+
+    SPOT LEG -- one number per node PER SEGMENT, weighted by that segment's own
+    daily volume. A buyer purchasing at spot pays the price on the days it
+    consumes, so a winter-peaking household and a flat-running refinery face
+    different average spot prices out of the same price series. Weighting both
+    legs identically -- which this module used to do, and only over GPG and
+    industrial volume at that -- collapsed the segments onto one number.
     """
     prices = year_result['prices']
     if prices is None or len(prices) == 0:
         return {}, {}
+    prices = prices[['Day', 'Node', 'Price']]
 
-    # Volume actually consumed at each node-day, across every tier that has a
-    # price to pay: distribution/GPG/industrial all show up in the served columns.
-    weights = []
-    for series, col in (('gpg', 'Served'), ('industrial', 'Served')):
-        df = year_result.get(series)
-        if df is not None and len(df):
-            weights.append(df[['Day', 'Node', col]].rename(columns={col: 'W'}))
-    if weights:
-        w = pd.concat(weights, ignore_index=True).groupby(['Day', 'Node'],
-                                                          observed=True)['W'].sum()
-        w = w.reset_index()
-        merged = prices.merge(w, on=['Day', 'Node'], how='left')
-        merged['W'] = merged['W'].fillna(0.0)
-    else:
-        merged = prices.assign(W=0.0)
+    per_tier = {t: _volume(year_result, t)
+                for t in ('distribution', 'gpg', 'industrial')}
+    present = [v for v in per_tier.values() if v is not None]
+    total = pd.concat(present, ignore_index=True) if present else None
 
-    contract, spot = {}, {}
-    for node, grp in merged.groupby('Node', observed=True):
-        tot = float(grp['W'].sum())
-        # No metered volume at this node (a pure hub): fall back to the flat mean
-        # so the node still gets a price rather than silently vanishing.
-        contract[node] = (float((grp['Price'] * grp['W']).sum() / tot) if tot > 0
-                          else float(grp['Price'].mean()))
-        spot[node] = float(grp['Price'].mean())
+    contract = _weighted(prices, total)
+    spot = {seg: _weighted(prices, per_tier.get(SEGMENT_VOLUME.get(seg)))
+            for seg in segments}
     return contract, spot
 
 
-def segment_prices(results, weights=None, code_price_cap=None):
+def segment_prices(results, weights=None, code_price_cap=None,
+                   uncapped_results=None):
     """ACIL Allen-style segment prices for a solved scenario.
 
     ``results`` is the list of per-year result dicts a solve returns. Returns a
@@ -161,19 +200,31 @@ def segment_prices(results, weights=None, code_price_cap=None):
     market is explicitly not subject to it.
     """
     weights = weights or load_weights()
+    uncapped = {yr['Year']: yr for yr in (uncapped_results or [])}
     rows = []
     for yr in results:
-        contract, spot = _legs(yr)
         year = yr['Year']
+        contract, _ = _legs(yr, weights)
+        # ACIL Allen's Run 2 removes the Code price cap. GARY applies that cap to
+        # the NETBACK inside the solve, so it cannot be lifted afterwards -- the
+        # uncapped leg has to come from a second solve with code_price_cap=False.
+        # Where one is supplied it feeds the spot leg; where it is not, the capped
+        # solve is used and `TwoRun` records that. The two coincide wherever the
+        # cap does not bind, which in the shipped anchors is the whole of Step
+        # Change and the whole of Accelerated Transition -- see build_lng_prices.
+        spot_src = uncapped.get(year, yr)
+        _, spot = _legs(spot_src, weights)
         for node in contract:
-            c, s = contract[node], spot[node]
+            c = contract[node]
             if code_price_cap:
                 c = min(c, float(code_price_cap))
             for segment, w in weights.items():
+                sp = spot.get(segment, {}).get(node, c)
                 rows.append({
                     'Year': year, 'Node': node, 'Segment': segment,
-                    'Contract': c, 'Spot': s,
-                    'Price': w['contract'] * c + w['spot'] * s + w['premium'],
+                    'Contract': c, 'Spot': sp,
+                    'Price': w['contract'] * c + w['spot'] * sp + w['premium'],
+                    'TwoRun': year in uncapped,
                 })
     return pd.DataFrame(rows, columns=['Year', 'Node', 'Segment',
-                                       'Contract', 'Spot', 'Price'])
+                                       'Contract', 'Spot', 'Price', 'TwoRun'])
