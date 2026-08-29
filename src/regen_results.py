@@ -26,9 +26,18 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import params as P
 import results_io
 import sweep
 from solve import HORIZON_END, HORIZON_START, run_title
+
+# The dashboard defaults netback pricing ON, and its cache key carries a
+# _Netback segment when it is. This script used to leave netback_pricing at
+# solve_scenario's False default AND omit the segment, so a rebuilt cache was
+# filed under keys the dashboard never looks up in its default mode -- a fresh
+# clone would rebuild for an hour and still see an empty dashboard.
+NETBACK_DEFAULT = str(P.get_str('netback_pricing_default', 'TRUE')
+                      ).strip().upper() in ('TRUE', '1', 'YES')
 
 BASELINES = ['StepChange', 'Accelerated', 'SlowerGrowth']
 LEVELS = ['Low', 'Medium', 'High']
@@ -36,7 +45,8 @@ CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                      'data', 'precalculated_results.pkl')
 
 
-def scenario_key(baseline, winter, lng, dunkelflaute=False, gsoo_exp=False):
+def scenario_key(baseline, winter, lng, dunkelflaute=False, gsoo_exp=False,
+                 netback=False):
     """The dashboard's key format, for the segments this script can produce.
 
     Kept deliberately narrow: dashboard.scenario_key is the authority on the full
@@ -46,7 +56,8 @@ def scenario_key(baseline, winter, lng, dunkelflaute=False, gsoo_exp=False):
     """
     return (f'Base_{baseline}_Winter_{winter}_LNG_{lng}'
             + ('_Dunkelflaute' if dunkelflaute else '')
-            + ('_GSOOExp' if gsoo_exp else ''))
+            + ('_GSOOExp' if gsoo_exp else '')
+            + ('_Netback' if netback else ''))
 
 
 def main():
@@ -62,11 +73,17 @@ def main():
     ap.add_argument('--keep', action='store_true',
                     help='Merge into the existing cache and skip keys already in '
                          'it, instead of replacing the cache outright')
+    ap.add_argument('--no-netback', action='store_true',
+                    help='Solve with exports as must-serve demand instead of ACIL '
+                         'Allen netback price formation. The default follows '
+                         'netback_pricing_default on the Parameters sheet, which '
+                         'is what the dashboard uses.')
     ap.add_argument('--mip-gap', type=float, default=0.005)
     args = ap.parse_args()
 
     baselines = args.baselines or BASELINES
     gsoo_exp = args.gsoo_expansions_only
+    netback = NETBACK_DEFAULT and not args.no_netback
 
     out = {'all_scenarios': {}, 'current_key': None}
     if args.keep and os.path.exists(CACHE):
@@ -79,7 +96,7 @@ def main():
 
     jobs = []
     for b, w, l, dunkel in combos:
-        key = scenario_key(b, w, l, dunkel, gsoo_exp)
+        key = scenario_key(b, w, l, dunkel, gsoo_exp, netback)
         if args.keep and key in out['all_scenarios'] and not dunkel:
             continue
         jobs.append((key, run_title(w, l, b, dunkel, gsoo_expansions_only=gsoo_exp),
@@ -89,6 +106,7 @@ def main():
     workers = args.workers or sweep.default_workers()
     print(f'{len(jobs)} scenarios x {HORIZON_END - HORIZON_START + 1} years '
           f'on {workers} workers'
+          + ('  ·  LNG netback pricing' if netback else '  ·  must-serve exports')
           + ('  ·  GSOO expansions only' if gsoo_exp else ''), flush=True)
     t0 = time.time()
 
