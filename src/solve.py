@@ -94,7 +94,6 @@ def load_data(baseline="StepChange"):
         'supply': pd.read_csv(os.path.join(data_dir, "supply.csv")).dropna(subset=['Node', 'Capacity', 'Cost']),
         'demand': pd.read_csv(demand_file),
         'expansion': pd.read_csv(os.path.join(data_dir, "expansion_options.csv")),
-        'contracts': pd.read_csv(os.path.join(data_dir, "contracts.csv"))
     }
 
 def get_lng_mult(scenario, year):
@@ -273,7 +272,6 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
                   mip_gap, callback, reservation=0.0, elastic_demand=False, log=True,
                   datacentre=None, netback_pricing=False, respect_contracts=True):
     """Reactive year-by-year solve: each year decides builds with no foresight."""
-    contracts_all = data['contracts']
     built_projects, results = [], []
     cumulative = {}          # (Node, IsPotential) -> PJ produced so far
     for i, year in enumerate(years):
@@ -283,7 +281,7 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
             data, year, winter, lng, reservation, netback_pricing, respect_contracts)
         gm = GasMarketModel(
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
-            contracts_df=contracts_all if year <= 2040 else None, year=year,
+            year=year,
             already_built=built_projects,
             baseline=baseline, dunkelflaute=dunkelflaute,
             elastic_demand=elastic_demand, reserved_by_day=reserved_day,
@@ -378,7 +376,6 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
                      netback_pricing=False, respect_contracts=True):
     """Two-stage full-horizon solve: perfect-foresight capacity + 365-day dispatch."""
     from capacity_model import CapacityExpansionModel, build_representative_days
-    contracts_all = data['contracts']
     start_year, end_year = years[0], years[-1]
 
     # --- Pass 1: assemble every year's demand + GPG/industrial (events applied) ---
@@ -395,7 +392,7 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
             reserved_all[(year, d)] = v
         gm = GasMarketModel(
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
-            contracts_df=contracts_all if year <= 2040 else None, year=year,
+            year=year,
             baseline=baseline, dunkelflaute=dunkelflaute,
             elastic_demand=elastic_demand, reserved_by_day=reserved_day,
             datacentre=datacentre, netback_pricing=netback_pricing,

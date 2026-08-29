@@ -16,10 +16,9 @@ def load_data(baseline="StepChange"):
         demand_file = os.path.join(data_dir, "demand_2050.csv")
     demand = pd.read_csv(demand_file)
     expansion = pd.read_csv(os.path.join(data_dir, "expansion_options.csv"))
-    contracts = pd.read_csv(os.path.join(data_dir, "contracts.csv"))
     return {
         'nodes': nodes, 'arcs': arcs, 'supply': supply,
-        'demand': demand, 'expansion': expansion, 'contracts': contracts
+        'demand': demand, 'expansion': expansion
     }
 
 def run_batch(baselines=("StepChange", "Accelerated", "SlowerGrowth"),
@@ -57,11 +56,10 @@ def run_batch(baselines=("StepChange", "Accelerated", "SlowerGrowth"),
                         lng_mult = {"Low": 0.7, "Medium": 1.0, "High": 1.3}[lng]
                         demand_mod.loc[(demand_mod['Year'] == year) & (demand_mod['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])), 'Demand'] *= lng_mult
 
-                    active_contracts = data['contracts'] if year <= 2040 else None
 
                     model = GasMarketModel(
                         data['nodes'], data['arcs'], data['supply'], demand_mod, data['expansion'],
-                        contracts_df=active_contracts, year=year, already_built=built_projects,
+                        year=year, already_built=built_projects,
                     baseline=baseline
                     )
                     model.build_model()

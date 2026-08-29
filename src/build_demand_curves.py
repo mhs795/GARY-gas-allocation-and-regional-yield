@@ -244,7 +244,8 @@ def build_gpg_capacity():
     return out, matched, len(fac)
 
 
-def compute_reference_price(baseline="StepChange", winter="Medium", lng="Medium"):
+def compute_reference_price(baseline="StepChange", winter="Medium", lng="Medium",
+                            netback=None):
     """Demand-weighted mean nodal dual of the inelastic baseline run, from the
     results cache. Returns None if that scenario has not been solved.
 
@@ -254,11 +255,22 @@ def compute_reference_price(baseline="StepChange", winter="Medium", lng="Medium"
     it is calibrated once against the inelastic base case and then held fixed.
     """
     import results_io
+    import params as P
     cache = os.path.join(DATA, "precalculated_results.pkl")
     if not os.path.exists(cache):
         return None
-    key = f"Base_{baseline}_Winter_{winter}_LNG_{lng}"
-    years = results_io.load(cache).get('all_scenarios', {}).get(key)
+    # The key must carry the netback segment or this never matches. Netback
+    # pricing is ON by default, so every scenario the dashboard writes is keyed
+    # `..._Netback` -- and this lookup, which omitted it, therefore returned None
+    # on every machine with a perfectly good cache. main() then reported "no
+    # cached baseline run" and the drift check silently never ran, through exactly
+    # the change (supply-side depletion) that moved the reference price 62%.
+    if netback is None:
+        netback = str(P.get_str('netback_pricing_default', 'TRUE')
+                      ).strip().upper() in ('TRUE', '1', 'YES')
+    base = f"Base_{baseline}_Winter_{winter}_LNG_{lng}"
+    scen = results_io.load(cache).get('all_scenarios', {})
+    years = scen.get(base + '_Netback' if netback else base) or scen.get(base)
     if not years:
         return None
     demand = pd.read_csv(os.path.join(DATA, f"demand_{baseline}.csv"))

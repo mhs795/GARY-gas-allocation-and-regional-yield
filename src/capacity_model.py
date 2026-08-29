@@ -425,9 +425,25 @@ class CapacityExpansionModel:
                 pyo.quicksum(m.production[s_[0], s_[1], y, i] for s_ in _commercial)
                 + pyo.quicksum(m.flow[a, y, i] for a in _inflows))
 
-        # storage on a representative day: draw down / fill from a half-full store
-        m.stor_wd = pyo.Constraint(m.StorageNodes, m.YR, rule=lambda m, sn, y, i: m.withdrawal[sn, y, i] <= 0.5 * storage_caps.get(sn, 0))
-        m.stor_inj = pyo.Constraint(m.StorageNodes, m.YR, rule=lambda m, sn, y, i: m.injection[sn, y, i] <= 0.5 * storage_caps.get(sn, 0))
+        # Storage on a representative day. This layer carries no inventory state,
+        # so the bounds have to do two jobs: cap the DAILY rate at the facility's
+        # published plant rating, and stop the year as a whole drawing the store
+        # down. The old bound did neither -- it allowed half the store's entire
+        # volume to move on every representative day of every year, which let the
+        # investment layer size the network against gas that does not exist and so
+        # under-build southern relief.
+        _sn = self.nodes.set_index('Name')
+        inj_max = _sn['MaxInjection'].to_dict()
+        wd_max = _sn['MaxWithdrawal'].to_dict()
+        m.stor_wd = pyo.Constraint(m.StorageNodes, m.YR, rule=lambda m, sn, y, i:
+            m.withdrawal[sn, y, i] <= float(wd_max.get(sn, 0) or 0))
+        m.stor_inj = pyo.Constraint(m.StorageNodes, m.YR, rule=lambda m, sn, y, i:
+            m.injection[sn, y, i] <= float(inj_max.get(sn, 0) or 0))
+        # Net annual withdrawal cannot exceed what the store held to begin with:
+        # the investment layer's equivalent of the dispatch layer's closed year.
+        m.stor_annual = pyo.Constraint(m.StorageNodes, Y, rule=lambda m, sn, y:
+            pyo.quicksum((m.withdrawal[sn, y, i] - m.injection[sn, y, i]) * wt[y, i]
+                         for (yy, i) in YR if yy == y) <= 0.5 * storage_caps.get(sn, 0))
 
     def solve(self, mip_gap=0.005):
         opt = solvers.make_solver(rel_gap=mip_gap if mip_gap is not None else 0.005,

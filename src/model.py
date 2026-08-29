@@ -583,14 +583,13 @@ def _declined_capacity(row, year, cumulative_pj=0.0):
 
 
 class GasMarketModel:
-    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, contracts_df=None, year=2025, already_built=None, baseline="StepChange", dunkelflaute=False, builds_fixed=None, elastic_demand=False, reserved_by_day=None, datacentre=None, netback_pricing=False, code_price_cap=True, netback_scenario=None,
+    def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, year=2025, already_built=None, baseline="StepChange", dunkelflaute=False, builds_fixed=None, elastic_demand=False, reserved_by_day=None, datacentre=None, netback_pricing=False, code_price_cap=True, netback_scenario=None,
                  reservation_applied=0.0, respect_contracts=True):
         self.nodes = nodes_df
         self.arcs = arcs_df
         self.supply = supply_df
         self.demand = demand_df
         self.expansion = expansion_df
-        self.contracts = contracts_df
         self.year = year
         self.already_built = already_built if already_built else []
         # {(Node, IsPotential): PJ produced in every earlier year of this run}.
@@ -976,6 +975,14 @@ class GasMarketModel:
         supply_dict = self.supply.set_index(['Node', 'IsPotential']).to_dict('index')
         exp_data = self.expansion.set_index('Name').to_dict('index')
         storage_caps = self.nodes.set_index('Name')['StorageCapacity'].to_dict()
+        # Published daily injection / withdrawal rates (2026 GSOO Storage sheet).
+        # These columns existed in nodes.csv from the start and were never read, so
+        # every facility ran far past its own rating -- Moomba withdrew at 506 TJ/d
+        # against a published 120, and injected at 399 into a store AEMO lists as
+        # withdrawal-only. A store is a rate as much as a volume.
+        _sn = self.nodes.set_index('Name')
+        stor_inj_max = _sn['MaxInjection'].to_dict()
+        stor_wd_max = _sn['MaxWithdrawal'].to_dict()
 
         def obj_rule(m):
             # THE OBJECTIVE IS WHERE EVERY PRICE IN GARY COMES FROM. Nothing sets a
@@ -1185,6 +1192,24 @@ class GasMarketModel:
         def storage_cap_rule(m, sn, t):
             return m.inventory[sn, t] <= storage_caps.get(sn, 0)
         m.storage_cap = pyo.Constraint(m.StorageNodes, m.T, rule=storage_cap_rule)
+
+        # A store cannot be filled or emptied faster than its plant allows.
+        m.inj_rate = pyo.Constraint(m.StorageNodes, m.T, rule=lambda m, sn, t:
+            m.injection[sn, t] <= float(stor_inj_max.get(sn, 0) or 0))
+        m.wd_rate = pyo.Constraint(m.StorageNodes, m.T, rule=lambda m, sn, t:
+            m.withdrawal[sn, t] <= float(stor_wd_max.get(sn, 0) or 0))
+
+        # CLOSE THE YEAR. Every year starts at half-full and, before this, nothing
+        # required the store to be at any particular level on day 365 -- so the
+        # solver emptied all three stores every year and got them back each
+        # January. That created 46,200 TJ/yr from nothing, about 11% of domestic
+        # supply, at the $0.50/GJ cycling charge: cheaper than any field in the
+        # model. Each year is solved independently, so the opening level is an
+        # assumption either way; requiring the year to close is what stops the
+        # assumption being a subsidy. `>=` rather than `==` so ending fuller stays
+        # legal -- it costs money, so the solver will not do it without a reason.
+        m.storage_close = pyo.Constraint(m.StorageNodes, rule=lambda m, sn:
+            m.inventory[sn, 365] >= 0.5 * storage_caps.get(sn, 0))
 
         # The gas reservation is applied to LNG demand before the model is built
         # (see apply_lng_reservation above and _year_demand in solve.py), so there

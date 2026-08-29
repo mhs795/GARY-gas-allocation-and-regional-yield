@@ -72,7 +72,16 @@ def build(scenario="StepChange"):
                  "GLNG": lng_params["glng_factor"],
                  "QCLNG": lng_params["qclng_factor"]}
     aplng_trace = daily_trace[daily_trace["Node"] == "APLNG"]
-    scaling_factor = lng_params["lng_daily_target"] / aplng_trace["Demand"].mean()
+    # ANCHOR THE TRAINS TO THE GSOO, NOT TO NAMEPLATE. This used to scale the
+    # Curtis Island trace so the 2026 base equalled lng_daily_target (3,680 TJ/d
+    # = physical liquefaction capacity). Every other sector is calibrated to a
+    # GSOO level, so LNG was the one series pinned to a plant rating instead --
+    # and it started 2% below the GSOO's own 2026 LNG figure and stayed there.
+    # Where the GSOO's volume exceeds nameplate the model handles it correctly:
+    # under netback pricing foundation + spot is bounded by nameplate and the
+    # residual is reported as Forgone, rather than the shortfall being invisible.
+    lng_base_tjd = _gsoo_level(annual, scenario, "LNG")
+    scaling_factor = lng_base_tjd / aplng_trace["Demand"].mean()
 
     rescomm_idx = _gsoo_index(annual, scenario, "ResComm")
     industrial_idx = _gsoo_index(annual, scenario, "Industrial")

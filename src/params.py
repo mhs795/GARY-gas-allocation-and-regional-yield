@@ -12,7 +12,7 @@ GARY's inputs therefore live in three places, by kind:
   data/gary_parameters.xlsx    PARAMETERS — scalars, levers, price anchors,
                                segment weights. Read only through this module.
   data/*.csv (committed)       STRUCTURE — nodes.csv, arcs.csv, supply.csv,
-                               expansion_options.csv, contracts.csv,
+                               expansion_options.csv,
                                demand_profiles.csv, plus the raw GasBB*.CSV and
                                GSOO workbooks the generators read.
   data/*.csv (generated)       DERIVED series written by regenerate_data.py

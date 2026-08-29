@@ -11,7 +11,6 @@ committed, generated data is not.** See the header of `src/params.py` for the re
 | `arcs.csv` | Pipelines. `Cost` is a posted tariff for existing arcs and variable haulage for new ones — see the README's *What the `Cost` column in `arcs.csv` is* |
 | `supply.csv` | Fields: capacity, cost, decline rate, optional `EndYear` |
 | `expansion_options.csv` | Every expansion candidate, one row each, with its source and basis in `Note` |
-| `contracts.csv` | LNG foundation contract volumes |
 | `demand_profiles.csv` | The **raw** GBB city-gate + APLNG daily trace that the demand builders index forward |
 | `lng_parameters.csv` | LNG train split factors and the daily target the trace is scaled to |
 | `acil_lng_anchors.csv`, `acil_lng_params.csv`, `acil_segment_weights.csv` | ACIL Allen netback inputs (also mirrored in the parameters workbook) |
@@ -56,6 +55,16 @@ input or the builder instead.
 > a useful check on the underlying data.
 
 ## Removed
+
+`contracts.csv` was deleted on 29 Aug 2026. It was read in `solve.py`, threaded
+through two call layers behind a `year <= 2040` gate, and assigned to
+`GasMarketModel.contracts` -- which nothing ever read. So the MSP 30 TJ/d and MAPS
+20 TJ/d baseload minimum flows were never enforced, and the three export rows
+(`GLD_APLNG`, `GLD_GLNG`, `GLD_QCLNG`) named no node and no arc in the model, so
+they could not have resolved even if they had been wired. Foundation export volume
+is handled instead by `lng_foundation_share` under netback pricing. Recoverable
+from git history if a contractual minimum-flow constraint is ever wanted.
+
 
 `industrial_facilities.csv`, `abatement_tech.csv` and `emissions_baselines.csv` were
 deleted on 28 Aug 2026. The first was superseded by the GBB-derived

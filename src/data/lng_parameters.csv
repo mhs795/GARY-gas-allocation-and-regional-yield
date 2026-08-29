@@ -1,6 +1,6 @@
 Parameter,Value,Description
-lng_daily_target,3680,Total cluster target (TJ/day) - 100% Nameplate
-aplng_factor,0.357,APLNG share of cluster demand (100% utilization)
-glng_factor,0.31,GLNG share of cluster demand (100% utilization)
-qclng_factor,0.333,QCLNG share of cluster demand (100% utilization)
+lng_daily_target,3680.0,Physical liquefaction nameplate (TJ/day). 25.8 Mtpa across the three trains (2026 GSOO LNG Export sheet) at ~52 GJ/t. NOT the demand anchor: LNG demand is calibrated to the GSOO LNG trajectory.
+aplng_factor,0.3682,"APLNG share of cluster demand (2026 GSOO LNG Export sheet, Mtpa share)"
+glng_factor,0.3023,"GLNG share of cluster demand (2026 GSOO LNG Export sheet, Mtpa share)"
+qclng_factor,0.3295,"QCLNG share of cluster demand (2026 GSOO LNG Export sheet, Mtpa share)"
 volatility,0.03,Daily random demand volatility modifier
