@@ -23,6 +23,11 @@ baseline (e.g. gpg_demand_profile_StepChange.csv, ..._Accelerated.csv, ...):
                                    used by the netback pricing lever. Depends only
                                    on committed source assumptions, so its
                                    position in the order is not load-bearing.
+  7. build_field_developments   -> gsoo/field_developments.csv and
+                                   gsoo/southern_supply_envelope.csv, AEMO's field
+                                   development pipeline and its Figure 27 southern
+                                   production envelope. Depends only on the source
+                                   workbooks, so its position is not load-bearing.
 
 Run the model scenarios afterwards via the "Run All Scenarios (Batch)" button.
 """
@@ -32,6 +37,7 @@ import build_gpg_demand_gsoo
 import build_industrial_demand_gsoo
 import build_demand_gsoo
 import build_lng_prices
+import build_field_developments
 
 # (label, callable) in dependency order.
 STEPS = [
@@ -41,6 +47,7 @@ STEPS = [
     ("Industrial demand (all baselines)", build_industrial_demand_gsoo.build_all),
     ("Node distribution + LNG demand (all baselines)", build_demand_gsoo.build_all),
     ("LNG price + netback series (ACIL Allen methodology)", build_lng_prices.main),
+    ("Field developments + southern supply envelope (GSOO)", build_field_developments.main),
 ]
 
 

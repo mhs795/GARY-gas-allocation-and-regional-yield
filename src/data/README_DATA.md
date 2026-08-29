@@ -84,3 +84,23 @@ Gibson Island plant, which ceased manufacturing at the end of 2022). The other t
 the emissions/CCS assumptions table that used to be this file's only content, belonged to
 a Safeguard Mechanism feature that was never built — no code has ever referenced them.
 All three are recoverable from git history if that work is picked up.
+
+## `gsoo/field_developments.csv`, `gsoo/southern_supply_envelope.csv`
+
+Built by `build_field_developments.py` from AEMO's 2026 GSOO supply data:
+
+* **`field_developments.csv`** — the 68 rows of the *Field Developments* sheet in
+  `G26 Processing Transmission Storage Facilities.xlsx`, with AEMO's Status, basin,
+  first-production year and published deliverability, plus a `GaryNode` mapping and
+  two derived flags. `IsCandidate` marks a development GARY could build on top of
+  what it already models (basin GARY carries, not already producing, positive
+  published deliverability, first production inside the horizon).
+  `CapacityUnpublished` marks one AEMO names and dates but gives no deliverability
+  for — the whole Otway pipeline is in this bucket.
+* **`southern_supply_envelope.csv`** — AEMO Figure 27, annual production from
+  southern gas fields excluding regas terminals, split into Existing and Committed
+  / Anticipated / Uncertain. This is the calibration target for southern backfill.
+
+**AEMO publishes no development CapEx anywhere in the GSOO supply data.** Any
+candidate built from this file has to carry GARY's own CapEx, flagged as such in
+`expansion_options.csv` like the other GARY-costed rows.
