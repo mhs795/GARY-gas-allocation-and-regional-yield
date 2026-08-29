@@ -15,6 +15,18 @@ easy year that is a field cost plus a pipeline tariff, and Melbourne sits a
 transport differential above Surat. In a tight year it is whichever tier is next
 to be shed, and the node settles at that tier's strike price.
 
+THIS IS A MARGINAL COST, NOT A WHOLESALE PRICE, AND THE DIFFERENCE IS BIGGEST
+EARLY. Before ~2031 no basin has depleted, so every field sits on AEMO's 2P cost --
+which AEMO defines as "largely marginal operating costs, royalties and tax" -- and
+both parity anchors (export netback, import injection) sit ABOVE the domestic
+price, so neither binds. A 2026 Melbourne dual is therefore Gippsland's opex plus a
+tariff: a system marginal cost, roughly half a contract price, and not a number to
+quote as a wholesale gas price. From ~2032 the basins step to their 2C costs (which
+AEMO defines to include drilling, plant capital and a return) and the import
+terminal builds, so the marginal unit starts carrying full costs and the model's
+prices become comparable with ACIL Allen's. See "What a GARY price is, and when it
+is not a wholesale price" in the README, and acil_segment_prices.py.
+
 Three levers change what "marginal" can mean, and each has its own header block
 below: the LNG NETBACK (exports become a bounded willingness-to-pay block instead
 of must-serve demand, so an export price can discipline a domestic one), DATA
@@ -1305,6 +1317,10 @@ class GasMarketModel:
                 # nothing physical is left, shed a tier at its strike or fall to
                 # VOLL. That is why nodal prices differ by transport cost in an easy
                 # year and converge on a strike price in a tight one.
+                #
+                # It is NOT a wholesale price, and least of all before ~2031, when
+                # every field is still on AEMO's 2P (largely operating) cost and
+                # neither parity anchor binds. See the module header block.
                 p = (m.dual[m.balance[n, t]]/1000 ) if hasattr(m, 'dual') and m.balance[n, t] in m.dual else 0.0
                 res['prices'].append({'Day': t, 'Node': n, 'Price': float(p)})
                 if sv[n, t] > 0.1: res['shortage'].append({'Day': t, 'Node': n, 'Value': float(sv[n, t])})

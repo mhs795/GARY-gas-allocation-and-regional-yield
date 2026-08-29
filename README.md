@@ -760,12 +760,128 @@ Prices at Surat fall to $0.00/GJ under a large reservation — that is the zero-
 reserved tranche being the marginal supply at the source node, the documented
 behaviour of the reservation mechanism. No strictly negative prices at any level.
 
+### What a GARY price is, and when it is not a wholesale price
+
+**A GARY price is a marginal cost, not a price anyone pays.** Every figure the
+dashboard reports is the dual of a node-day balance constraint: what it would cost
+the system to push one more TJ into that node that day. It is the cost of the
+cheapest thing not yet being done — run a dearer field, pay a tariff, pull from
+storage, outbid an export cargo, or shed a tier at its strike.
+
+ACIL Allen report something different: what a customer contracts to pay. They say
+so themselves —
+
+> "Our GasMark model models hypothetical spot prices and does not model gas
+> contracts specifically… Contract prices could be expected to be slightly higher
+> than this price to take account of contract terms such as take or pay,
+> interruptible and other services that are provided."
+> — ACIL Allen, *Wholesale natural gas prices for AEMO* (14 Nov 2025), §3.1
+
+Three things sit between the two. Only one of them is large, and it is the one
+that makes GARY's **short run** unusable as a wholesale price forecast.
+
+#### 1. Cost basis — the big one, and it is time-varying
+
+A marginal cost is only comparable with a contract price when the marginal unit is
+carrying its full costs. Before roughly 2031 it is not. AEMO's own note on the G26
+*Production Costs* sheet draws the line explicitly:
+
+> "For developed reserves production costs include largely **marginal operating
+> costs**, royalties and tax. For undeveloped reserves, marginal costs also include
+> the cost of **drilling and completion and marginal gas processing plant costs**…
+> an estimate of a per unit cost of capital and operating cost for that plant."
+
+So AEMO's **2P cost is a short-run number and its 2C cost is a full-cost one**, and
+GARY walks across that line partway through the horizon:
+
+| Step Change, $/GJ | 2026 | 2030 | 2035 | 2050 |
+|---|---|---|---|---|
+| Melbourne (GARY) | 7.57 | 9.12 | 15.62 | 13.13 |
+| cheapest delivered field | 5.70 | 16.46 | 16.46 | 16.46 |
+| export netback | 10.58 | 8.40 | 8.02 | 7.12 |
+| delivered import parity | 17.32 | 15.15 | 14.76 | 13.87 |
+
+**In the early years nothing has depleted.** Every basin sits on its 2P cost —
+largely opex — and both parity anchors are *above* the domestic price, so neither
+binds. Melbourne at $7.57 is Gippsland's operating cost plus a pipeline tariff.
+That is a system marginal cost and nothing more. ACIL Allen have most markets at
+$12–13/GJ over the same years, and the difference is not that one of the two is
+wrong: they are measuring different quantities.
+
+**From about 2032 the basins step to their 2C costs** (Gippsland $5.16 → $15.76,
+Otway $7.27 → $15.62, Surat $3.65 → $6.65) and `Port_Kembla_Terminal` builds, so
+the marginal unit becomes either a field carrying capital and a return, or an
+imported cargo at parity. Both of those *are* full-cost concepts. The basis gap
+closes itself, which is why GARY's 2050 lands inside ACIL Allen's range
+(Melbourne $13.13 against ~$13–14; mean $11.35 against $12–14) while its 2026 does
+not ($6.41 against ~$12–13).
+
+> **Read this the right way round.** GARY is a short-run marginal cost model in
+> *every* year. It converges on ACIL Allen late in the horizon because the thing
+> setting the price by then happens to be a full-cost number — not because the
+> price concept changes to match. The long-run agreement does not validate the
+> near-term basis.
+
+#### 2. Contract/spot blending — small, and not currently reproducible
+
+ACIL Allen run GasMark **twice**: Run 1 is an annual, contract-reflective price
+*with* the Gas Market Code cap; Run 2 is a monthly series *without* it. They then
+blend the two per customer segment. `acil_segment_prices.py` carries the weights
+but derives both legs from **one** solve, by aggregating the same daily duals two
+ways. Those are not two prices — they are two summaries of one price vector, and
+they behave like it:
+
+| contract leg − spot leg, $/GJ | Melbourne | Sydney | Adelaide | Brisbane |
+|---|---|---|---|---|
+| 2026 | +0.82 | +0.07 | +0.38 | +0.05 |
+| 2028 | −0.41 | −0.16 | +0.16 | +0.08 |
+
+They differ by cents, and the sign is not stable. ACIL Allen's spot leg is
+structurally the higher, more volatile one **because the cap is lifted on it**;
+GARY's cannot be, because `code_price_cap` is applied to the netback inside the
+solve and both legs inherit it. Reproducing their construct needs a second solve
+with `GasMarketModel(code_price_cap=False)`, which already selects the
+`Netback_Uncapped_AUD_GJ` column `build_lng_prices.py` emits — no caller passes
+the flag today. At weights of 100/0 and 90/10 the blending is second-order anyway:
+doing it properly makes the comparison *well-defined*, it does not move the level.
+
+#### 3. The Step 2 overlay — deliberately absent
+
+Vertical integration, gentailer portfolio effects, market power, and inflating new
+supply costs toward netback because new entrants price off their next best
+alternative. See the note under *Customer-segment prices* below for why this is
+left out. Note the implication: ACIL Allen say the overlay **adds** to their
+numbers, so a GARY that omits it should sit below them in 2050 as well — and it
+does not. Either the overlay is small by then or something in GARY is running high
+there. Treat the long-run agreement as unconfirmed until that is checked.
+
+#### How to read a GARY price
+
+- **Nodal duals are system marginal costs.** They are the right number for
+  "what does the next TJ cost", for ranking scenarios against each other, and for
+  valuing a pipeline, an expansion or a policy at the margin. That is what the
+  model is for.
+- **They are not a wholesale price forecast, least of all before ~2032.** Do not
+  quote a GARY 2026 number as a wholesale gas price. It is roughly half of one,
+  for a structural reason, and the reason is above.
+- **Comparisons with ACIL Allen are only meaningful once the segment layer is
+  wired in** (see below), and even then GARY is their mechanical layer only.
+- The same distinction is why `REFERENCE_PRICE` for the demand curves is the
+  model's own dual and not a contract price — see *The reference price, and why it
+  is the model's own*.
+
 ### Customer-segment prices
 
 GARY's nodal prices are LP duals — short-run marginal cost plus transport, $4–8/GJ.
 ACIL Allen are explicit that this is not what a customer pays, so they run GasMark
 twice and blend the legs per segment. `src/acil_segment_prices.py` is that layer,
 applied to a solved scenario; it adds no constraint and re-solves nothing.
+
+> **Not wired in.** `segment_prices()` currently has **no caller** — not the
+> dashboard, not `solve.py`, not `batch_solve.py`. Everything GARY displays is the
+> raw dual. Until this layer is connected, any comparison with ACIL Allen's
+> published prices is comparing a marginal cost against a contract price; see
+> *What a GARY price is* above.
 
 | Segment | Contract | Spot | Premium | Source |
 |---|---|---|---|---|
@@ -776,9 +892,16 @@ applied to a solved scenario; it adds no constraint and re-solves nothing.
 
 The contract leg is the **demand-weighted** annual mean of the daily duals (a flat
 mean lets quiet summer days pull an annual contract price down); the spot leg is
-the plain daily mean, which carries the winter peaks. The Code cap applies to the
-contract leg only — ACIL Allen's Run 2 explicitly removes it. Weights live in
-`data/acil_segment_weights.csv`.
+the plain daily mean. Weights live in `data/acil_segment_weights.csv`.
+
+> **Both legs come from one solve, and it shows.** An earlier version of this note
+> said the spot leg "carries the winter peaks" and that the Code cap applies to the
+> contract leg only. Neither survives measurement. Demand-weighting is what loads
+> winter, so the *contract* leg is the higher one in most years, and the two legs
+> differ by 4c–82c with an unstable sign. And the cap cannot be removed from the
+> spot leg here: it is applied to the netback inside the solve, so both legs
+> inherit it. Reproducing ACIL Allen's Run 1 / Run 2 needs a second solve with
+> `code_price_cap=False` — see *What a GARY price is* above.
 
 > **The OCGT premium is a placeholder.** ACIL Allen state that one exists and why
 > — *"the additional costs they typically pay to source high volumes of gas at
