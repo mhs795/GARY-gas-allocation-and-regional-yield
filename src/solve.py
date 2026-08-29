@@ -6,7 +6,7 @@ import time
 import datacentre_series
 import params as P
 import solvers
-from model import GasMarketModel, apply_lng_reservation
+from model import GasMarketModel, _supply_cost, apply_lng_reservation
 
 
 def _lever(lever, level, default):
@@ -339,6 +339,39 @@ def _accumulate(cum, results):
     return cum
 
 
+def _stepped_supply_costs(supply_df, years, annual_pj):
+    """Field cost per year once depletion is known: {(node, is_pot, year): $/GJ}.
+
+    ``annual_pj`` is {(node, is_pot): {year: PJ}} from a first capacity solve. For
+    each year the cost is model._supply_cost evaluated on production STRICTLY
+    BEFORE that year, which is exactly how the dispatch loop applies it -- so the
+    two stages step at the same time rather than the MIP believing a basin stays
+    cheap for the whole horizon.
+
+    Returns {} when no row carries a reserves figure, so the caller can skip the
+    second capacity pass entirely.
+    """
+    rows = {(r['Node'], r['IsPotential']): r
+            for _, r in supply_df.iterrows()}
+    out = {}
+    for key, row in rows.items():
+        if _num_or_none(row.get('Reserves2P_PJ')) is None:
+            continue                      # no cost curve on this row
+        cum = 0.0
+        for y in years:
+            out[(key[0], key[1], y)] = _supply_cost(row, cum)
+            cum += float(annual_pj.get(key, {}).get(y, 0.0))
+    return out
+
+
+def _num_or_none(v):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return None if f != f else f
+
+
 def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
                      mip_gap, discount_rate, callback, reservation=0.0,
                      elastic_demand=False, log=True, datacentre=None,
@@ -387,8 +420,9 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
     rep = build_representative_days(years, demand_all, gpg_all, ind_all,
                                     data['nodes'], mm_blocks=mm_blocks,
                                     reserved_all=reserved_all, dc_all=dc_all)
-    cap = CapacityExpansionModel(
-        data['nodes'], data['arcs'], data['supply'], data['expansion'], years, rep,
+    cap_kwargs = dict(
+        nodes_df=data['nodes'], arcs_df=data['arcs'], supply_df=data['supply'],
+        expansion_df=data['expansion'], years=years, rep=rep,
         discount_rate=discount_rate,
         strike_gpg=dispatch_models[start_year].strike_gpg,
         strike_ind=dispatch_models[start_year].strike_ind,
@@ -408,10 +442,27 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         lng_nameplate=dispatch_models[start_year].lng_nameplate,
         foundation_share=dispatch_models[start_year].foundation_share,
         reservation_applied=applied_share, respect_contracts=respect_contracts)
-    cap.build_model()
-    status = cap.solve(mip_gap=mip_gap)
-    if status != "ok":
-        raise RuntimeError(f"Capacity model failed: {status}")
+    def _build_cap(supply_cost_by_year=None):
+        c = CapacityExpansionModel(**cap_kwargs,
+                                   supply_cost_by_year=supply_cost_by_year)
+        c.build_model()
+        st = c.solve(mip_gap=mip_gap)
+        if st != "ok":
+            raise RuntimeError(f"Capacity model failed: {st}")
+        return c
+
+    # --- Pass 2a: capacity with flat field costs, to learn the depletion path ---
+    # The cost step is path dependent -- a basin steps to its 2C cost once it has
+    # produced its 2P reserves -- so the investment MIP cannot know the cost path
+    # until something has decided how much gets produced. Solving it once at flat
+    # cost gives that path; solving it again against the stepped costs is what
+    # stops the MIP choosing builds on a cost curve the dispatch it governs will
+    # never see. The MIP is under 10% of a scenario, so the second pass is cheap.
+    cap = _build_cap()
+    stepped = _stepped_supply_costs(data['supply'], years,
+                                    cap.get_annual_production_pj())
+    if stepped:
+        cap = _build_cap(stepped)
     build_year = cap.get_build_schedule()
     active_by_year = {y: {e for e, by in build_year.items() if by is not None and by <= y} for y in years}
 

@@ -16,7 +16,7 @@ import pyomo.environ as pyo
 import params as P
 import solvers
 from model import (IMPORT_NODES, LNG_NODES, VOLL_PER_GJ, WINTER_DAYS,
-                   _declined_capacity, _reserves_pj)
+                   _declined_capacity)
 
 # Day-of-year (1..365, non-leap) -> calendar month.
 _MONTH_OF_DAY = {}
@@ -110,7 +110,8 @@ class CapacityExpansionModel:
                  ind_raise=(), gpg_raise=(), gpg_capacity=None,
                  lng_arcs=(), lng_source=(), netback_by_year=None,
                  import_cost_by_year=None, lng_nameplate=None, foundation_share=0.0,
-                 reservation_applied=0.0, respect_contracts=True):
+                 reservation_applied=0.0, respect_contracts=True,
+                 supply_cost_by_year=None):
         self.nodes, self.arcs, self.supply, self.expansion = nodes_df, arcs_df, supply_df, expansion_df
         self.years = list(years)
         self.rep = rep                      # {year: [rep-day dicts]}
@@ -145,6 +146,13 @@ class CapacityExpansionModel:
         # pricing. Year-varying because it tracks the international LNG price,
         # unlike a field cost, so it cannot live in the single supply frame.
         self.import_cost_by_year = dict(import_cost_by_year or {})
+        # {(node, is_potential, year): $/GJ} once depletion is known -- see
+        # solve.py's two-pass capacity solve. WITHOUT THIS the investment layer
+        # prices every basin at its 2P cost for all 26 years while dispatch steps
+        # it to 2C, so the MIP chooses builds against a cost path the dispatch it
+        # governs will never see, and under-builds the southern relief the cost
+        # step is meant to make economic. Empty on the first pass.
+        self.supply_cost_by_year = dict(supply_cost_by_year or {})
         # Physical liquefaction nameplate per train, and the take-or-pay share of
         # planned volume. Same split the dispatch layer makes: foundation volume
         # stays must-serve demand, the spot tail bids at the netback up to spare
@@ -285,9 +293,17 @@ class CapacityExpansionModel:
         # --- NPV objective ---------------------------------------------------
         def obj_rule(m):
             def _supply_cost(s_, y):
-                """Field cost, or the year's LNG injection cost at an import terminal."""
+                """Field cost in year y, or the LNG injection cost at an import terminal.
+
+                Field cost comes from supply_cost_by_year where a depletion path is
+                known, so the MIP sees the same 2P -> 2C step the dispatch layer
+                will apply. Falls back to the flat base cost on the first pass.
+                """
                 if s_[0] in IMPORT_NODES and s_[1] and y in self.import_cost_by_year:
                     return self.import_cost_by_year[y]
+                stepped = self.supply_cost_by_year.get((s_[0], s_[1], y))
+                if stepped is not None:
+                    return stepped
                 return supply_dict[s_]['Cost']
 
             ops = pyo.quicksum(
@@ -381,7 +397,8 @@ class CapacityExpansionModel:
             return m.production[node, is_pot, y, i] <= declined
         m.supply_cap = pyo.Constraint(m.Supply, m.YR, rule=supply_cap_rule)
 
-        # NO cumulative reserve constraint here, deliberately. It was tried on
+        # NO cumulative reserve constraint here, deliberately -- the cost STEP is
+        # carried instead, via supply_cost_by_year (see __init__). It was tried on
         # 28 Aug 2026 and removed the same day: with no backfill supply in GARY
         # (Surat_Potential cannot produce, Gippsland_Potential only unlocks via a
         # Golden_Beach nobody builds) a hard stock limit starves the south and the
@@ -420,6 +437,26 @@ class CapacityExpansionModel:
                                                    pyo.TerminationCondition.feasible)
         self.solved = ok
         return "ok" if ok else str(res.solver.termination_condition)
+
+    def get_annual_production_pj(self):
+        """Implied annual production per field, ``{(node, is_potential): {year: PJ}}``.
+
+        Representative-day production weighted by the days each day stands for.
+        Total weight is 370 rather than 365 (the peak day carries PEAK_DAY_WEIGHT
+        on top of twelve full months), so this runs ~1.4% high -- fine for
+        deciding WHEN a basin crosses its 2P reserves, which is all it is used for.
+        """
+        m = self.model
+        out = {}
+        for s_ in m.Supply:
+            per_year = {}
+            for y in self.years:
+                per_year[y] = sum(
+                    pyo.value(m.production[s_[0], s_[1], y, i])
+                    * self.rep[y][i]['weight'] / 1000.0
+                    for i in range(len(self.rep[y])))
+            out[(s_[0], s_[1])] = per_year
+        return out
 
     def get_build_schedule(self):
         """Return {project: build_year or None}."""
