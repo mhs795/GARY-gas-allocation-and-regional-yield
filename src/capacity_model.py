@@ -15,7 +15,8 @@ import pyomo.environ as pyo
 
 import params as P
 import solvers
-from model import (IMPORT_NODES, LNG_NODES, STORAGE_OPENING, VOLL_PER_GJ, WINTER_DAYS,
+from model import (IMPORT_NODES, LNG_NODES, STORAGE_CYCLE_COST, STORAGE_OPENING,
+                   VOLL_PER_GJ, WINTER_DAYS,
                    _declined_capacity)
 
 # Day-of-year (1..365, non-leap) -> calendar month.
@@ -278,7 +279,8 @@ class CapacityExpansionModel:
                     pyo.quicksum(m.production[s[0], s[1], y, i] * _supply_cost(s, y) * 1000 for s in m.Supply)
                     + pyo.quicksum(m.flow[a, y, i] * arc_data[a]['Cost'] * 1000 for a in m.Arcs)
                     + pyo.quicksum(m.shortage[n, y, i] * VOLL_PER_GJ * 1000 for n in m.Nodes)
-                    + pyo.quicksum((m.injection[sn, y, i] + m.withdrawal[sn, y, i]) * 0.5 * 1000 for sn in m.StorageNodes)
+                    + pyo.quicksum((m.injection[sn, y, i] + m.withdrawal[sn, y, i])
+                                   * STORAGE_CYCLE_COST * 1000 for sn in m.StorageNodes)
                     + pyo.quicksum(m.gpg_curtail[n, y, i] * self.strike_gpg * 1000 for n in m.GPGNodes)
                     + pyo.quicksum(m.ind_curtail[n, y, i] * self.strike_ind * 1000 for n in m.INDNodes)
                     # Export revenue at that year's netback; bounded above by

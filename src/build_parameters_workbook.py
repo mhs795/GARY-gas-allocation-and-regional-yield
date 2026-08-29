@@ -75,6 +75,19 @@ PARAMETERS = [
      "lock: the box is editable and --dc-file overrides it. See "
      "src/data/datacentre_demand_example.csv for the layout"),
 
+    ("Cost coefficients", "capex_annualisation_rate", 0.08, "fraction",
+     "Share of a built project's CapEx charged to each single-year dispatch solve. "
+     "The dispatch model has no NPV to charge a lump sum against, so a build shows "
+     "up as an annual carrying cost at this rate. GARY's own number, not a source: "
+     "it sits above discount_rate_default because it stands in for return OF "
+     "capital as well as return ON it. The capacity MIP does NOT use it -- that "
+     "layer charges full CapEx once, discounted to the build year."),
+    ("Cost coefficients", "storage_cycle_cost", 0.50, "A$/GJ",
+     "Round-trip charge on storage, applied to injection AND withdrawal, so "
+     "inventory cycles only when the seasonal price spread justifies it. GARY's "
+     "own number, not a source. Read by both the dispatch model and the capacity "
+     "MIP so the two layers value a store identically."),
+
     ("Capacity model", "discount_rate_default", 0.07, "fraction",
      "NPV discount rate for the perfect-foresight capacity MIP"),
     ("Capacity model", "peak_day_weight", 5.0, "days",

@@ -357,6 +357,18 @@ def datacentre_profile(spec, year, gpg_demand):
 # but it is the number to revisit if VOLL ever matters to a conclusion.
 VOLL_PER_GJ = P.get('voll_per_gj', 300.0)
 
+# Annual carrying cost charged on anything the capacity layer built, as a share of
+# CapEx. A dispatch solve covers one year and has no NPV to charge a lump sum
+# against, so a build has to show up as an annual cost or it would look free. It
+# sits above the capacity MIP's discount_rate_default because it stands in for
+# return OF capital as well as return ON it. GARY's own number, not a source.
+CAPEX_ANNUALISATION = P.get('capex_annualisation_rate', 0.08)
+
+# Round-trip charge on storage, applied to injection AND withdrawal, so the solver
+# cycles inventory only when the seasonal price spread justifies it. Shared with
+# capacity_model.py so both layers value a store the same way.
+STORAGE_CYCLE_COST = P.get('storage_cycle_cost', 0.50)
+
 # Share of capacity a store holds on day 1, and the level it must be back at on
 # day 365. Each year is solved independently, so this is an assumption either way;
 # what matters is that the two are the SAME number, or the year creates gas.
@@ -492,10 +504,12 @@ def _declined_capacity(row, year, cumulative_pj=0.0):
     AEMO's own Figure 27 says why. Southern EXISTING fields do collapse on its
     numbers -- 304 PJ/yr in 2025 to 5 PJ/yr by 2044 -- but committed and anticipated
     developments backfill them, rising to ~280 PJ/yr and holding. GARY has no such
-    backfill: Surat_Potential can never produce (TODO item 3) and
-    Gippsland_Potential only unlocks via Golden_Beach, which no scenario builds. So
-    a hard cutoff models the collapse without the replacement, which is not what
-    AEMO forecasts and not a market anyone would run.
+    backfill worth the name: the undeveloped Surat row can never produce at all
+    (nothing in expansion_options.csv targets that node, so supply_cap_rule pins it
+    to zero -- TODO item 3), and the undeveloped Gippsland row unlocks only via
+    Golden_Beach, one 375 TJ/d project. So a hard cutoff models the collapse
+    without the replacement, which is not what AEMO forecasts and not a market
+    anyone would run.
 
     Treating 2C deliverability as sustained-but-dearer is the closer approximation:
     contingent resources are gas that needs developing, and the cost step is what
@@ -855,12 +869,15 @@ class GasMarketModel:
             # what firm load (data centres, foundation LNG cargoes) falls through to
             # when it cannot be shed -- see ind_curtail_cap.
             shortage_penalty = sum(m.shortage[n, t] * VOLL_PER_GJ * 1000 for n in m.Nodes for t in m.T)
-            # A small ($0.50/GJ) round-trip charge on storage, so the solver cycles
-            # inventory only when the seasonal price spread justifies it.
-            storage_cost = sum((m.injection[sn, t] + m.withdrawal[sn, t]) * 0.5 * 1000 for sn in m.StorageNodes for t in m.T)
-            # Annualised capex for anything built, at 8%/yr. build[e] is binary,
-            # which is what makes the capacity layer a MILP rather than an LP.
-            exp_capex = sum(m.build[e] * exp_data[e]['CapEx'] * 0.08 for e in m.Expansion)
+            # A small round-trip charge on storage, so the solver cycles inventory
+            # only when the seasonal price spread justifies it.
+            storage_cost = sum((m.injection[sn, t] + m.withdrawal[sn, t])
+                               * STORAGE_CYCLE_COST * 1000
+                               for sn in m.StorageNodes for t in m.T)
+            # Annualised capex for anything built, at CAPEX_ANNUALISATION. build[e]
+            # is binary, which is what makes the capacity layer a MILP not an LP.
+            exp_capex = sum(m.build[e] * exp_data[e]['CapEx'] * CAPEX_ANNUALISATION
+                            for e in m.Expansion)
             # Curtailment penalties = strike price ($/GJ) x 1000 (GJ/TJ). Shedding a
             # tier costs its strike price, so a tier only sheds when the marginal
             # cost of supplying it would exceed that strike (GPG $22 < industrial
