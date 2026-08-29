@@ -6,7 +6,8 @@ import time
 import datacentre_series
 import params as P
 import solvers
-from model import GasMarketModel, _supply_cost, apply_lng_reservation
+from model import (IMPORT_NODES, GasMarketModel, _supply_cost,
+                   apply_lng_reservation)
 
 
 def _lever(lever, level, default):
@@ -24,9 +25,10 @@ HORIZON_END = P.get_int('horizon_end', 2050)
 # Which Source value in expansion_options.csv counts as "in the GSOO".
 GSOO_SOURCE = P.get_str('expansion_source_gsoo', 'GSOO')
 GSOO_ONLY_DEFAULT = str(P.get_str('gsoo_expansions_only', 'FALSE')).strip().upper() in ('TRUE', '1', 'YES')
+IMPORTS_DEFAULT = str(P.get_str('allow_import_terminals', 'TRUE')).strip().upper() in ('TRUE', '1', 'YES')
 
 
-def filter_expansions(expansion, gsoo_only):
+def filter_expansions(expansion, gsoo_only, allow_imports=True):
     """The candidate set the capacity layer is allowed to choose from.
 
     ``expansion_options.csv`` carries every pipeline, reversal and terminal the
@@ -39,12 +41,26 @@ def filter_expansions(expansion, gsoo_only):
     stages must be offered exactly the same menu, or the dispatch layer would be
     handed a build schedule containing a project it does not know about.
 
+    ``allow_imports=False`` additionally drops every LNG IMPORT terminal, so the
+    east coast has to meet demand from domestic supply and pipe. An import terminal
+    is identified as a ``Type == 'Terminal'`` row whose ``Target`` is one of
+    ``import_nodes`` -- derived rather than flagged, because that is already how
+    model.py decides which supply rows to reprice at the injection cost, and a
+    second hand-maintained flag could disagree with it. Field developments
+    (Golden Beach, Beetaloo) are Type=Terminal too but target basin nodes, so they
+    are untouched.
+
     A file with no ``Source`` column (a clone predating the market scan) is
     returned untouched, so the filter can never silently empty the candidate set.
     """
-    if not gsoo_only or 'Source' not in expansion.columns:
-        return expansion
-    return expansion[expansion['Source'].astype(str).str.strip() == GSOO_SOURCE].reset_index(drop=True)
+    if gsoo_only and 'Source' in expansion.columns:
+        expansion = expansion[
+            expansion['Source'].astype(str).str.strip() == GSOO_SOURCE]
+    if not allow_imports:
+        is_import = ((expansion['Type'].astype(str).str.strip() == 'Terminal')
+                     & (expansion['Target'].astype(str).str.strip().isin(IMPORT_NODES)))
+        expansion = expansion[~is_import]
+    return expansion.reset_index(drop=True)
 
 
 def lng_price_scenario(lng_level, baseline):
@@ -172,7 +188,8 @@ def datacentre_label(datacentre):
 
 
 def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservation=0.0, foresight=True, datacentre=None,
-              netback_pricing=False, gsoo_expansions_only=False):
+              netback_pricing=False, gsoo_expansions_only=False,
+              allow_import_terminals=True):
     """One-line description of a scenario, for the terminal header."""
     bits = [BASELINE_LABELS.get(baseline, baseline), f"Winter {winter}", f"LNG {lng}"]
     if dunkelflaute:
@@ -183,6 +200,8 @@ def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservatio
         bits.append(datacentre_label(datacentre))
     if netback_pricing:
         bits.append("LNG netback pricing")
+    if not allow_import_terminals:
+        bits.append("no import terminals")
     if gsoo_expansions_only:
         bits.append("GSOO expansions only")
     if not foresight:
@@ -195,6 +214,7 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
                    foresight=True, reservation=0.0,
                    datacentre=None, netback_pricing=False,
                    respect_contracts=True, gsoo_expansions_only=None,
+                   allow_import_terminals=None,
                    title=None, log=True):
     """Solve a scenario over 2025-2050.
 
@@ -223,6 +243,10 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     exports being taken at any price. See the header block in model.py, and
     build_lng_prices.py for where the series comes from.
 
+    ``allow_import_terminals=False`` drops every LNG import terminal from the
+    candidate set, so the east coast must be supplied domestically. ``None`` takes
+    the workbook default (``allow_import_terminals`` on the Parameters sheet).
+
     ``gsoo_expansions_only=True`` restricts the capacity layer to the committed
     expansions AEMO counts in the 2026 GSOO/VGPR, dropping every candidate GARY's
     own market scan added (Bulloo Interlink, the Geelong FSRUs, Golden Beach,
@@ -240,13 +264,16 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     # already have a nicer label (the dashboard passes its scenario key) override it.
     if gsoo_expansions_only is None:
         gsoo_expansions_only = GSOO_ONLY_DEFAULT
+    if allow_import_terminals is None:
+        allow_import_terminals = IMPORTS_DEFAULT
     if log:
-        print(f"\n{title or run_title(winter, lng, baseline, dunkelflaute, reservation, foresight, datacentre, netback_pricing, gsoo_expansions_only)}",
+        print(f"\n{title or run_title(winter, lng, baseline, dunkelflaute, reservation, foresight, datacentre, netback_pricing, gsoo_expansions_only, allow_import_terminals)}",
               flush=True)
     data = load_data(baseline)
     # Filter ONCE, here, so the capacity layer and the dispatch layer are offered
     # exactly the same menu -- see filter_expansions.
-    data['expansion'] = filter_expansions(data['expansion'], gsoo_expansions_only)
+    data['expansion'] = filter_expansions(data['expansion'], gsoo_expansions_only,
+                                          allow_import_terminals)
     years = list(range(HORIZON_START, HORIZON_END + 1))
     if foresight:
         return _solve_foresight(data, years, winter, lng, baseline,
@@ -511,6 +538,12 @@ def main():
                              "volume, foundation SPAs included. By default a "
                              "reservation is capped at the uncontracted share, "
                              "which is how the Heads of Agreement works")
+    parser.add_argument("--no-import-terminals", action="store_true",
+                        help="Drop every LNG import terminal from the candidate "
+                             "set (Port Kembla, the two Geelong FSRUs, Outer "
+                             "Harbor), so the east coast must be supplied from "
+                             "domestic fields and pipe. Field developments such as "
+                             "Golden Beach are unaffected")
     parser.add_argument("--gsoo-expansions-only", action="store_true",
                         help="Restrict the capacity layer to the expansions AEMO "
                              "counts as committed in the 2026 GSOO/VGPR, dropping "
@@ -556,6 +589,7 @@ def main():
         datacentre=datacentre,
         netback_pricing=args.netback_pricing,
         gsoo_expansions_only=args.gsoo_expansions_only,
+        allow_import_terminals=not args.no_import_terminals,
         respect_contracts=not args.break_lng_contracts)
     print(f"\nSolved {len(results)} years in {time.time() - t0:.1f}s "
           f"using {solvers.describe()}")

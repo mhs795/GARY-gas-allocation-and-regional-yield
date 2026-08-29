@@ -82,6 +82,12 @@ PARAMETERS = [
     ("Capacity model", "terminal_earliest", 2028, "year",
      "Earliest build year for an LNG import terminal"),
     ("Capacity model", "capacity_base_year", 2025, "year", "Discounting base year"),
+    ("Capacity model", "allow_import_terminals", "TRUE", "boolean",
+     "Whether the capacity layer may build LNG IMPORT terminals -- a Type=Terminal "
+     "candidate whose Target is one of import_nodes. FALSE removes them from the "
+     "candidate set, so the east coast must meet demand from domestic supply and "
+     "pipe. Field developments are also Type=Terminal but target basin nodes, so "
+     "they are not affected."),
     ("Capacity model", "gsoo_expansions_only", "FALSE", "boolean",
      "Default for the GSOO-only expansion filter. FALSE = the capacity layer may "
      "choose any candidate in expansion_options.csv; TRUE = only rows with "

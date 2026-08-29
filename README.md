@@ -51,7 +51,8 @@ The first run will take 2–3 minutes while dependencies install. After that, op
 2b. Optionally enter **Data centre gas demand** in PJ/yr for NSW and VIC and set the year it starts — or link a spreadsheet under **Or link a demand series** to give a year-by-year series instead of one flat volume (see [Data centre gas demand](#data-centre-gas-demand))
 2c. **LNG netback pricing (ACIL Allen)** is **on by default** — exports and imports are priced off the international market, and **Global LNG Market** selects a netback price path rather than scaling export volume. Switch it off to revert to must-serve exports (see the warning under [LNG netback price formation](#lng-netback-price-formation-acil-allen-methodology))
 2d. With a reservation on, **Respect LNG foundation contracts** decides whether it may only take uncontracted export gas (capped at 7%) or may break take-or-pay SPAs
-2e. Optionally switch on **GSOO expansions only** to restrict the capacity model to the expansions AEMO counts as committed in the 2026 GSOO/VGPR, dropping every pre-FID and proposed candidate — see [Network expansion candidates](#network-expansion-candidates)
+2e. Optionally switch off **Allow LNG import terminals** to drop Port Kembla, the two Geelong FSRUs and Outer Harbor from the candidate set, so the east coast must be supplied from domestic fields and pipe — field developments such as Golden Beach are unaffected
+2f. Optionally switch on **GSOO expansions only** to restrict the capacity model to the expansions AEMO counts as committed in the 2026 GSOO/VGPR, dropping every pre-FID and proposed candidate — see [Network expansion candidates](#network-expansion-candidates)
 3. Click **Run Scenario** to solve one combination
 4. Click **Run Scenarios** to pre-calculate **every combination** — all 3 baselines × 3 Winter × 3 LNG = 27 scenarios, plus the SA dunkelflaute case
 5. Click **Run Reservation Scenarios** to sweep **every reservation level × every GSOO baseline** — 5 levels (0/5/10/20/30%) × 3 baselines = 15 runs — at the Winter and LNG levels currently selected. This button sweeps the baseline dropdown and the reservation toggle itself, so both are ignored while it runs; every other sidebar setting is honoured. Each baseline gets its own 0% run, because a reservation is only readable against the same case without one
@@ -392,6 +393,28 @@ snapshot with a cut-off, not a standing fact.
 the 218 TJ/d `VNI_Rev` base less `ECGG_3A_Culcairn`'s 39. APA calls the project an
 ~84% increase, which implies a current corridor near 190 TJ/d — so the endpoint is
 the sourced number and the increment follows from GARY's own base, not the reverse.
+
+### Turning import terminals off
+
+`allow_import_terminals` on the Parameters sheet, the **Allow LNG import
+terminals** switch in the sidebar, and `--no-import-terminals` on the command
+line all do the same thing: drop every LNG import terminal from the menu the
+capacity layer chooses from, so the east coast has to be supplied from domestic
+fields and pipe. Scenario keys gain a `_NoImports` segment, so a run with imports
+blocked sits alongside its counterpart in the cache rather than overwriting it.
+
+An import terminal is identified as a `Type == 'Terminal'` row whose `Target` is
+one of `import_nodes` — **derived, not flagged**. That is already how `model.py`
+decides which supply rows to reprice at ACIL Allen's injection cost, so the two
+cannot disagree; a second hand-maintained column could. It drops exactly four
+candidates:
+
+| dropped | kept (Type=Terminal, but a field, not an import) |
+|---|---|
+| `Port_Kembla_Terminal`, `Viva_Geelong_FSRU`, `Vopak_Victoria_FSRU`, `Outer_Harbor_LNG` | `Golden_Beach`, `Beetaloo_Dev` |
+
+Filtering happens in `filter_expansions`, before either stage sees the candidate
+set, so the investment and dispatch layers are offered exactly the same menu.
 
 ### Four new arcs and one new node
 

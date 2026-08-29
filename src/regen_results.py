@@ -46,7 +46,7 @@ CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 
 def scenario_key(baseline, winter, lng, dunkelflaute=False, gsoo_exp=False,
-                 netback=False):
+                 netback=False, allow_imports=True):
     """The dashboard's key format, for the segments this script can produce.
 
     Kept deliberately narrow: dashboard.scenario_key is the authority on the full
@@ -57,6 +57,7 @@ def scenario_key(baseline, winter, lng, dunkelflaute=False, gsoo_exp=False,
     return (f'Base_{baseline}_Winter_{winter}_LNG_{lng}'
             + ('_Dunkelflaute' if dunkelflaute else '')
             + ('_GSOOExp' if gsoo_exp else '')
+            + ('' if allow_imports else '_NoImports')
             + ('_Netback' if netback else ''))
 
 
@@ -73,6 +74,10 @@ def main():
     ap.add_argument('--keep', action='store_true',
                     help='Merge into the existing cache and skip keys already in '
                          'it, instead of replacing the cache outright')
+    ap.add_argument('--no-import-terminals', action='store_true',
+                    help='Drop every LNG import terminal from the candidate set, '
+                         'so the east coast must be supplied from domestic fields '
+                         'and pipe. Field developments are unaffected.')
     ap.add_argument('--no-netback', action='store_true',
                     help='Solve with exports as must-serve demand instead of ACIL '
                          'Allen netback price formation. The default follows '
@@ -84,6 +89,7 @@ def main():
     baselines = args.baselines or BASELINES
     gsoo_exp = args.gsoo_expansions_only
     netback = NETBACK_DEFAULT and not args.no_netback
+    allow_imports = not args.no_import_terminals
 
     out = {'all_scenarios': {}, 'current_key': None}
     if args.keep and os.path.exists(CACHE):
@@ -96,19 +102,22 @@ def main():
 
     jobs = []
     for b, w, l, dunkel in combos:
-        key = scenario_key(b, w, l, dunkel, gsoo_exp, netback)
+        key = scenario_key(b, w, l, dunkel, gsoo_exp, netback, allow_imports)
         if args.keep and key in out['all_scenarios'] and not dunkel:
             continue
         jobs.append((key, run_title(w, l, b, dunkel, netback_pricing=netback,
-                                    gsoo_expansions_only=gsoo_exp),
+                                    gsoo_expansions_only=gsoo_exp,
+                                    allow_import_terminals=allow_imports),
                      dict(winter=w, lng=l, baseline=b, dunkelflaute=dunkel,
                           mip_gap=args.mip_gap, gsoo_expansions_only=gsoo_exp,
-                          netback_pricing=netback)))
+                          netback_pricing=netback,
+                          allow_import_terminals=allow_imports)))
 
     workers = args.workers or sweep.default_workers()
     print(f'{len(jobs)} scenarios x {HORIZON_END - HORIZON_START + 1} years '
           f'on {workers} workers'
           + ('  ·  LNG netback pricing' if netback else '  ·  must-serve exports')
+          + ('' if allow_imports else '  ·  no import terminals')
           + ('  ·  GSOO expansions only' if gsoo_exp else ''), flush=True)
     t0 = time.time()
 

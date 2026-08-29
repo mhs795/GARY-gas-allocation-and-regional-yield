@@ -183,6 +183,7 @@ static_data = load_static_data()
 # planned exports past physical liquefaction nameplate and reports the excess as
 # domestic lost load at VOLL.
 NETBACK_DEFAULT = str(P.get_str('netback_pricing_default', 'TRUE')).strip().upper() in ('TRUE', '1', 'YES')
+IMPORTS_DEFAULT = str(P.get_str('allow_import_terminals', 'TRUE')).strip().upper() in ('TRUE', '1', 'YES')
 
 # Default contents of the "link a demand series" box. Empty ships the flat-cell
 # lever exactly as it was; set datacentre_series_path in the parameters workbook
@@ -1003,6 +1004,8 @@ def short_key(k):
                            if float(v) > 0) if dcs else \
                 f'{dc.group(1)}/{dc.group(2)} PJ'
         parts.append(('DC + ' if dcs else 'DC ') + f'{cells} @{dc.group(3)}')
+    if '_NoImports' in k:
+        parts.append('No imports')
     if '_GSOOExp' in k:
         parts.append('GSOO exp')
     if '_Netback' in k:
@@ -1047,6 +1050,7 @@ def pretty_key(k):
     rest = (rest.replace('_Winter_', 'Winter ').replace('_LNG_', '  ·  LNG ')
                 .replace('_Dunkelflaute', '  ·  SA Dunkelflaute 2027')
                 .replace('_GSOOExp', '  ·  GSOO expansions only')
+                .replace('_NoImports', '  ·  no import terminals')
                 .replace('_Netback', '  ·  LNG netback pricing')
                 .replace('_Myopic', '  ·  Myopic'))
     if '_DR' in rest:
@@ -1258,6 +1262,17 @@ sidebar = html.Div(className='md-sidebar', children=[
                  'clear it to go back to the flat volumes.',
                  style={'marginBottom': '16px', 'fontSize': '10px',
                         'color': '#888', 'lineHeight': '1.35'}),
+
+        dbc.Checklist(id='imports-toggle',
+                      options=[{'label': ' Allow LNG import terminals', 'value': 'on'}],
+                      value=['on'] if IMPORTS_DEFAULT else [], switch=True,
+                      style={'marginBottom': '2px', 'fontSize': '12px'}),
+        html.Div('On: the capacity model may build Port Kembla, either Geelong '
+                 'FSRU, or Outer Harbor. Off: they are dropped from the candidate '
+                 'set, so the east coast must be supplied from domestic fields and '
+                 'pipe. Field developments such as Golden Beach are unaffected.',
+                 style={'marginBottom': '16px', 'fontSize': '10px',
+                        'color': '#888', 'lineHeight': '1.35', 'paddingLeft': '38px'}),
 
         dbc.Checklist(id='gsoo-exp-toggle',
                       options=[{'label': ' GSOO expansions only', 'value': 'on'}],
@@ -1527,7 +1542,8 @@ def datacentre_segment(datacentre):
 
 def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
                  foresight=True, discount=0.07, datacentre=None,
-                 netback=False, respect_contracts=True, gsoo_exp=False):
+                 netback=False, respect_contracts=True, gsoo_exp=False,
+                 allow_imports=True):
     """Cache key for one scenario.
 
     Segment order is load-bearing — pretty_key parses it and the cached results on
@@ -1541,6 +1557,7 @@ def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
                 + ('' if respect_contracts else 'incl')) if reservation else '')
             + dc
             + ('_GSOOExp' if gsoo_exp else '')
+            + ('' if allow_imports else '_NoImports')
             + ('_Netback' if netback else '')
             + ('' if foresight else '_Myopic')
             + (f'_DR{round(discount * 100)}' if foresight and abs(discount - 0.07) > 1e-9 else ''))
@@ -1735,6 +1752,7 @@ def show_tab(active):
     State('foresight-toggle', 'value'),
     State('netback-toggle', 'value'),
     State('gsoo-exp-toggle', 'value'),
+    State('imports-toggle', 'value'),
     State('contracts-toggle', 'value'),
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
@@ -1754,7 +1772,7 @@ def show_tab(active):
     prevent_initial_call=True,
 )
 def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on, resv_i,
-                 discount, foresight_v, netback_v, gsoo_exp_v, contracts_v,
+                 discount, foresight_v, netback_v, gsoo_exp_v, imports_v, contracts_v,
                  dc_nsw, dc_vic, dc_start, dc_file, refresh):
     w, l = LEVELS[wi], LEVELS[li]
     baseline = baseline or 'StepChange'
@@ -1764,6 +1782,7 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
     dr = 0.07 if discount is None else float(discount)
     netback = 'on' in (netback_v or [])
     gsoo_exp = 'on' in (gsoo_exp_v or [])
+    allow_imports = 'on' in (imports_v or [])
     respect_contracts = 'on' in (contracts_v or [])
     try:
         datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start, dc_file)
@@ -1776,7 +1795,8 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
         set_progress((pct, f'Solving {yr}… {pct}%'))
     # Built before the solve so it can also title the terminal log.
     key = scenario_key(baseline, w, l, dunkelflaute, reservation, foresight, dr,
-                       datacentre, netback, respect_contracts, gsoo_exp)
+                       datacentre, netback, respect_contracts, gsoo_exp,
+                       allow_imports)
     result = solve_scenario(w, l, mip_gap=gap, callback=_cb,
                             baseline=baseline, dunkelflaute=dunkelflaute,
                             discount_rate=dr, foresight=foresight,
@@ -1784,6 +1804,7 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
                             datacentre=datacentre, netback_pricing=netback,
                             respect_contracts=respect_contracts,
                             gsoo_expansions_only=gsoo_exp,
+                            allow_import_terminals=allow_imports,
                             title=pretty_key(key))
     data = load_results()
     data['all_scenarios'][key] = result
@@ -1871,6 +1892,7 @@ def _run_sweep(jobs, data, set_progress):
     State('reservation-slider', 'value'),
     State('netback-toggle', 'value'),
     State('gsoo-exp-toggle', 'value'),
+    State('imports-toggle', 'value'),
     State('contracts-toggle', 'value'),
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
@@ -1890,7 +1912,7 @@ def _run_sweep(jobs, data, set_progress):
     prevent_initial_call=True,
 )
 def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
-              resv_on, resv_i, netback_v, gsoo_exp_v, contracts_v,
+              resv_on, resv_i, netback_v, gsoo_exp_v, imports_v, contracts_v,
               dc_nsw, dc_vic, dc_start, dc_file, refresh):
     # Every combination: all GSOO baselines x Winter x LNG (dunkelflaute
     # off) -> 27 runs, plus one Step Change + SA Dunkelflaute (2027) case at the
@@ -1913,6 +1935,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
         return no_update, f'✗  Data centre series — {exc}'
     netback = 'on' in (netback_v or [])
     gsoo_exp = 'on' in (gsoo_exp_v or [])
+    allow_imports = 'on' in (imports_v or [])
     respect_contracts = 'on' in (contracts_v or [])
     dr = 0.07 if discount is None else float(discount)
     combos = [(b['value'], w, l, False) for b in BASELINES for w in LEVELS for l in LEVELS]
@@ -1920,8 +1943,8 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     data = load_results()
     jobs = []
     for b, w, l, dunkel in combos:
-        key = scenario_key(b, w, l, dunkel, reservation, False, foresight, dr, datacentre,
-                           netback, respect_contracts, gsoo_exp)
+        key = scenario_key(b, w, l, dunkel, reservation, foresight, dr, datacentre,
+                           netback, respect_contracts, gsoo_exp, allow_imports)
         # Skip already-computed base combos, but always recompute the dunkelflaute
         # case so edits to the event flow through on a re-run.
         if dunkel or key not in data['all_scenarios']:
@@ -1931,7 +1954,8 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
                               foresight=foresight, reservation=reservation,
                               datacentre=datacentre, netback_pricing=netback,
                               respect_contracts=respect_contracts,
-                              gsoo_expansions_only=gsoo_exp)))
+                              gsoo_expansions_only=gsoo_exp,
+                              allow_import_terminals=allow_imports)))
     _run_sweep(jobs, data, set_progress)
     resv_note = f' at {round(reservation * 100)}% reservation' if reservation else ''
     return (refresh or 0) + 1, f'✓  Batch complete — {len(combos)} scenarios (all baselines + SA dunkelflaute){resv_note}'
@@ -1951,6 +1975,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     State('foresight-toggle', 'value'),
     State('netback-toggle', 'value'),
     State('gsoo-exp-toggle', 'value'),
+    State('imports-toggle', 'value'),
     State('contracts-toggle', 'value'),
     State('dc-nsw-input', 'value'),
     State('dc-vic-input', 'value'),
@@ -1970,7 +1995,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     prevent_initial_call=True,
 )
 def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
-                          discount, foresight_v, netback_v, gsoo_exp_v,
+                          discount, foresight_v, netback_v, gsoo_exp_v, imports_v,
                           contracts_v, dc_nsw, dc_vic, dc_start, dc_file, refresh):
     """Every reservation level x every GSOO baseline, at the selected Winter/LNG case.
 
@@ -1989,6 +2014,7 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     foresight = 'on' in (foresight_v or [])
     netback = 'on' in (netback_v or [])
     gsoo_exp = 'on' in (gsoo_exp_v or [])
+    allow_imports = 'on' in (imports_v or [])
     respect_contracts = 'on' in (contracts_v or [])
     try:
         datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start, dc_file)
@@ -2006,7 +2032,8 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     jobs = []
     for base, share in combos:
         key = scenario_key(base, w, l, dunkelflaute, share, foresight, dr,
-                           datacentre, netback, respect_contracts, gsoo_exp)
+                           datacentre, netback, respect_contracts, gsoo_exp,
+                           allow_imports)
         # Cached combinations are skipped, so a re-run after adding a level costs
         # one solve rather than the whole sweep. Clear Results to force a rebuild.
         if key not in data['all_scenarios']:
@@ -2017,7 +2044,8 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
                               datacentre=datacentre,
                               netback_pricing=netback,
                               respect_contracts=respect_contracts,
-                              gsoo_expansions_only=gsoo_exp)))
+                              gsoo_expansions_only=gsoo_exp,
+                              allow_import_terminals=allow_imports)))
     _run_sweep(jobs, data, set_progress)
     shares = ' / '.join(f'{round(x * 100)}%' for x in levels)
     skipped = len(combos) - len(jobs)
