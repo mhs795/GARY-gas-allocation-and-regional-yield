@@ -70,6 +70,36 @@ def _gsoo_level(annual, scenario, sector, year=None):
     return float(row["PJ_per_year"].iloc[0]) * 1000.0 / 365.0
 
 
+PEAK_MATCHING = str(P.get_str("peak_shape_matching", "TRUE")).strip().upper() in ("TRUE", "1", "YES")
+PEAK_K_MIN = P.get("peak_shape_k_min", 0.25)
+PEAK_K_MAX = P.get("peak_shape_k_max", 2.5)
+
+
+def _rescale_peak(shape, target_ratio):
+    """Rescale a mean-1 daily shape so its peak-to-mean hits ``target_ratio``.
+
+    ``out = 1 + (shape - 1) * k`` leaves the mean at exactly 1 whatever k is,
+    because the deviations sum to zero -- so ANNUAL ENERGY IS UNTOUCHED and only
+    the shape moves. k is chosen to put the maximum on target and then clipped,
+    so a region GARY under-covers on energy cannot be forced into an absurd
+    profile; the residual shows up in the diagnostic instead of being hidden.
+    """
+    m = float(shape.max())
+    if m <= 1.0 or target_ratio <= 1.0:
+        return shape
+    k = min(max((target_ratio - 1.0) / (m - 1.0), PEAK_K_MIN), PEAK_K_MAX)
+    out = np.maximum(1.0 + (shape - 1.0) * k, 0.0)
+    return out / out.mean()          # renormalise in case the floor bit
+
+
+def _regional_winter_peaks(scenario):
+    """{(region, year): RC&I winter peak TJ/d} from the GSOO daily-max extract."""
+    rp = pd.read_csv(os.path.join(GSOO, "regional_peak.csv"))
+    rp = rp[(rp.Scenario == scenario)
+            & (rp.Season.astype(str).str.lower().str.contains("winter"))]
+    return {(r.Region, int(r.Year)): float(r.RCI_TJd) for r in rp.itertuples()}
+
+
 def build(scenario="StepChange"):
     annual = pd.read_csv(os.path.join(GSOO, "annual_sector.csv"))
     base_trace = pd.read_csv(os.path.join(DATA, "demand_profiles.csv"))
@@ -139,6 +169,34 @@ def build(scenario="StepChange"):
           f"(x{calib:.3f}); {rc_share:.1%} ResComm / {1 - rc_share:.1%} embedded industrial "
           f"(metered industrial {metered_ind:.0f} TJ/d held out)")
 
+    # --- inputs the per-year shape rescale needs -----------------------------
+    _nodes = pd.read_csv(os.path.join(DATA, "nodes.csv"))
+    node_region = dict(zip(_nodes["Name"], _nodes["Region"]))
+    regional_peak = _regional_winter_peaks(scenario) if PEAK_MATCHING else {}
+    idx_lo = P.get_int("gsoo_index_base_year", 2026)
+    idx_hi = P.get_int("gsoo_index_last_year", 2045)
+    # Mean-1 daily shape and base mean level for each city-gate node.
+    city_shapes, node_base_mean = {}, {}
+    for node in sorted(CITY_NODES):
+        t = (daily_trace[daily_trace["Node"] == node]
+             .sort_values("Day")["Demand"].to_numpy(dtype=float))
+        node_base_mean[node] = float(t.mean())
+        city_shapes[node] = t / t.mean() if t.mean() > 0 else t
+    # Metered industrial per region and year, held out of the regional RC&I peak
+    # before it becomes a city-gate target. Its MEAN, not its peak: the industrial
+    # trace is near-flat baseload, so what it contributes on the region's peak day
+    # is its ordinary level. Subtracting its own maximum instead understated the
+    # city-gate target enough to invert it in NSW.
+    ind_region_peak = {}
+    try:
+        _ip = pd.read_csv(os.path.join(DATA, f"industrial_demand_profile_{scenario}.csv"))
+        _ip["Region"] = _ip["Node"].map(node_region)
+        for (reg, yr), g in _ip.groupby(["Region", "Year"]):
+            ind_region_peak[(reg, int(yr))] = float(g.groupby("Day")["Demand"].sum().mean())
+    except FileNotFoundError:
+        pass
+    peak_report = {}
+
     rows = []
     for year in YEARS:
         ci = rescomm_idx(year)
@@ -154,18 +212,51 @@ def build(scenario="StepChange"):
 
         # Other (city) nodes: calibrated distribution delivery, split between the
         # GSOO's ResComm and Industrial trajectories in the shares fixed above.
+        # ANNUAL ENERGY comes from that blend; the DAILY SHAPE is then rescaled to
+        # the GSOO's own regional RC&I winter peak for the year. Both are needed:
+        # the blend alone matched the GSOO's energy to ~1% while leaving the 2026
+        # daily shape frozen for 26 years, so as the load behind it shifted from
+        # heating to industrial the peak drifted badly -- VIC 22% over AEMO in 2026
+        # and 43% over by 2045, QLD 20-30% under throughout.
         blended = rc_share * ci + (1.0 - rc_share) * ii
-        for _, r in daily_trace[daily_trace["Node"] != "APLNG"].iterrows():
-            node = r["Node"]
-            factor = calib * blended if node in CITY_NODES else 1.0
-            rows.append({"Year": int(year), "Day": int(r["Day"]), "Node": node,
-                         "Demand": round(max(0.0, r["Demand"] * factor), 4)})
+        for node, trace in city_shapes.items():
+            mean_tjd = node_base_mean[node] * calib * blended
+            shape = trace
+            if PEAK_MATCHING:
+                region = node_region.get(node)
+                yr_c = min(max(int(year), idx_lo), idx_hi)
+                rci = regional_peak.get((region, yr_c))
+                if rci and mean_tjd > 0:
+                    # The region's RC&I peak covers load GARY meters separately as
+                    # industrial at other nodes, so hold that out before targeting.
+                    target = max(0.0, rci - ind_region_peak.get((region, yr_c), 0.0))
+                    shape = _rescale_peak(trace, target / mean_tjd)
+                    peak_report.setdefault(region, {})[int(year)] = (
+                        target, float(shape.max()) * mean_tjd)
+            for day, v in enumerate(shape * mean_tjd, start=1):
+                rows.append({"Year": int(year), "Day": day, "Node": node,
+                             "Demand": round(max(0.0, float(v)), 4)})
+        # Non-city nodes carry their trace unchanged.
+        for _, r in daily_trace[(~daily_trace["Node"].isin(CITY_NODES))
+                                & (daily_trace["Node"] != "APLNG")].iterrows():
+            rows.append({"Year": int(year), "Day": int(r["Day"]), "Node": r["Node"],
+                         "Demand": round(max(0.0, r["Demand"]), 4)})
 
         # NT (Darwin) — small city-gate commercial/light-industrial load, held flat.
         # Power generation is modelled separately as a GPG tier (build_gpg_demand_gsoo).
         for day in range(1, 366):
             rows.append({"Year": int(year), "Day": day, "Node": "Darwin",
                          "Demand": round(NT_DARWIN_COMMERCIAL_TJD, 4)})
+
+    if peak_report:
+        print("  winter peak day, GARY city-gate vs GSOO regional RC&I target (TJ/d):")
+        for region in sorted(peak_report):
+            yrs = [y for y in (2026, 2035, 2045) if y in peak_report[region]]
+            cells = "  ".join(
+                f"{y}: {peak_report[region][y][1]:.0f}/{peak_report[region][y][0]:.0f}"
+                f" ({peak_report[region][y][1] / peak_report[region][y][0]:.2f})"
+                for y in yrs if peak_report[region][y][0] > 0)
+            print(f"    {region:<4} {cells}")
 
     df = pd.DataFrame(rows)
     out_name = f"demand_{scenario}.csv"
