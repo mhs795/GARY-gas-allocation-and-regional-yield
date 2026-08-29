@@ -21,13 +21,15 @@ Method mirrors how demand_profiles.csv was built: average recent years
 """
 import os
 import pandas as pd
+
+import params as P
 import numpy as np
 
 BASE = os.path.dirname(__file__)
 DATA = os.path.join(BASE, "data")
 GBB = os.path.join(DATA, "GasBBActualFlowStorage.CSV")
 
-RECENT_FROM = 2022  # average 2022 onwards for the representative shape
+RECENT_FROM = P.get_int("gbb_recent_from", 2022)
 
 # Model demand/transport nodes that can carry gas. GPG/industrial facilities are
 # mapped to the nearest of these. Facilities not on the modelled eastern network
@@ -99,7 +101,9 @@ EXCLUDE = {
 #   GPG ~ $22/GJ : gas generators become uneconomic vs coal/batteries/imports.
 #   Industrial ~ $120/GJ : high cost of lost production, few alternatives, so
 #                          they curtail only in extreme scarcity (still < VoLL).
-STRIKES = {"GPG": 22.0, "Industrial": 120.0}
+# Same two strikes model.py reads; one definition, on the Parameters sheet.
+STRIKES = {"GPG": P.get("strike_gpg_default", 22.0),
+           "Industrial": P.get("strike_ind_default", 120.0)}
 
 # Northern Territory gas-power stations. NT is not on the (NEM) Gas Bulletin Board,
 # so its facilities are added explicitly. NT domestic gas demand is principally power

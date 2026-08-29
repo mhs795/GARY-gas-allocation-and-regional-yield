@@ -30,8 +30,11 @@ BASE = os.path.dirname(__file__)
 DATA = os.path.join(BASE, "data")
 GSOO = os.path.join(DATA, "gsoo")
 
-CITY_NODES = {"Sydney", "Melbourne", "Adelaide", "Brisbane"}
-YEARS = np.arange(2025, 2051)
+_NODES = pd.read_csv(os.path.join(DATA, "nodes.csv"))
+# The distribution-delivery nodes, from the CityGate flag on nodes.csv -- a node
+# attribute belongs with the node, not in a set in a module.
+CITY_NODES = set(_NODES.loc[_NODES["CityGate"] == 1, "Name"])
+YEARS = np.arange(P.get_int("horizon_start", 2025), P.get_int("horizon_end", 2050) + 1)
 
 # NT (Darwin) city-gate commercial / light-industrial load only — small, and held
 # flat (AER: "local demand is not expected to change significantly"). Sized from the
@@ -39,14 +42,17 @@ YEARS = np.arange(2025, 2051)
 # distribution system (0.3) plus Townend Road (0.2) plus Elliot (0.1). The bulk of NT
 # gas demand is power generation, modelled separately as a curtailable GPG tier at
 # the Darwin and Amadeus nodes (see build_gpg_demand_gsoo.py / gpg_facilities.csv).
-NT_DARWIN_COMMERCIAL_TJD = 0.6
+NT_DARWIN_COMMERCIAL_TJD = P.get("nt_darwin_commercial_tjd", 0.6)
 
 # Baseline scenarios -> output filename slug. Mirrors build_gsoo_scenarios.SCENARIOS.
-SCENARIOS = ["StepChange", "Accelerated", "SlowerGrowth"]
+SCENARIOS = P.get_list("gsoo_baselines", ["StepChange", "Accelerated", "SlowerGrowth"])
 
 
-def _gsoo_index(annual, scenario, sector, lo=2026, hi=2045, base=2026):
+def _gsoo_index(annual, scenario, sector, lo=None, hi=None, base=None):
     """Year -> level relative to the base year, for a GSOO sector/scenario, clamped."""
+    lo = P.get_int("gsoo_index_base_year", 2026) if lo is None else lo
+    hi = P.get_int("gsoo_index_last_year", 2045) if hi is None else hi
+    base = P.get_int("gsoo_index_base_year", 2026) if base is None else base
     s = annual[(annual.Scenario == scenario) & (annual.Sector == sector)
                ].set_index("Year")["PJ_per_year"].to_dict()
     base_val = s[base]
@@ -56,8 +62,9 @@ def _gsoo_index(annual, scenario, sector, lo=2026, hi=2045, base=2026):
     return idx
 
 
-def _gsoo_level(annual, scenario, sector, year=2026):
+def _gsoo_level(annual, scenario, sector, year=None):
     """A GSOO sector's absolute level in ``year``, TJ/day."""
+    year = P.get_int("gsoo_index_base_year", 2026) if year is None else year
     row = annual[(annual.Scenario == scenario) & (annual.Sector == sector)
                  & (annual.Year == year)]
     return float(row["PJ_per_year"].iloc[0]) * 1000.0 / 365.0

@@ -107,12 +107,14 @@ import os
 
 import pandas as pd
 
+import params as P
+
 # --- reference price ---------------------------------------------------------
-REFERENCE_PRICE = 5.49        # $/GJ, demand-weighted mean dual, inelastic baseline
+REFERENCE_PRICE = P.get('reference_price_aud_gj', 5.49)
 
 # --- shed side (all tiers) ---------------------------------------------------
-ELASTICITY = -0.180           # Labandeira et al. (2017)
-SHED_MULTIPLES = (2, 4, 8)    # strikes at 2x, 4x, 8x the reference price
+ELASTICITY = P.get('elasticity_short_run', -0.180)
+SHED_MULTIPLES = tuple(P.get_list('shed_multiples', [2, 4, 8], cast=float))
 
 # Damps the shed response over the southern winter window. Kanellakis et al.
 # ("The daily price and income elasticity of natural gas demand in Europe",
@@ -121,18 +123,18 @@ SHED_MULTIPLES = (2, 4, 8)    # strikes at 2x, 4x, 8x the reference price
 # shoulder months. GARY sheds almost entirely in winter, so this matters.
 # Defaults to 1.0 -- no adjustment -- so the shipped calibration is exactly what
 # the elasticity implies. Set ~0.3-0.5 to test the daily-frequency evidence.
-WINTER_SCALE = 1.0
+WINTER_SCALE = P.get('winter_scale', 1.0)
 
 # --- raise side --------------------------------------------------------------
-ASYMMETRY = 0.5               # upward elasticity = ASYMMETRY x ELASTICITY
-RAISE_FRACTIONS = (0.85, 0.70, 0.55)   # blocks priced at these fractions of P0
+ASYMMETRY = P.get('elasticity_asymmetry', 0.5)
+RAISE_FRACTIONS = tuple(P.get_list('raise_fractions', [0.85, 0.70, 0.55], cast=float))
 
 # Mass-market demand does NOT rise when gas gets cheap. Victoria banned gas
 # connections in new homes from 1 January 2024 (~80% of Victorian homes were on
 # gas) and the sector is in policy-driven structural decline; a lower commodity
 # price does not reverse a connection ban. Households therefore shed but never
 # expand. Set True only to test that assumption.
-MASSMARKET_RAISES = False
+MASSMARKET_RAISES = str(P.get_str('massmarket_raises', 'FALSE')).strip().upper() in ('TRUE','1','YES')
 
 # --- gas-powered generation --------------------------------------------------
 # GPG has NO elasticity. A generator's willingness to pay per GJ of gas is an
@@ -144,14 +146,22 @@ MASSMARKET_RAISES = False
 # $/MWh of generation displaced, and what it is, by jurisdiction. See the
 # DISPLACED_SRMC note above -- a single national figure priced SA and NT gas off
 # a coal fleet neither has.
-DISPLACED_SRMC = {
-    'QLD': (45.0, 'Black coal'),
-    'NSW': (45.0, 'Black coal'),
-    'VIC': (10.0, 'Brown coal, mine-mouth'),
-    'SA':  (10.0, 'Imports from VIC/NSW (Heywood, Project EnergyConnect)'),
-    'NT':  (0.0,  'Nothing - isolated gas-dominated system, no coal'),
+# Values live on the Parameters sheet (gpg_displaced_srmc); the label beside each
+# is what that jurisdiction displaces, kept here because it is prose, not a number.
+_DISPLACED_TECH = {
+    'QLD': 'Black coal',
+    'NSW': 'Black coal',
+    'VIC': 'Brown coal, mine-mouth',
+    'SA':  'Imports from VIC/NSW (Heywood, Project EnergyConnect)',
+    'NT':  'Nothing - isolated gas-dominated system, no coal',
 }
-HEAT_RATES = (7.0, 10.64, 13.0)         # GJ/MWh: CCGT, NEM average, OCGT
+DISPLACED_SRMC = {
+    state: (float(v), _DISPLACED_TECH.get(state, ''))
+    for state, v in P.get_pairs(
+        'gpg_displaced_srmc',
+        [('QLD', 45.0), ('NSW', 45.0), ('VIC', 10.0), ('SA', 10.0), ('NT', 0.0)])
+}
+HEAT_RATES = tuple(P.get_list('gpg_heat_rates', [7.0, 10.64, 13.0], cast=float))
 
 # GARY models gas, not the NEM. Nameplate headroom is ~3,300 TJ/d against 321
 # TJ/d of baseline GPG demand (8.9% utilisation), so an unbounded response would
@@ -159,7 +169,7 @@ HEAT_RATES = (7.0, 10.64, 13.0)         # GJ/MWh: CCGT, NEM average, OCGT
 # capped at this multiple of each node's baseline GPG demand as well as by
 # physical headroom. 1.0 = GPG may at most double. This is a modelling guardrail,
 # not a finding -- raise it only alongside an argument about NEM dispatch.
-GPG_EXPANSION_CAP = 1.0
+GPG_EXPANSION_CAP = P.get('gpg_expansion_cap', 1.0)
 
 DATA = os.path.join(os.path.dirname(__file__), "data")
 PARAMS_FILE = os.path.join(DATA, "curtailment_params.csv")
@@ -255,7 +265,6 @@ def compute_reference_price(baseline="StepChange", winter="Medium", lng="Medium"
     it is calibrated once against the inelastic base case and then held fixed.
     """
     import results_io
-    import params as P
     cache = os.path.join(DATA, "precalculated_results.pkl")
     if not os.path.exists(cache):
         return None

@@ -31,22 +31,30 @@ import os
 import numpy as np
 import pandas as pd
 
+import params as P
+
 BASE = os.path.dirname(__file__)
 DATA = os.path.join(BASE, "data")
 GSOO = os.path.join(DATA, "gsoo")
 
-SCENARIOS = ["StepChange", "Accelerated", "SlowerGrowth"]
+SCENARIOS = P.get_list("gsoo_baselines", ["StepChange", "Accelerated", "SlowerGrowth"])
 
 # GSOO region -> model nodes. NT/TAS have no modelled node; Gladstone(=Yarwun)
 # is reclassified industrial.
+# GSOO region -> the GARY nodes that carry its gas-fired generation, derived from
+# the Region column on nodes.csv rather than restated here. Gladstone is dropped
+# because Yarwun is reclassified to industrial (see the module docstring), and the
+# NT is outside the NEM so it is handled separately below.
+DROP_NODES = {"Gladstone"}
+_GPG_REGIONS = P.get_list("gpg_nem_regions", ["NSW", "SA", "VIC", "QLD"])
+_FAC = pd.read_csv(os.path.join(DATA, "gpg_facilities.csv"))
 REGION_NODES = {
-    "NSW": ["Sydney"],
-    "SA":  ["Adelaide"],
-    "VIC": ["Melbourne", "Gippsland"],
-    "QLD": ["Surat", "Brisbane"],
+    r: sorted(set(_FAC.loc[(_FAC["State"] == r) & (~_FAC["Node"].isin(DROP_NODES)),
+                           "Node"]))
+    for r in _GPG_REGIONS
 }
+REGION_NODES = {r: n for r, n in REGION_NODES.items() if n}
 MODEL_REGIONS = list(REGION_NODES)
-DROP_NODES = {"Gladstone"}  # Yarwun -> industrial
 
 # --- Northern Territory GPG (not in the NEM, so absent from the GSOO NEM data) ---
 # NT domestic gas is principally power generation. Sized from the AER's Amadeus Gas
@@ -83,12 +91,18 @@ DROP_NODES = {"Gladstone"}  # Yarwun -> industrial
 # The AER's own forecast assumption is that "local demand is not expected to change
 # significantly", which is what the gentle decline below represents (rooftop solar).
 # Tropical -> roughly flat across the year. Per-station split: gpg_facilities.csv.
-NT_GPG_BASE_TJD = {"Darwin": 33.4, "Amadeus": 11.0}   # node totals in 2026
-NT_GPG_DECLINE = 0.008
+NT_GPG_BASE_TJD = {n: float(v) for n, v in
+                   P.get_pairs("nt_gpg_base_tjd",
+                               [("Darwin", 33.4), ("Amadeus", 11.0)])}
+NT_GPG_DECLINE = P.get("nt_gpg_decline", 0.008)
 
 # Gas winter (Jun-Aug) and summer (Dec-Feb) day-of-year windows.
-WINTER_DAYS = set(range(152, 244))
-SUMMER_DAYS = set(range(335, 366)) | set(range(1, 60))
+# Same southern winter window model.py uses, plus the summer window the
+# winter:summer peak ratio is struck against. Both on the Parameters sheet.
+WINTER_DAYS = set(range(P.get_int("winter_day_start", 150),
+                        P.get_int("winter_day_end", 250) + 1))
+_S0, _S1 = P.get_int("summer_day_start", 335), P.get_int("summer_day_end", 59)
+SUMMER_DAYS = set(range(_S0, 366)) | set(range(1, _S1 + 1))
 
 
 def _node_shapes():

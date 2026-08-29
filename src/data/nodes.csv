@@ -1,21 +1,21 @@
-Name,Type,Description,StorageCapacity,MaxInjection,MaxWithdrawal
-Surat,Supply,Queensland gas basin,0,0,0
-Moomba,Hub,Central Australian gas hub and supply,70000,100,120
-Gippsland,Supply,Victorian gas basin (offshore),0,0,0
-Sydney,Demand,Major demand center,0,0,0
-Melbourne,Demand,Major demand center,0,0,0
-Adelaide,Demand,Major demand center,0,0,0
-Brisbane,Demand,Major demand center,0,0,0
-Gladstone,Hub,LNG hub and export center,0,0,0
-APLNG,LNG,APLNG export terminal,0,0,0
-GLNG,LNG,GLNG export terminal,0,0,0
-QCLNG,LNG,QCLNG export terminal,0,0,0
-Port_Kembla,Import,Potential LNG import terminal,0,0,0
-Iona,Storage,Gas storage facility,24400,155,570
-Silver_Springs,Storage,Queensland storage,45000,5,10
-Amadeus,Supply,NT Amadeus Basin (Mereenie/Palm Valley/Dingo),0,0,0
-Beetaloo,Supply,NT Beetaloo shale gas (potential),0,0,0
-Darwin,Demand,NT demand centre (Darwin power & industry),0,0,0
-Tennant_Creek,Hub,NT pipeline junction (Amadeus GP / NGP),0,0,0
-Geelong,Import,Potential LNG import terminal (Viva / Vopak FSRU),0,0,0
-Blacktip,Supply,NT Blacktip / Bonaparte Basin via the Yelcherr plant (declining; GSA ends mid-2030s),0,0,0
+Name,Type,CityGate,Region,Description,StorageCapacity,MaxInjection,MaxWithdrawal
+Surat,Supply,0,QLD,Queensland gas basin,0,0,0
+Moomba,Hub,0,SA,Central Australian gas hub and supply,70000,100,120
+Gippsland,Supply,0,VIC,Victorian gas basin (offshore),0,0,0
+Sydney,Demand,1,NSW,Major demand center,0,0,0
+Melbourne,Demand,1,VIC,Major demand center,0,0,0
+Adelaide,Demand,1,SA,Major demand center,0,0,0
+Brisbane,Demand,1,QLD,Major demand center,0,0,0
+Gladstone,Hub,0,QLD,LNG hub and export center,0,0,0
+APLNG,LNG,0,QLD,APLNG export terminal,0,0,0
+GLNG,LNG,0,QLD,GLNG export terminal,0,0,0
+QCLNG,LNG,0,QLD,QCLNG export terminal,0,0,0
+Port_Kembla,Import,0,NSW,Potential LNG import terminal,0,0,0
+Iona,Storage,0,VIC,Gas storage facility,24400,155,570
+Silver_Springs,Storage,0,QLD,Queensland storage,45000,5,10
+Amadeus,Supply,0,NT,NT Amadeus Basin (Mereenie/Palm Valley/Dingo),0,0,0
+Beetaloo,Supply,0,NT,NT Beetaloo shale gas (potential),0,0,0
+Darwin,Demand,0,NT,NT demand centre (Darwin power & industry),0,0,0
+Tennant_Creek,Hub,0,NT,NT pipeline junction (Amadeus GP / NGP),0,0,0
+Geelong,Import,0,VIC,Potential LNG import terminal (Viva / Vopak FSRU),0,0,0
+Blacktip,Supply,0,NT,NT Blacktip / Bonaparte Basin via the Yelcherr plant (declining; GSA ends mid-2030s),0,0,0
