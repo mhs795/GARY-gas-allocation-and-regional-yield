@@ -121,12 +121,12 @@ PARAMETERS = [
 
     ("LNG trains", "lng_nameplate_tj_day", 3680.0, "TJ/day",
      "Total east coast liquefaction nameplate (100% utilisation). Mirrors "
-     "lng_daily_target in lng_parameters.csv. This is the PHYSICAL ceiling on "
+     "This is the PHYSICAL ceiling on "
      "exports under netback pricing - a train cannot liquefy more than it can "
      "liquefy, however attractive the netback."),
     ("LNG trains", "lng_train_shares", "APLNG:0.357,GLNG:0.31,QCLNG:0.333",
      "node:share", "Each train's share of nameplate. Mirrors the *_factor rows in "
-     "lng_parameters.csv."),
+     "the 2026 GSOO LNG Export sheet's Mtpa."),
     ("LNG trains", "lng_foundation_share", 0.93, "fraction",
      "Share of planned export volume committed under long-term foundation SPAs: "
      "take-or-pay, therefore price-insensitive, served whatever the netback. The "
@@ -141,6 +141,10 @@ PARAMETERS = [
      "gas via spot cargoes'. ONE QUARTER's figure, so treat as a KEY SENSITIVITY - "
      "it sets how much export volume is contestable at all."),
 
+    ("Storage", "storage_opening_fraction", 0.5, "fraction of capacity",
+     "GARY's own. Inventory each year opens at this share of capacity and must "
+     "close at or above it, so a year cannot create gas. Each year is solved "
+     "independently, so this is an assumption either way."),
     ("Gas reservation", "reservation_respects_contracts", 1, "1=yes, 0=no",
      "Default for whether a reservation may only take UNCONTRACTED export volume. "
      "1: the reservation bites on the spot tail first and is capped at "

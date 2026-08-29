@@ -6,7 +6,8 @@ so a fresh clone can rebuild every generated data file locally without any of
 them being committed to GitHub. Only source inputs are tracked:
   - data/GasBBActualFlowStorage.CSV            (AEMO Gas Bulletin Board actuals)
   - data/other data/2026 GSOO/.../*.xlsx       (AEMO 2026 GSOO workbooks)
-  - data/demand_profiles.csv, lng_parameters.csv, nodes/arcs/supply/... (config)
+  - data/demand_profiles.csv, nodes/arcs/supply/expansion_options.csv (config)
+  - data/gary_parameters.xlsx                   (every scalar parameter)
 
 Pipeline (order matters -- each step feeds the next). The GSOO extract pulls all
 three baseline scenarios (Step Change / Accelerated Transition / Slower Growth),

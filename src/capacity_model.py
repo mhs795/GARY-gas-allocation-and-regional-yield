@@ -15,7 +15,7 @@ import pyomo.environ as pyo
 
 import params as P
 import solvers
-from model import (IMPORT_NODES, LNG_NODES, VOLL_PER_GJ, WINTER_DAYS,
+from model import (IMPORT_NODES, LNG_NODES, STORAGE_OPENING, VOLL_PER_GJ, WINTER_DAYS,
                    _declined_capacity)
 
 # Day-of-year (1..365, non-leap) -> calendar month.
@@ -283,12 +283,43 @@ class CapacityExpansionModel:
             m.build_group_once = pyo.Constraint(m.ExpGroup, rule=lambda m, g:
                 sum(m.build[e, y] for e in groups[g] for y in Y) <= 1)
 
-        # can't build terminals before terminal_earliest
+        # EARLIEST BUILD YEAR, per project. terminal_earliest used to be the only
+        # timing rule and it gated Type=Terminal only, so a pipeline candidate with
+        # a stated 2030s date -- NEAP -- could be built in 2026. A row's own
+        # EarliestYear wins where it has one; terminal_earliest stays as the
+        # fallback floor for terminals that do not.
+        def _earliest(e):
+            v = exp_data[e].get('EarliestYear')
+            try:
+                v = int(v)
+            except (TypeError, ValueError):
+                v = None
+            if v is None and exp_data[e]['Type'] == 'Terminal':
+                v = self.terminal_earliest
+            return v
         for e in m.Expansion:
-            if exp_data[e]['Type'] == 'Terminal':
+            lo = _earliest(e)
+            if lo is not None:
                 for y in Y:
-                    if y < self.terminal_earliest:
+                    if y < lo:
                         m.build[e, y].fix(0)
+
+        # COMMITTED PROJECTS ARE BUILT. The Status column carried
+        # Committed/Pre-FID/Proposed/Built from the start and no code read it, so a
+        # project with FID taken and steel in the ground was optimised on exactly
+        # the same terms as a speculative one -- and ECGG_3A_MSP and EGP_Reversal
+        # were both dropped when the arcs moved to posted tariffs. A commitment is
+        # not a choice the model gets to make, so these are forced in by their
+        # stated year. It also neutralises the brownfield tariff bias (TODO item 1)
+        # for exactly the projects where that bias is worst, since a forced build
+        # does not care that its economics are understated.
+        _committed = [e for e in m.Expansion
+                      if str(exp_data[e].get('Status', '')).strip() == 'Committed'
+                      and _earliest(e) is not None]
+        if _committed:
+            m.build_committed = pyo.Constraint(
+                pyo.Set(initialize=_committed), rule=lambda m, e: sum(
+                    m.build[e, y] for y in Y if y <= max(_earliest(e), Y[0])) == 1)
 
         # --- NPV objective ---------------------------------------------------
         def obj_rule(m):
@@ -443,7 +474,7 @@ class CapacityExpansionModel:
         # the investment layer's equivalent of the dispatch layer's closed year.
         m.stor_annual = pyo.Constraint(m.StorageNodes, Y, rule=lambda m, sn, y:
             pyo.quicksum((m.withdrawal[sn, y, i] - m.injection[sn, y, i]) * wt[y, i]
-                         for (yy, i) in YR if yy == y) <= 0.5 * storage_caps.get(sn, 0))
+                         for (yy, i) in YR if yy == y) <= STORAGE_OPENING * storage_caps.get(sn, 0))
 
     def solve(self, mip_gap=0.005):
         opt = solvers.make_solver(rel_gap=mip_gap if mip_gap is not None else 0.005,

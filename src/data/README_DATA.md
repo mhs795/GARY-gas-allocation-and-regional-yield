@@ -12,7 +12,6 @@ committed, generated data is not.** See the header of `src/params.py` for the re
 | `supply.csv` | Fields: capacity, cost, decline rate, optional `EndYear` |
 | `expansion_options.csv` | Every expansion candidate, one row each, with its source and basis in `Note` |
 | `demand_profiles.csv` | The **raw** GBB city-gate + APLNG daily trace that the demand builders index forward |
-| `lng_parameters.csv` | LNG train split factors and the daily target the trace is scaled to |
 | `acil_lng_anchors.csv`, `acil_lng_params.csv`, `acil_segment_weights.csv` | ACIL Allen netback inputs (also mirrored in the parameters workbook) |
 | `gary_parameters.xlsx` | Every scalar parameter, scenario lever and price anchor. Read only through `params.py` |
 | `pipeline_geometry.json` | Real OpenStreetMap pipeline routes for the map, built by `build_pipeline_geometry.py` |
@@ -55,6 +54,13 @@ input or the builder instead.
 > a useful check on the underlying data.
 
 ## Removed
+
+`lng_parameters.csv` was deleted on 29 Aug 2026. Its three train split factors
+duplicated `lng_train_shares` on the Parameters sheet -- two places for one number,
+and they had already drifted apart. `lng_daily_target` stopped being read when LNG
+demand was anchored to the GSOO trajectory instead of to nameplate (the nameplate
+itself is `lng_nameplate_tj_day` on the Parameters sheet), and `volatility` was
+never read by anything.
 
 `contracts.csv` was deleted on 29 Aug 2026. It was read in `solve.py`, threaded
 through two call layers behind a `year <= 2040` gate, and assigned to

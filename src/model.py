@@ -363,6 +363,11 @@ def datacentre_profile(spec, year, gpg_demand):
 # but it is the number to revisit if VOLL ever matters to a conclusion.
 VOLL_PER_GJ = P.get('voll_per_gj', 300.0)
 
+# Share of capacity a store holds on day 1, and the level it must be back at on
+# day 365. Each year is solved independently, so this is an assumption either way;
+# what matters is that the two are the SAME number, or the year creates gas.
+STORAGE_OPENING = P.get('storage_opening_fraction', 0.5)
+
 # Southern winter window (gas day-of-year) used by the Winter lever, and by the
 # per-block WinterScale that damps the price response through the heating season.
 WINTER_DAYS = range(P.get_int('winter_day_start', 150),
@@ -1185,7 +1190,7 @@ class GasMarketModel:
 
         def storage_cont_rule(m, sn, t):
             cap = storage_caps.get(sn, 0)
-            if t == 1: return m.inventory[sn, t] == (cap * 0.5) + m.injection[sn, t] - m.withdrawal[sn, t]
+            if t == 1: return m.inventory[sn, t] == (cap * STORAGE_OPENING) + m.injection[sn, t] - m.withdrawal[sn, t]
             return m.inventory[sn, t] == m.inventory[sn, t-1] + m.injection[sn, t] - m.withdrawal[sn, t]
         m.storage_cont = pyo.Constraint(m.StorageNodes, m.T, rule=storage_cont_rule)
 
@@ -1209,7 +1214,7 @@ class GasMarketModel:
         # assumption being a subsidy. `>=` rather than `==` so ending fuller stays
         # legal -- it costs money, so the solver will not do it without a reason.
         m.storage_close = pyo.Constraint(m.StorageNodes, rule=lambda m, sn:
-            m.inventory[sn, 365] >= 0.5 * storage_caps.get(sn, 0))
+            m.inventory[sn, 365] >= STORAGE_OPENING * storage_caps.get(sn, 0))
 
         # The gas reservation is applied to LNG demand before the model is built
         # (see apply_lng_reservation above and _year_demand in solve.py), so there
@@ -1222,14 +1227,19 @@ class GasMarketModel:
                 m.build[e].fix(1 if e in self.builds_fixed else 0)
         else:
             for e in self.already_built: m.build[e].fix(1)
-            if self.year < TERMINAL_EARLIEST:
-                # Test the project's TYPE, not its name. This used to read
-                # `'Terminal' in e`, which only ever matched Port_Kembla_Terminal
-                # and silently let every other import/field terminal be built from
-                # 2025 -- harmless while Beetaloo_Dev was the only other one, but
-                # not once the candidate set carries four more.
-                for e in m.Expansion:
-                    if exp_data[e]['Type'] == 'Terminal': m.build[e].fix(0)
+            # Earliest build year, per project. A row's own EarliestYear wins;
+            # TERMINAL_EARLIEST is the fallback floor for terminals without one.
+            # (This used to test `'Terminal' in e`, a NAME match that only ever
+            # caught Port_Kembla_Terminal, then the Type, which still let a
+            # pipeline with a stated 2030s date be built in 2026.)
+            for e in m.Expansion:
+                lo = exp_data[e].get('EarliestYear')
+                try:
+                    lo = int(lo)
+                except (TypeError, ValueError):
+                    lo = TERMINAL_EARLIEST if exp_data[e]['Type'] == 'Terminal' else None
+                if lo is not None and self.year < lo:
+                    m.build[e].fix(0)
             # Rival projects delivering the same capacity cannot both be built --
             # see build_group_once in capacity_model.py. Only needed on the free
             # (myopic) path; the two-stage path fixes builds from the schedule.

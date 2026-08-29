@@ -24,6 +24,8 @@ import os
 import numpy as np
 import pandas as pd
 
+import params as P
+
 BASE = os.path.dirname(__file__)
 DATA = os.path.join(BASE, "data")
 GSOO = os.path.join(DATA, "gsoo")
@@ -64,13 +66,17 @@ def _gsoo_level(annual, scenario, sector, year=2026):
 def build(scenario="StepChange"):
     annual = pd.read_csv(os.path.join(GSOO, "annual_sector.csv"))
     base_trace = pd.read_csv(os.path.join(DATA, "demand_profiles.csv"))
-    lng_params = pd.read_csv(os.path.join(DATA, "lng_parameters.csv")).set_index("Parameter")["Value"].to_dict()
-
     daily_trace = base_trace.groupby(["Day", "Node"])["Demand"].mean().reset_index()
 
-    lng_nodes = {"APLNG": lng_params["aplng_factor"],
-                 "GLNG": lng_params["glng_factor"],
-                 "QCLNG": lng_params["qclng_factor"]}
+    # One source for the train split: the Parameters sheet, which the model also
+    # reads for the liquefaction nameplate split. These used to be duplicated in
+    # lng_parameters.csv, so the two could -- and did -- drift apart.
+    # get_pairs returns the value side as text (a node name and a price share sit
+    # in the same untyped column), so cast here the way model.py does.
+    lng_nodes = {n: float(v) for n, v in
+                 P.get_pairs('lng_train_shares',
+                             [('APLNG', 0.3682), ('GLNG', 0.3023),
+                              ('QCLNG', 0.3295)])}
     aplng_trace = daily_trace[daily_trace["Node"] == "APLNG"]
     # ANCHOR THE TRAINS TO THE GSOO, NOT TO NAMEPLATE. This used to scale the
     # Curtis Island trace so the 2026 base equalled lng_daily_target (3,680 TJ/d
