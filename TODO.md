@@ -52,6 +52,29 @@ on the days that set the price. **That has not been tested.**
 Victorian peaking facility), Heytesbury/HUGS (45 TJ/d), and Roma Underground
 Storage (54 PJ, 92/75 TJ/d).
 
+## NEW — the GPG raise ladder can no longer fire anywhere
+
+Found 29 Aug 2026 when `REFERENCE_PRICE` was rebased. The GPG expansion blocks are
+an engineering threshold, `displaced_srmc / heat_rate`, so they do not move with the
+model's price level — QLD/NSW $6.43/$4.23/$3.46, VIC/SA $1.43/$0.94/$0.77. The
+supply-side depletion and demand-shape work roughly doubled that price level: the
+central scenario's demand-weighted mean dual is now $13.75/GJ and the LOWEST nodal
+price anywhere across 26 years is $3.65/GJ, above two of the three QLD/NSW blocks
+and every VIC/SA block.
+
+So under `--elastic-demand` the largest demand response in the model is now
+effectively inert. The README already said VIC and SA "sit below every price the
+model produces"; that is now true of QLD and NSW as well.
+
+This is not obviously wrong — if gas costs $13/GJ, a generator burning it at
+10.6 GJ/MWh needs $138/MWh of generation value to justify running, which black coal
+at $45/MWh does not provide. The model may simply be saying gas cannot displace
+coal at these prices. But it means `gpg_displaced_srmc` now decides nothing, and
+the README calls it the single most influential assumption behind the GPG response,
+so the two statements cannot both stand. Either the ladder needs a scarcity or
+firming value on top of fuel substitution, or the README needs to stop calling it
+influential.
+
 ## NEW — GPG's shed strike and its raise ladder describe two different generators
 
 A gas generator will pay $22/GJ rather than shed, but only $6.43/GJ (QLD/NSW) or
