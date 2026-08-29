@@ -193,6 +193,36 @@ def southern_envelope():
     return pd.DataFrame(out).drop_duplicates(['Year', 'Category'])
 
 
+def derived_capex():
+    """Development capital implied by AEMO's own numbers, per basin and per project.
+
+    AEMO publishes no CapEx, only a blended $/GJ that its Production Costs note says
+    includes "operating cost, capital costs, royalty, tax and a return on capital".
+    supply.csv splits that: a 2C row carries the basin's OPERATING basis in `Cost`
+    and AEMO's published full cost in `AEMOFullCost`. The capital is the gap, over
+    the resource that capital develops, shared across the basin's developments pro
+    rata on the deliverability each brings.
+
+    This is the check that expansion_options.csv has not drifted from supply.csv.
+    """
+    sup = pd.read_csv(os.path.join(DATA, 'supply.csv'))
+    exp = pd.read_csv(os.path.join(DATA, 'expansion_options.csv'))
+    c2c = sup[(sup['IsPotential']) & (sup['Tranche'] == '2C')]
+    per_basin = {r['Node']: (r['AEMOFullCost'] - r['Cost']) * r['Reserves_PJ'] * 1e6
+                 for _, r in c2c.iterrows()}
+    out = []
+    for node, capex in per_basin.items():
+        devs = exp[(exp['Type'] == 'Terminal') & (exp['Target'] == node)]
+        total = devs['NewCapacity'].sum()
+        for _, d in devs.iterrows():
+            want = capex * d['NewCapacity'] / total
+            out.append({'Name': d['Name'], 'Basin': node,
+                        'Expected_CapEx': round(want),
+                        'In_File': int(d['CapEx']),
+                        'Matches': abs(want - d['CapEx']) <= max(1.0, 0.001 * want)})
+    return pd.DataFrame(out), per_basin
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     dev = developments()
@@ -218,4 +248,23 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--capex', action='store_true',
+                    help="Recompute field-development CapEx from supply.csv and "
+                         "check expansion_options.csv still agrees with it")
+    args = ap.parse_args()
+    if args.capex:
+        df, per_basin = derived_capex()
+        print("Development capital implied by AEMO's 2C cost gap:")
+        for node, v in sorted(per_basin.items(), key=lambda kv: -kv[1]):
+            print(f"   {node:<12} ${v/1e9:>6.2f}bn")
+        print()
+        df['Expected_$bn'] = (df['Expected_CapEx'] / 1e9).round(2)
+        df['InFile_$bn'] = (df['In_File'] / 1e9).round(2)
+        print(df[['Name', 'Basin', 'Expected_$bn', 'InFile_$bn', 'Matches']]
+              .to_string(index=False))
+        bad = df[~df['Matches']]
+        print(f"\n{'DRIFT: ' + str(len(bad)) + ' row(s) disagree' if len(bad) else 'All rows agree with supply.csv.'}")
+    else:
+        main()

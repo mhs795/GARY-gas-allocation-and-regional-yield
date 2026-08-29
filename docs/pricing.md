@@ -266,42 +266,39 @@ GARY's **short run** unusable as a wholesale price forecast.
 ### 1. Cost basis — the big one, and it is time-varying
 
 A marginal cost is only comparable with a contract price when the marginal unit is
-carrying its full costs. Before roughly 2031 it is not. AEMO's own note on the G26
-*Production Costs* sheet draws the line explicitly:
+carrying its full costs. AEMO's note on the G26 *Production Costs* sheet is where the
+line sits:
 
-> "For developed reserves production costs include largely **marginal operating costs**,
-> royalties and tax. For undeveloped reserves, marginal costs also include the cost of
-> **drilling and completion and marginal gas processing plant costs**… an estimate of a
-> per unit cost of capital and operating cost for that plant."
+> "Costs include **operating cost, capital costs, royalty, tax and a return on
+> capital**… For developed reserves production costs include largely **marginal
+> operating costs**, royalties and tax. For undeveloped reserves, marginal costs also
+> include the cost of **drilling and completion and marginal gas processing plant
+> costs**."
 
-So AEMO's **2P cost is a short-run number and its 2C cost is a full-cost one**, and GARY
-walks across that line partway through the horizon:
+**GARY takes that split literally, and the consequence runs the opposite way to what
+you might expect.** Since the supply restructure of 30 Aug 2026 a basin's 2C tranche
+carries its *operating* basis in the commodity cost, with the capital charged as
+CapEx on the development that unlocks it (see
+[`model.md`](model.md#costing-a-development-what-is-published-and-what-is-not)). So a
+nodal dual now reflects an operating cost plus whatever scarcity rent the binding
+constraints produce — **in every year, at both ends of the horizon.** Capital is
+recovered through those rents, not through the marginal cost.
 
-| Step Change, $/GJ | 2026 | 2030 | 2035 | 2050 |
-|---|---|---|---|---|
-| Melbourne (GARY) | 7.57 | 9.12 | 15.62 | 13.13 |
-| cheapest delivered field | 5.70 | 16.46 | 16.46 | 16.46 |
-| export netback | 10.58 | 8.40 | 8.02 | 7.12 |
-| delivered import parity | 17.32 | 15.15 | 14.76 | 13.87 |
+That is the textbook short-run competitive result and it is the appropriate treatment.
+It also means the mechanism that used to close the gap with ACIL Allen late in the
+horizon — the marginal unit becoming a full-cost 2C number around 2032 — **no longer
+exists.** GARY's duals are a short-run marginal cost throughout.
 
-**In the early years nothing has depleted.** Every basin sits on its 2P cost — largely
-opex — and both parity anchors are *above* the domestic price, so neither binds. Melbourne
-at $7.57 is Gippsland's operating cost plus a pipeline tariff. That is a system marginal
-cost and nothing more. ACIL Allen have most markets at $12–13/GJ over the same years, and
-the difference is not that one of the two is wrong: **they are measuring different
-quantities.**
+> **Do not read that as a target to hit.** GARY and ACIL Allen measure different
+> quantities: a system marginal cost against a contract-reflective price that carries
+> a market-power overlay GARY deliberately omits. Where the two agree it is worth
+> understanding why; where they disagree that is information, not an error to tune
+> out. The methodology is chosen because it is the right treatment of AEMO's cost
+> data, not because of where it lands relative to a published forecast.
 
-**From about 2032 the basins step to their 2C costs** (Gippsland $5.16 → $15.76, Otway
-$7.27 → $15.62, Surat $3.65 → $6.65) and an import terminal builds, so the marginal unit
-becomes either a field carrying capital and a return, or an imported cargo at parity. Both
-of those *are* full-cost concepts. The basis gap closes itself, which is why GARY's 2050
-lands inside ACIL Allen's range (Melbourne $13.13 against ~$13–14; mean $11.35 against
-$12–14) while its 2026 does not ($6.41 against ~$12–13).
-
-> **Read this the right way round.** GARY is a short-run marginal cost model in *every*
-> year. It converges on ACIL Allen late in the horizon because the thing setting the price
-> by then happens to be a full-cost number — **not** because the price concept changes to
-> match. The long-run agreement does not validate the near-term basis.
+**The price table in this section was measured against the old cost-step structure
+and has not been re-measured since the restructure.** Do not quote it. Re-run and
+replace it before using any figure here.
 
 ### 2. Contract/spot blending — small, and not currently reproducible
 

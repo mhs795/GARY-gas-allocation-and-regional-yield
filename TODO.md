@@ -152,13 +152,21 @@ That needs the per-row year column item 3 also wants. It would fix reality *and*
 the brownfield bias for exactly the projects where it is worst, since a forced build does
 not care that its economics are understated.
 
-## 3. `Surat_Potential` is permanently zero
+## 3. ~~`Surat_Potential` is permanently zero~~ — FIXED 30 Aug 2026
 
-`supply_cap_rule` matches `Target == Node`, and no Terminal option targets
-`Surat_Potential`, so its 3,000 TJ/d at $10/GJ can never be produced. `Gippsland_Potential`
-had the same fault and was fixed by repointing `Golden_Beach` at it. Wiring 3,000 TJ/d of
-undeveloped Queensland CSG live is a modelling decision, not a bug fix — it needs a view
-on what unlocks it and at what capex.
+`supply_cap_rule` gates an undeveloped row on a `Type=Terminal` candidate targeting
+its node, and nothing targeted Surat, so its 3,000 TJ/d could never be produced.
+
+Fixed by the supply restructure. `expansion_options.csv` now carries **Bowen Gas
+Project** (3,000 TJ/d, 2030), plus **Mahalo CSG** (50 TJ/d) and **Mt St Martin**
+(22 TJ/d), all three from AEMO's G26 *Field Developments* sheet. The capex question
+this item flagged is answered the same way as every other basin: derived from AEMO's
+own 2C−2P cost gap over the resource, **$69.8bn** for Surat/Bowen, shared pro rata.
+See [`docs/model.md`](docs/model.md#costing-a-development-what-is-published-and-what-is-not).
+
+Bowen Gas Project's 3,000 TJ/d is GARY's own — AEMO records the project as Proposed
+with capacity "Not Currently Available" — sized to draw the 23,270 PJ of Surat/Bowen
+2C down over the remaining horizon.
 
 ## 4. No earliest-build year for pipeline candidates
 

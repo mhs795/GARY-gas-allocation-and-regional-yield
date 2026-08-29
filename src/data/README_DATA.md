@@ -9,7 +9,7 @@ committed, generated data is not.** See the header of `src/params.py` for the re
 |---|---|
 | `nodes.csv` | The network's nodes: name, type, storage capability |
 | `arcs.csv` | Pipelines. `Cost` is a posted tariff for existing arcs and variable haulage for new ones — see the README's *What the `Cost` column in `arcs.csv` is* |
-| `supply.csv` | Fields: capacity, cost, decline rate, optional `EndYear` |
+| `supply.csv` | Supply tranches: capacity, cost, decline rate, optional `EndYear`, `Tranche` (2P/2C) and `Reserves_PJ`. **One row per tranche, not per field** — each basin has a developed 2P row and an undeveloped 2C row, and each carries its own stock |
 | `expansion_options.csv` | Every expansion candidate, one row each, with its source and basis in `Note` |
 | `demand_profiles.csv` | The **raw** GBB city-gate + APLNG daily trace that the demand builders index forward |
 | `acil_lng_anchors.csv`, `acil_lng_params.csv`, `acil_segment_weights.csv` | ACIL Allen netback inputs (also mirrored in the parameters workbook) |

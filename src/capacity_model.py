@@ -17,7 +17,7 @@ import params as P
 import solvers
 from model import (IMPORT_NODES, LNG_NODES, STORAGE_CYCLE_COST, STORAGE_OPENING,
                    VOLL_PER_GJ, WINTER_DAYS,
-                   _declined_capacity)
+                   _declined_capacity, _reserves_pj)
 
 # Day-of-year (1..365, non-leap) -> calendar month.
 _MONTH_OF_DAY = {}
@@ -93,7 +93,7 @@ class CapacityExpansionModel:
                  lng_arcs=(), lng_source=(), netback_by_year=None,
                  import_cost_by_year=None, lng_nameplate=None, foundation_share=0.0,
                  reservation_applied=0.0, respect_contracts=True,
-                 supply_cost_by_year=None):
+                 ):
         self.nodes, self.arcs, self.supply, self.expansion = nodes_df, arcs_df, supply_df, expansion_df
         self.years = list(years)
         self.rep = rep                      # {year: [rep-day dicts]}
@@ -115,13 +115,6 @@ class CapacityExpansionModel:
         # pricing. Year-varying because it tracks the international LNG price,
         # unlike a field cost, so it cannot live in the single supply frame.
         self.import_cost_by_year = dict(import_cost_by_year or {})
-        # {(node, is_potential, year): $/GJ} once depletion is known -- see
-        # solve.py's two-pass capacity solve. WITHOUT THIS the investment layer
-        # prices every basin at its 2P cost for all 26 years while dispatch steps
-        # it to 2C, so the MIP chooses builds against a cost path the dispatch it
-        # governs will never see, and under-builds the southern relief the cost
-        # step is meant to make economic. Empty on the first pass.
-        self.supply_cost_by_year = dict(supply_cost_by_year or {})
         # Physical liquefaction nameplate per train, and the take-or-pay share of
         # planned volume. Same split the dispatch layer makes: foundation volume
         # stays must-serve demand, the spot tail bids at the netback up to spare
@@ -261,17 +254,14 @@ class CapacityExpansionModel:
         # --- NPV objective ---------------------------------------------------
         def obj_rule(m):
             def _supply_cost(s_, y):
-                """Field cost in year y, or the LNG injection cost at an import terminal.
+                """Field cost, $/GJ. One tranche, one cost -- see model.py.
 
-                Field cost comes from supply_cost_by_year where a depletion path is
-                known, so the MIP sees the same 2P -> 2C step the dispatch layer
-                will apply. Falls back to the flat base cost on the first pass.
+                An import terminal is the only row whose cost moves with the year,
+                because it tracks the international LNG price rather than a field
+                development cost.
                 """
                 if s_[0] in IMPORT_NODES and s_[1] and y in self.import_cost_by_year:
                     return self.import_cost_by_year[y]
-                stepped = self.supply_cost_by_year.get((s_[0], s_[1], y))
-                if stepped is not None:
-                    return stepped
                 return supply_dict[s_]['Cost']
 
             ops = pyo.quicksum(
@@ -346,13 +336,27 @@ class CapacityExpansionModel:
             return m.production[node, is_pot, y, i] <= declined
         m.supply_cap = pyo.Constraint(m.Supply, m.YR, rule=supply_cap_rule)
 
-        # NO cumulative reserve constraint here, deliberately -- the cost STEP is
-        # carried instead, via supply_cost_by_year (see __init__). It was tried on
-        # 28 Aug 2026 and removed the same day: with no backfill supply in GARY
-        # (Surat_Potential cannot produce, Gippsland_Potential only unlocks via a
-        # Golden_Beach nobody builds) a hard stock limit starves the south and the
-        # dispatch layer then prices at value-of-lost-load. Depletion is carried as
-        # a COST step instead -- see model._supply_cost and _declined_capacity.
+        # THE STOCK LIMIT. A row cannot produce more gas over the horizon than its
+        # tranche holds. The dispatch layer applies the same limit year by year
+        # through model._declined_capacity; the MIP sees all 26 years at once, so
+        # it can state it exactly rather than approximate it -- which is what makes
+        # the investment layer build the backfill BEFORE the tranche it replaces
+        # runs out, instead of discovering the hole a year late.
+        #
+        # Weighted by the representative days each rep day stands for, and divided
+        # by 1000 to put TJ into PJ. Total weight is 370 rather than 365 -- the peak
+        # day carries PEAK_DAY_WEIGHT on top of twelve full months -- so the MIP
+        # counts production ~1.4% high against the reserve. That errs toward
+        # building backfill slightly EARLY, which is the safe direction here, so the
+        # adequacy weighting is left alone rather than netted out.
+        stock_rows = [s for s in m.Supply if _reserves_pj(supply_dict[s]) is not None]
+
+        def reserve_rule(m, node, is_pot):
+            return (pyo.quicksum(m.production[node, is_pot, y, i] * wt[y, i]
+                                 for (y, i) in YR) / 1000.0
+                    <= _reserves_pj(supply_dict[node, is_pot]))
+        m.reserve_limit = pyo.Constraint(
+            pyo.Set(initialize=stock_rows, dimen=2), rule=reserve_rule)
 
         # Exports draw only on commercial gas, so the free reserved gas cannot
         # simply flow to the trains. See the header block in model.py.
@@ -408,8 +412,11 @@ class CapacityExpansionModel:
 
         Representative-day production weighted by the days each day stands for.
         Total weight is 370 rather than 365 (the peak day carries PEAK_DAY_WEIGHT
-        on top of twelve full months), so this runs ~1.4% high -- fine for
-        deciding WHEN a basin crosses its 2P reserves, which is all it is used for.
+        on top of twelve full months), so this runs ~1.4% high.
+
+        A DIAGNOSTIC now, not part of the solve. It used to feed the second
+        capacity pass that carried the old path-dependent cost step; reserves are a
+        hard constraint inside the MIP since, so nothing calls this but reporting.
         """
         m = self.model
         out = {}

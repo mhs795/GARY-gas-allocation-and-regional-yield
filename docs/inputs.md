@@ -69,8 +69,8 @@ take effect **on restart**, not mid-run.
 |---|---|---|
 | `nodes.csv` | 20 nodes: name, type, region, storage capability and plant rates | AEMO G26 *Processing Transmission Storage Facilities* |
 | `arcs.csv` | 32 directed pipeline arcs: capacity and `Cost` | G26 capacities; posted GSOO reference tariffs. **`Cost` means different things for existing and new arcs** — see [`expansions.md`](expansions.md#what-the-cost-column-in-arcscsv-is) |
-| `supply.csv` | 12 supply rows: capacity, 2P cost and reserve, 2C cost and reserve, decline rate, optional `EndYear` | AEMO G26 *Reserves Costs assumptions* |
-| `expansion_options.csv` | 17 expansion candidates, one sourced row each | Public project announcements — see [`expansions.md`](expansions.md) |
+| `supply.csv` | 15 supply rows, **one per tranche**: capacity, cost, `Tranche` (2P/2C), `Reserves_PJ`, decline rate, optional `EndYear`. A developed row holds a basin's 2P reserves at its 2P cost; the undeveloped row behind it holds the 2C contingent resource at the 2C cost and produces only once an AEMO field development is built | AEMO G26 *Reserves Costs assumptions* |
+| `expansion_options.csv` | 30 expansion candidates, one sourced row each — pipelines, terminals and the field developments that unlock each basin's 2C tranche | Public project announcements + AEMO G26 *Field Developments* — see [`expansions.md`](expansions.md) |
 | `demand_profiles.csv` | The **raw** GBB city-gate + APLNG daily trace the demand builders index forward | Gas Bulletin Board actuals |
 | `acil_lng_anchors.csv`, `acil_lng_params.csv`, `acil_segment_weights.csv` | ACIL Allen netback inputs, mirrored on the workbook | ACIL Allen (14 Nov 2025) |
 | `pipeline_geometry.json` | Real OpenStreetMap pipeline routes for the map | Built by `build_pipeline_geometry.py` |

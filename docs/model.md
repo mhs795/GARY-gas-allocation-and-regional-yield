@@ -207,19 +207,124 @@ written into `curtailment_params.csv` by `build_curtailable_demand.py`.
 
 ## Supply cost and depletion
 
-Each field carries a 2P cost and reserve, and a 2C cost and reserve. Cumulative
-production is tracked across the horizon; once 2P reserves are exhausted the field steps
-to its 2C cost, and deliverability declines at the field's own decline rate.
+**One row per tranche, and each tranche is a stock.** A basin appears in
+`supply.csv` twice: a developed row holding its **2P** reserves at the 2P cost, and
+an undeveloped row holding its **2C** contingent resource at the 2C cost. Each
+carries its own `Reserves_PJ`, and neither can produce more gas than it holds —
+`_declined_capacity` returns zero once cumulative production reaches the reserve,
+tapering through the year it runs out.
 
-This is why GARY's price level rises through the horizon, and it is the single most
-important thing to understand about **why early-year prices are low**: before roughly
-2032 nothing has depleted, so every basin sits on its 2P cost, which AEMO note is
-*"largely marginal operating costs"*. From about 2032 the basins step to their 2C costs
-(Gippsland $5.16 → $15.76, Otway $7.27 → $15.62, Surat $3.65 → $6.65) — full-cost
-numbers, including drilling, completion and processing plant capital.
+That makes depletion a real **supply curve** rather than a price adjustment. The
+cheap tranche runs out; the dear one behind it has to be *built* to replace it.
 
-See [`pricing.md`](pricing.md#1-cost-basis--the-big-one-and-it-is-time-varying) for what
-that does to comparability with published price forecasts.
+| Basin | 2P cost | 2P reserves | 2C cost | 2C resource |
+|---|---|---|---|---|
+| Surat/Bowen | $3.65 | 28,911 PJ | $6.65 | 23,270 PJ |
+| Cooper/Eromanga (Moomba) | $8.45 | 850 PJ | $11.63 | 1,603 PJ |
+| Gippsland | $5.16 | 1,108 PJ | $15.76 | 1,993 PJ |
+| Otway (Iona) | $7.27 | 304 PJ | $15.62 | 293 PJ |
+| Amadeus | $6.50 | 230 PJ | $16.94 | 195 PJ |
+| Beetaloo | — | — | $9.15 | 5,109 PJ |
+
+Both layers enforce it. The dispatch model applies the limit year by year off
+cumulative production; the capacity MIP sees all 26 years at once and states it as
+a single constraint per row, which is what makes it build backfill *before* the
+tranche it replaces runs out. The old two-pass capacity solve is gone with it —
+it existed only to carry a path-dependent cost step that no longer exists.
+
+### Why the stock limit works now and did not before
+
+It was tried on 28 Aug 2026 and reverted the same day: Iona went to zero by 2036,
+Moomba by 2048, and the model produced 6,419 TJ of shortage at $104–115/GJ. The
+limit was not the problem. GARY had no **backfill** — the undeveloped Surat row
+could not produce at all, and Gippsland's only unlocked through a single project.
+So the limit reproduced AEMO's southern collapse without AEMO's replacement.
+
+AEMO's Figure 27 has southern *existing* production falling 304 → 5 PJ/yr by 2044
+while developments backfill it to a 230–280 PJ/yr plateau. Read against the reserve
+table that plateau is simply the 2C tranche being produced: southern 2C totals
+3,889 PJ, and ~250 PJ/yr for ~16 years is the same number. The envelope and the
+reserves are one story.
+
+So the 2C rows now sit behind **AEMO's own named field developments** in
+`expansion_options.csv` — Judith, the five Otway projects, Bowen Gas Project,
+Mahalo, Mt St Martin, the Beetaloo pilots — and the south has something to build.
+
+### Costing a development: what is published and what is not
+
+**AEMO publishes no development capital anywhere in the GSOO supply data.** What it
+publishes is a single blended $/GJ per tranche, and its own note on the *Production
+Costs* sheet says what is inside it:
+
+> "Costs include **operating cost, capital costs, royalty, tax and a return on
+> capital**... For developed reserves production costs include largely marginal
+> operating costs, royalties and tax. For undeveloped reserves, marginal costs also
+> include the cost of **drilling and completion and marginal gas processing plant
+> costs**."
+
+So the 2P cost is an operating basis and the 2C cost is a full cost. GARY splits
+them on exactly that reading:
+
+* the **2C supply row** carries the basin's **operating** basis -- its 2P cost --
+  in `Cost`, with AEMO's published full cost kept alongside in `AEMOFullCost`;
+* the **capital** comes out in `expansion_options.csv`, derived as
+  `(AEMOFullCost - Cost) x Reserves_PJ` for the basin and shared across that
+  basin's developments pro rata on `NewCapacity`.
+
+| Basin | derived development capital |
+|---|---|
+| Surat/Bowen | $69.8bn |
+| Gippsland | $21.1bn |
+| Cooper/Eromanga | $5.1bn |
+| Otway | $2.4bn |
+| Amadeus | $2.0bn |
+| **Beetaloo** | **not split -- see below** |
+
+The split is applied **only where AEMO publishes both a 2P and a 2C cost.** Beetaloo
+has no published 2P at all, so there is nothing to split the capital out with: its
+supply row carries AEMO's full $9.15/GJ and its developments carry no derived
+capital. Scaling the full cost on other basins' 2P/2C ratios would put a GARY number
+where AEMO has published none, so it is not done. Different basins get different
+treatment because different data exists, which is the correct outcome rather than an
+inconsistency to paper over.
+
+> **Why the magnitude matters.** GARY's project CapEx idiom is $0.25-1bn, and an
+> earlier version of this split used it: field developments were put on operating
+> cost and charged a project-scale lump sum at Golden Beach's $1.6m/TJ-d unit rate.
+> That understates development capital by more than an order of magnitude -- $0.8bn
+> against $21.1bn for Gippsland -- and it hands domestic backfill an unbeatable
+> advantage over an import terminal, which *is* charged its full cost. If the
+> domestic-versus-import trade-off ever looks lopsided, this is the first thing to
+> check.
+
+**A field development row therefore does not mean what a pipeline row means.** Every
+candidate targeting a basin draws on one shared reserve row, so building 375 of
+Gippsland's 500 TJ/d buys ~75% of the pool and pays ~75% of its capital.
+`Golden_Beach` carries $15.8bn on that basis, against an announced project cost near
+$600m. Read those rows as "this project and the share of the basin's contingent
+development it carries", not as a build cost. The `Note` column says so on each.
+
+**Import terminals are the other side of the same rule.** They carry their `CapEx`
+explicitly, so ACIL Allen's **$1.50/GJ regasification** allowance comes back off the
+injection price -- a tolling fee is how a terminal recovers exactly that capital, and
+charging both bills it twice. See `_import_injection_cost`.
+
+### Sizing a 2C tranche's deliverability
+
+AEMO publishes a deliverability for only some developments. Where it does, GARY uses
+it. Where it does not, one of two fallbacks applies, in this order:
+
+1. **AEMO's own production forecast, where one covers the basin.** Figure 27 forecasts
+   annual production from southern gas fields and its *Uncertain* category is the 2C
+   tranche being produced -- a 250 PJ/yr mean over 2030-45, or 685 TJ/d. That is
+   allocated across the southern basins by 2C resource share: Gippsland 51.3%,
+   Cooper/Eromanga 41.2% (282 TJ/d), Otway 7.5% (52 TJ/d).
+2. **The resource ratio, where no forecast covers the basin.** The 2C row is scaled off
+   the developed row by the ratio of the two tranches' resources -- Surat/Bowen
+   4,000 x 23,270/28,911 = 3,220 TJ/d, Amadeus 55 x 195.4/230.0 = 47 TJ/d.
+
+Gippsland is the case where AEMO publishes project capacities (Golden Beach 375 TJ/d,
+Judith 125 TJ/d), so those are used in preference to its 351 TJ/d envelope share.
 
 ## Reading a dual
 

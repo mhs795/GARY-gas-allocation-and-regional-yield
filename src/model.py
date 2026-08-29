@@ -355,7 +355,17 @@ def datacentre_profile(spec, year, gpg_demand):
 # Recommendations, Feb 2023). GARY's $300/GJ predates that check and is therefore
 # conservative; it is left as-is because changing it moves every historical result,
 # but it is the number to revisit if VOLL ever matters to a conclusion.
+# First modelled year, the origin of every decline curve.
+BASE_YEAR = P.get_int('horizon_start', 2025)
+
 VOLL_PER_GJ = P.get('voll_per_gj', 300.0)
+
+# ACIL Allen's regasification allowance inside the import injection price. GARY
+# also charges an import terminal its CapEx in expansion_options.csv, and a regas
+# tolling fee is how a terminal recovers exactly that capital -- so charging both
+# bills the terminal's capital twice. The adder comes back off the injection price
+# wherever the CapEx is charged; see _import_injection_cost.
+REGAS_ADDER = P.get('regasification', 1.50)
 
 # Annual carrying cost charged on anything the capacity layer built, as a share of
 # CapEx. A dispatch solve covers one year and has no NPV to charge a lump sum
@@ -449,44 +459,39 @@ def _num(row, key):
     return None if f != f else f          # NaN
 
 
+def _import_injection_cost(lng_prices):
+    """What running an import terminal costs, $/GJ, with its capital charged once.
+
+    ACIL Allen's injection price is Asian LNG + shipping + a REGASIFICATION
+    allowance (Table 2.1 / B.11). That last term is a tolling fee, and a tolling
+    fee is how an FSRU recovers its capital. GARY charges the terminal's CapEx
+    separately in expansion_options.csv, so leaving the adder in would bill the
+    same capital twice -- about $1.50/GJ against the ~$0.29/GJ the CapEx itself
+    annualises to on a 750 TJ/d terminal.
+
+    The adder is removed rather than the CapEx because the CapEx is the term GARY
+    can vary per project: two Geelong FSRUs compete on their build cost, and a
+    tolling fee averaged across all terminals cannot express that.
+    """
+    injection = float(lng_prices.get('Import_Injection_AUD_GJ', 0.0))
+    return max(0.0, injection - REGAS_ADDER) if injection > 0 else 0.0
+
+
 def _reserves_pj(row):
-    """Total recoverable gas behind a supply row, PJ, or None if not modelled.
+    """The stock of gas behind a supply row, PJ, or None if it is not stock-limited.
 
-    2P + 2C from AEMO's 2026 GSOO (G26 Reserves Costs assumptions). A row with no
-    reserves figure -- an import terminal, Blacktip -- is unconstrained by stock
-    and limited only by its deliverability and any EndYear.
+    Each row is ONE tranche and carries its own reserve: a developed row holds the
+    basin's 2P reserves, the undeveloped row that sits behind an AEMO field
+    development holds its 2C contingent resource. A row with no figure -- an import
+    terminal, Blacktip -- is limited by deliverability and any EndYear alone.
+
+    Source: AEMO 2026 GSOO, G26 Reserves Costs assumptions, Reserves and Resources.
     """
-    p2, p3 = _num(row, 'Reserves2P_PJ'), _num(row, 'Reserves2C_PJ')
-    if p2 is None and p3 is None:
-        return None
-    return (p2 or 0.0) + (p3 or 0.0)
-
-
-def _supply_cost(row, cumulative_pj=0.0):
-    """A field's cost in $/GJ once ``cumulative_pj`` has already been produced.
-
-    THE COST CURVE. AEMO publishes two tranches per basin: proved-and-probable
-    reserves at one cost, contingent resources at a higher one (Gippsland $5.16
-    then $15.76; Otway $7.27 then $15.62). Cheap gas is produced first, and when
-    it runs out the basin steps up to what the next tranche actually costs.
-
-    Without this GARY had no upward price mechanism at all -- Surat stayed at
-    $4.00/GJ in 2050 exactly as in 2025, so nothing could ever push the domestic
-    price above the export netback. See TODO.md item 9.
-
-    A step, not a ramp: within any one year the cost is a constant, so each year's
-    LP stays linear.
-    """
-    base = float(row['Cost'])
-    p2 = _num(row, 'Reserves2P_PJ')
-    c2c = _num(row, 'Cost2C')
-    if p2 is None or c2c is None:
-        return base
-    return base if cumulative_pj < p2 else max(base, c2c)
+    return _num(row, 'Reserves_PJ')
 
 
 def _declined_capacity(row, year, cumulative_pj=0.0):
-    """A field's deliverability in ``year``, TJ/day.
+    """A field's deliverability in ``year``, TJ/day, given what it has produced.
 
     Three things can bind, and the tightest wins:
 
@@ -495,32 +500,40 @@ def _declined_capacity(row, year, cumulative_pj=0.0):
       source whose life is set by a contract or a licence rather than by a decline
       curve -- Blacktip, whose PWC gas sale agreement runs out in the mid-2030s,
       and no decline rate expresses "and then it stops";
-    Reserves deliberately do NOT cap deliverability here -- they only decide when a
-    basin steps to its 2C cost (see _supply_cost). A hard stock cutoff was tried on
-    28 Aug 2026 and was wrong: it drove Iona to zero by 2036 and Moomba by 2048,
-    producing 6,419 TJ of shortage and Melbourne prices of $104-115/GJ, which is
-    value-of-lost-load curtailment rather than a market.
+    * the HARD STOCK LIMIT: a row cannot produce more gas than its tranche holds.
+      Once ``cumulative_pj`` reaches the row's reserve it delivers nothing, and in
+      the year it runs out it delivers only the remainder, spread over the year.
 
-    AEMO's own Figure 27 says why. Southern EXISTING fields do collapse on its
-    numbers -- 304 PJ/yr in 2025 to 5 PJ/yr by 2044 -- but committed and anticipated
-    developments backfill them, rising to ~280 PJ/yr and holding. GARY has no such
-    backfill worth the name: the undeveloped Surat row can never produce at all
-    (nothing in expansion_options.csv targets that node, so supply_cap_rule pins it
-    to zero -- TODO item 3), and the undeveloped Gippsland row unlocks only via
-    Golden_Beach, one 375 TJ/d project. So a hard cutoff models the collapse
-    without the replacement, which is not what AEMO forecasts and not a market
-    anyone would run.
+    The stock limit was tried once before, on 28 Aug 2026, and had to be reverted:
+    it drove Iona to zero by 2036 and Moomba by 2048 and produced 6,419 TJ of
+    shortage at $104-115/GJ. The reason was not the limit but what GARY was missing
+    behind it. AEMO's Figure 27 has southern EXISTING production collapsing exactly
+    that way -- 304 PJ/yr in 2025 to 5 PJ/yr by 2044 -- while developments backfill
+    it to a ~230-280 PJ/yr plateau. GARY had no backfill, so the limit modelled the
+    collapse without the replacement.
 
-    Treating 2C deliverability as sustained-but-dearer is the closer approximation:
-    contingent resources are gas that needs developing, and the cost step is what
-    paying to develop it looks like. Revisit when GARY has real backfill supply.
+    It holds now because the backfill exists. Every basin carries a second,
+    undeveloped row holding its 2C contingent resource, gated on the AEMO field
+    developments in expansion_options.csv (Judith, the five Otway projects, Bowen
+    Gas Project, Mahalo, Mt St Martin, the Beetaloo pilots). Depletion is a real
+    supply curve now: the cheap 2P tranche runs out and the dear 2C tranche behind
+    it has to be built to replace it.
     """
     cap = float(row['Capacity'])
     end = row.get('EndYear')
     if end is not None and str(end).strip() not in ('', 'nan', 'None'):
         if year >= int(float(end)):
             return 0.0
-    return max(0.0, cap * ((1 + (row.get('DeclineRate') or 0)) ** (year - 2025)))
+    cap = max(0.0, cap * ((1 + (row.get('DeclineRate') or 0)) ** (year - BASE_YEAR)))
+    reserves = _reserves_pj(row)
+    if reserves is not None:
+        remaining_pj = reserves - float(cumulative_pj or 0.0)
+        if remaining_pj <= 0.0:
+            return 0.0
+        # PJ left -> the flat TJ/day that would exhaust them over one year, so the
+        # final year tapers to the remainder instead of stopping dead on a day.
+        cap = min(cap, remaining_pj * 1000.0 / 365.0)
+    return cap
 
 
 class GasMarketModel:
@@ -667,7 +680,7 @@ class GasMarketModel:
             # figure in supply.csv, so the import terminal competes on the same
             # international price the exports are valued at. Copied first: the
             # foresight solve hands one supply frame to all 26 years.
-            injection = float(self.lng_prices.get('Import_Injection_AUD_GJ', 0.0))
+            injection = _import_injection_cost(self.lng_prices)
             if injection > 0:
                 self.supply = self.supply.copy()
                 _imp = (self.supply['Node'].isin(IMPORT_NODES)
@@ -858,7 +871,7 @@ class GasMarketModel:
             #
             # Cost of getting gas out of the ground, per field, per day.
             prod_cost = sum(m.production[s[0], s[1], t]
-                            * _supply_cost(supply_dict[s], self.cumulative_pj.get(s, 0.0))
+                            * supply_dict[s]['Cost']
                             * 1000 for s in m.Supply for t in m.T)
             # Cost of moving it: each arc's tariff x what flows down it. This is the
             # term that makes a Melbourne price differ from a Surat price.
