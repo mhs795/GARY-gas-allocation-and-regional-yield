@@ -32,18 +32,12 @@ PEAK_DAY_WEIGHT = P.get('peak_day_weight', 5.0)
 
 
 def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
-                              mm_blocks=(), reserved_all=None, dc_all=None):
+                              reserved_all=None, dc_all=None):
     """Reduce each year's 365 daily profiles to representative days.
 
     Returns {year: [ {weight, demand{node:v}, gpg{node:v}, ind{node:v}} ]} — 12
     monthly *mean* days (weighted by days in the month) plus one annual *peak* day
     (the highest total-demand day, so the capacity layer sizes for stress).
-
-    ``mm_blocks`` is the mass-market step demand curve (see model.py); each rep
-    day also carries ``mm{block: {node: TJ available}}``. A block's availability is
-    averaged over the bucket's real days rather than derived from the averaged
-    demand, so the winter damping — which applies to some days of a month and not
-    others — survives the reduction intact.
 
     ``dc_all`` is the data centre slice of ``ind_all`` — already inside it, not on
     top of it. It rides along as ``dc{node: TJ}`` purely so the investment layer
@@ -51,15 +45,8 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
     layer does: the load is firm, so it must not enlarge the raise blocks.
     """
     node_names = nodes_df['Name'].tolist()
-    mm_node_names = [n for n in node_names if n not in LNG_NODES]
     reserved_all = reserved_all or {}
     dc_all = dc_all or {}
-
-    def mm_avail(n, y, d, share, winter_scale):
-        """TJ of one mass-market block available at node n on day d."""
-        if d in WINTER_DAYS:
-            share *= winter_scale
-        return demand_all.get((n, y, d), 0) * share
 
     rep = {}
     for y in years:
@@ -79,12 +66,9 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
             gpg = {n: sum(gpg_all.get((n, y, d), 0) for d in days) / w for n in node_names}
             ind = {n: sum(ind_all.get((n, y, d), 0) for d in days) / w for n in node_names}
             dc = {n: sum(dc_all.get((n, y, d), 0) for d in days) / w for n in node_names}
-            mm = {blk: {n: sum(mm_avail(n, y, d, share, ws) for d in days) / w
-                        for n in mm_node_names}
-                  for blk, _strike, share, ws in mm_blocks}
             reserved = sum(reserved_all.get((y, d), 0.0) for d in days) / w
             days_reps.append({'weight': w, 'demand': dem, 'gpg': gpg, 'ind': ind,
-                              'dc': dc, 'mm': mm, 'reserved': reserved})
+                              'dc': dc, 'reserved': reserved})
         # annual peak day (actual profile) for adequacy
         dpk = max(day_total, key=day_total.get)
         days_reps.append({
@@ -93,8 +77,6 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
             'gpg':    {n: gpg_all.get((n, y, dpk), 0) for n in node_names},
             'ind':    {n: ind_all.get((n, y, dpk), 0) for n in node_names},
             'dc':     {n: dc_all.get((n, y, dpk), 0) for n in node_names},
-            'mm':     {blk: {n: mm_avail(n, y, dpk, share, ws) for n in mm_node_names}
-                       for blk, _strike, share, ws in mm_blocks},
             'reserved': reserved_all.get((y, dpk), 0.0),
         })
         rep[y] = days_reps
@@ -106,8 +88,7 @@ class CapacityExpansionModel:
 
     def __init__(self, nodes_df, arcs_df, supply_df, expansion_df, years, rep,
                  discount_rate=None, strike_gpg=None, strike_ind=None,
-                 terminal_earliest=None, base_year=None, mm_blocks=(),
-                 ind_raise=(), gpg_raise=(), gpg_capacity=None,
+                 terminal_earliest=None, base_year=None,
                  lng_arcs=(), lng_source=(), netback_by_year=None,
                  import_cost_by_year=None, lng_nameplate=None, foundation_share=0.0,
                  reservation_applied=0.0, respect_contracts=True,
@@ -120,19 +101,6 @@ class CapacityExpansionModel:
         self.r = P.get('discount_rate_default', 0.07) if discount_rate is None else discount_rate
         self.strike_gpg = P.get('strike_gpg_default', 22.0) if strike_gpg is None else strike_gpg
         self.strike_ind = P.get('strike_ind_default', 120.0) if strike_ind is None else strike_ind
-        # Mass-market step demand curve, same blocks the dispatch layer will face.
-        # The investment layer has to see it too: if it sized the network against
-        # demand that dispatch then sheds, it would build pipe for gas nobody is
-        # willing to pay for.
-        self.mm_blocks = list(mm_blocks)
-        # Raise-side blocks need no rep-day series of their own: industrial
-        # headroom is a share of rd['ind'] and GPG headroom is nameplate less
-        # rd['gpg'], both already carried on the representative day.
-        self.ind_raise = list(ind_raise)
-        # Per-node: {(node, block): (value $/GJ, share of headroom)}. GPG's ladder
-        # is regional because what gas displaces differs by jurisdiction.
-        self.gpg_raise = dict(gpg_raise)
-        self.gpg_capacity = dict(gpg_capacity or {})
         # Reservation: which arcs feed the LNG trains and which node supplies them,
         # so the investment layer sees the same zero-cost reserved tranche and the
         # same export-eligibility rule the dispatch layer will face.
@@ -197,24 +165,6 @@ class CapacityExpansionModel:
         m.gpg_curtail = pyo.Var(m.GPGNodes, m.YR, domain=pyo.NonNegativeReals)
         m.ind_curtail = pyo.Var(m.INDNodes, m.YR, domain=pyo.NonNegativeReals)
 
-        mm_strike = {b[0]: b[1] for b in self.mm_blocks}
-        mm_nodes = sorted({n for y in Y for rd_ in self.rep[y]
-                           for blk in rd_.get('mm', {})
-                           for n, v in rd_['mm'][blk].items() if v > 0})
-        m.MMNodes = pyo.Set(initialize=[n for n in mm_nodes if n in self.nodes['Name'].tolist()])
-        m.MMBlocks = pyo.Set(initialize=list(mm_strike))
-        m.mm_curtail = pyo.Var(m.MMNodes, m.MMBlocks, m.YR, domain=pyo.NonNegativeReals)
-
-        ind_raise_val = {b[0]: b[1] for b in self.ind_raise}
-        ind_raise_share = {b[0]: b[2] for b in self.ind_raise}
-        gpg_raise_val = {k: v[0] for k, v in self.gpg_raise.items()}
-        gpg_raise_share = {k: v[1] for k, v in self.gpg_raise.items()}
-        m.INDRaise = pyo.Set(initialize=list(ind_raise_val))
-        m.GPGRaise = pyo.Set(initialize=sorted({b for _, b in gpg_raise_val}))
-        m.GPGRaiseNodes = pyo.Set(initialize=sorted(
-            {n for (n, _) in gpg_raise_val if n in m.GPGNodes and n in self.gpg_capacity}))
-        m.ind_expand = pyo.Var(m.INDNodes, m.INDRaise, m.YR, domain=pyo.NonNegativeReals)
-        m.gpg_expand = pyo.Var(m.GPGRaiseNodes, m.GPGRaise, m.YR, domain=pyo.NonNegativeReals)
 
         # LNG exports as a bounded willingness-to-pay block at the netback, the
         # same swap the dispatch layer makes. The planned volume sits in
@@ -233,20 +183,6 @@ class CapacityExpansionModel:
                 * (self.foundation_share - self.reserve_from_foundation
                    + self.reserve_applied)))
 
-        def ind_raise_avail(n, b, y, i):
-            # Firm data centre load is inside rd['ind'] but does not respond to
-            # price, so it is netted out here just as it is in the dispatch model.
-            base = (self.rep[y][i]['ind'].get(n, 0)
-                    - self.rep[y][i].get('dc', {}).get(n, 0))
-            return max(0.0, base) * ind_raise_share[b]
-
-        def gpg_raise_avail(n, b, y, i):
-            share = gpg_raise_share.get((n, b))
-            if share is None:
-                return 0.0
-            base = self.rep[y][i]['gpg'].get(n, 0)
-            nameplate, cap_mult = self.gpg_capacity.get(n, (0.0, 0.0))
-            return max(0.0, min(nameplate - base, cap_mult * base)) * share
         m.build = pyo.Var(m.Expansion, Y, domain=pyo.Binary)   # build project e in year y
         m.reserved_prod = pyo.Var(m.YR, domain=pyo.NonNegativeReals)
         m.reserved_cap = pyo.Constraint(m.YR, rule=lambda m, y, i:
@@ -345,14 +281,6 @@ class CapacityExpansionModel:
                     + pyo.quicksum((m.injection[sn, y, i] + m.withdrawal[sn, y, i]) * 0.5 * 1000 for sn in m.StorageNodes)
                     + pyo.quicksum(m.gpg_curtail[n, y, i] * self.strike_gpg * 1000 for n in m.GPGNodes)
                     + pyo.quicksum(m.ind_curtail[n, y, i] * self.strike_ind * 1000 for n in m.INDNodes)
-                    + pyo.quicksum(m.mm_curtail[n, b, y, i] * mm_strike[b] * 1000
-                                   for n in m.MMNodes for b in m.MMBlocks)
-                    # Negative: benefit of demand taken up while gas is cheap.
-                    - pyo.quicksum(m.ind_expand[n, b, y, i] * ind_raise_val[b] * 1000
-                                   for n in m.INDNodes for b in m.INDRaise)
-                    - pyo.quicksum(m.gpg_expand[n, b, y, i] * gpg_raise_val[n, b] * 1000
-                                   for n in m.GPGRaiseNodes for b in m.GPGRaise
-                                   if (n, b) in gpg_raise_val)
                     # Export revenue at that year's netback; bounded above by
                     # lng_export_cap and forced by nothing.
                     - pyo.quicksum(m.lng_export[n, y, i]
@@ -376,17 +304,11 @@ class CapacityExpansionModel:
                     + m.shortage[n, y, i]
                     + (m.gpg_curtail[n, y, i] if n in m.GPGNodes else 0)
                     + (m.ind_curtail[n, y, i] if n in m.INDNodes else 0)
-                    + (pyo.quicksum(m.mm_curtail[n, b, y, i] for b in m.MMBlocks)
-                       if n in m.MMNodes else 0)
                     == (r['demand'].get(n, 0)
                         * max(0.0, self.foundation_share - self.reserve_from_foundation)
                         if n in m.LNGNodes else r['demand'].get(n, 0))
                     + (m.lng_export[n, y, i] if n in m.LNGNodes else 0)
                     + r['gpg'].get(n, 0) + r['ind'].get(n, 0)
-                    + (pyo.quicksum(m.ind_expand[n, b, y, i] for b in m.INDRaise)
-                       if n in m.INDNodes else 0)
-                    + (pyo.quicksum(m.gpg_expand[n, b, y, i] for b in m.GPGRaise)
-                       if n in m.GPGRaiseNodes else 0)
                     + pyo.quicksum(m.flow[a, y, i] for a in arcs_from[n]))
         m.balance = pyo.Constraint(m.Nodes, m.YR, rule=balance_rule)
 
@@ -400,12 +322,6 @@ class CapacityExpansionModel:
         m.ind_cap = pyo.Constraint(m.INDNodes, m.YR,
             rule=lambda m, n, y, i: m.ind_curtail[n, y, i] <= max(
                 0.0, rd(y, i)['ind'].get(n, 0) - rd(y, i).get('dc', {}).get(n, 0)))
-        m.mm_cap = pyo.Constraint(m.MMNodes, m.MMBlocks, m.YR,
-            rule=lambda m, n, b, y, i: m.mm_curtail[n, b, y, i] <= rd(y, i)['mm'].get(b, {}).get(n, 0))
-        m.ind_expand_cap = pyo.Constraint(m.INDNodes, m.INDRaise, m.YR,
-            rule=lambda m, n, b, y, i: m.ind_expand[n, b, y, i] <= ind_raise_avail(n, b, y, i))
-        m.gpg_expand_cap = pyo.Constraint(m.GPGRaiseNodes, m.GPGRaise, m.YR,
-            rule=lambda m, n, b, y, i: m.gpg_expand[n, b, y, i] <= gpg_raise_avail(n, b, y, i))
 
         def supply_cap_rule(m, node, is_pot, y, i):
             cap = supply_dict[node, is_pot]['Capacity']

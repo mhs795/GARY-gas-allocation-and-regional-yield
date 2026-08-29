@@ -1007,8 +1007,6 @@ def short_key(k):
         parts.append('GSOO exp')
     if '_Netback' in k:
         parts.append('Netback')
-    if '_Elastic' in k:
-        parts.append('Elastic')
     if '_Myopic' in k:
         parts.append('Myopic')
     if '_DR' in k:
@@ -1050,7 +1048,6 @@ def pretty_key(k):
                 .replace('_Dunkelflaute', '  ·  SA Dunkelflaute 2027')
                 .replace('_GSOOExp', '  ·  GSOO expansions only')
                 .replace('_Netback', '  ·  LNG netback pricing')
-                .replace('_Elastic', '  ·  Elastic demand')
                 .replace('_Myopic', '  ·  Myopic'))
     if '_DR' in rest:
         head, dr = rest.rsplit('_DR', 1)
@@ -1287,17 +1284,6 @@ sidebar = html.Div(className='md-sidebar', children=[
                  style={'marginBottom': '16px', 'fontSize': '10px',
                         'color': '#888', 'lineHeight': '1.35', 'paddingLeft': '38px'}),
 
-        # Covers every tier and both directions now, not just mass-market shedding,
-        # so the label says "demand" rather than naming one tier.
-        dbc.Checklist(id='elastic-toggle',
-                      options=[{'label': ' Price-responsive demand', 'value': 'on'}],
-                      value=[], switch=True,
-                      style={'marginBottom': '2px', 'fontSize': '12px'}),
-        html.Div('Off: fixed volumes, GPG and industrial curtailment only. '
-                 'On: demand sheds above its willingness to pay and rises when '
-                 'gas is cheap.',
-                 style={'marginBottom': '16px', 'fontSize': '10px',
-                        'color': '#888', 'lineHeight': '1.35', 'paddingLeft': '38px'}),
 
         dbc.Checklist(id='foresight-toggle',
                       options=[{'label': ' Perfect-foresight capacity build', 'value': 'on'}],
@@ -1540,7 +1526,7 @@ def datacentre_segment(datacentre):
 
 
 def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
-                 elastic=False, foresight=True, discount=0.07, datacentre=None,
+                 foresight=True, discount=0.07, datacentre=None,
                  netback=False, respect_contracts=True, gsoo_exp=False):
     """Cache key for one scenario.
 
@@ -1556,7 +1542,6 @@ def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
             + dc
             + ('_GSOOExp' if gsoo_exp else '')
             + ('_Netback' if netback else '')
-            + ('_Elastic' if elastic else '')
             + ('' if foresight else '_Myopic')
             + (f'_DR{round(discount * 100)}' if foresight and abs(discount - 0.07) > 1e-9 else ''))
 
@@ -1747,7 +1732,6 @@ def show_tab(active):
     State('reservation-slider', 'value'),
     State('discount-slider', 'value'),
     State('foresight-toggle', 'value'),
-    State('elastic-toggle', 'value'),
     State('netback-toggle', 'value'),
     State('gsoo-exp-toggle', 'value'),
     State('contracts-toggle', 'value'),
@@ -1769,14 +1753,13 @@ def show_tab(active):
     prevent_initial_call=True,
 )
 def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on, resv_i,
-                 discount, foresight_v, elastic_v, netback_v, gsoo_exp_v, contracts_v,
+                 discount, foresight_v, netback_v, gsoo_exp_v, contracts_v,
                  dc_nsw, dc_vic, dc_start, dc_file, refresh):
     w, l = LEVELS[wi], LEVELS[li]
     baseline = baseline or 'StepChange'
     dunkelflaute = bool(dunkel) and 'on' in dunkel
     reservation = reservation_share(resv_on, resv_i)
     foresight = 'on' in (foresight_v or [])
-    elastic = 'on' in (elastic_v or [])
     dr = 0.07 if discount is None else float(discount)
     netback = 'on' in (netback_v or [])
     gsoo_exp = 'on' in (gsoo_exp_v or [])
@@ -1791,12 +1774,12 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
         pct = int(p * 100)
         set_progress((pct, f'Solving {yr}… {pct}%'))
     # Built before the solve so it can also title the terminal log.
-    key = scenario_key(baseline, w, l, dunkelflaute, reservation, elastic, foresight, dr,
+    key = scenario_key(baseline, w, l, dunkelflaute, reservation, foresight, dr,
                        datacentre, netback, respect_contracts, gsoo_exp)
     result = solve_scenario(w, l, mip_gap=gap, callback=_cb,
                             baseline=baseline, dunkelflaute=dunkelflaute,
                             discount_rate=dr, foresight=foresight,
-                            reservation=reservation, elastic_demand=elastic,
+                            reservation=reservation,
                             datacentre=datacentre, netback_pricing=netback,
                             respect_contracts=respect_contracts,
                             gsoo_expansions_only=gsoo_exp,
@@ -1965,7 +1948,6 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     State('dunkelflaute-toggle', 'value'),
     State('discount-slider', 'value'),
     State('foresight-toggle', 'value'),
-    State('elastic-toggle', 'value'),
     State('netback-toggle', 'value'),
     State('gsoo-exp-toggle', 'value'),
     State('contracts-toggle', 'value'),
@@ -1987,14 +1969,14 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     prevent_initial_call=True,
 )
 def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
-                          discount, foresight_v, elastic_v, netback_v, gsoo_exp_v,
+                          discount, foresight_v, netback_v, gsoo_exp_v,
                           contracts_v, dc_nsw, dc_vic, dc_start, dc_file, refresh):
     """Every reservation level x every GSOO baseline, at the selected Winter/LNG case.
 
     Two sidebar controls are deliberately ignored, because this button sweeps both
     of them itself: the reservation toggle and the GSOO baseline dropdown. Winter
     and LNG come from the sliders as selected — that is the case being studied —
-    and the rest (dunkelflaute, elastic demand, data centre load, foresight,
+    and the rest (dunkelflaute, data centre load, foresight,
     discount) follow the sidebar exactly as a single run does.
 
     Every baseline gets its own 0% run. A reservation is only readable against the
@@ -2004,7 +1986,6 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     w, l = LEVELS[wi], LEVELS[li]
     dunkelflaute = bool(dunkel) and 'on' in dunkel
     foresight = 'on' in (foresight_v or [])
-    elastic = 'on' in (elastic_v or [])
     netback = 'on' in (netback_v or [])
     gsoo_exp = 'on' in (gsoo_exp_v or [])
     respect_contracts = 'on' in (contracts_v or [])
@@ -2023,7 +2004,7 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     data = load_results()
     jobs = []
     for base, share in combos:
-        key = scenario_key(base, w, l, dunkelflaute, share, elastic, foresight, dr,
+        key = scenario_key(base, w, l, dunkelflaute, share, foresight, dr,
                            datacentre, netback, respect_contracts, gsoo_exp)
         # Cached combinations are skipped, so a re-run after adding a level costs
         # one solve rather than the whole sweep. Clear Results to force a rebuild.
@@ -2032,7 +2013,7 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
                          dict(winter=w, lng=l, mip_gap=gap, baseline=base,
                               dunkelflaute=dunkelflaute, discount_rate=dr,
                               foresight=foresight, reservation=share,
-                              elastic_demand=elastic, datacentre=datacentre,
+                              datacentre=datacentre,
                               netback_pricing=netback,
                               respect_contracts=respect_contracts,
                               gsoo_expansions_only=gsoo_exp)))
@@ -2138,14 +2119,6 @@ def update_header_kpis(key, end_year):
     # offered at $0 so it is taken up wherever it can physically reach a buyer;
     # a gap means the market could not absorb it, not that it was uneconomic.
     served_pj = sum(r.get('reserved_served_tj', 0) for r in filtered) / 1000
-    # Mass-market load that priced itself out. Absent from scenarios solved before
-    # the elastic lever existed, and from any run with it switched off.
-    mm_shed_pj = sum(float(r['massmarket']['Curtailed'].sum())
-                     for r in filtered if len(r.get('massmarket', ()))) / 1000
-    # Demand taken up because gas was cheap (GPG expansion and industrial uptake).
-    raised_pj = sum(float(r['demand_raise']['Value'].sum())
-                    for r in filtered if len(r.get('demand_raise', ()))) / 1000
-    elastic_run = any(r.get('elastic_demand') for r in filtered)
     netback_run = any(r.get('netback_pricing') for r in filtered)
     respects = next((r.get('reservation_respects_contracts', True) for r in filtered), True)
     caveats = []
@@ -2157,8 +2130,6 @@ def update_header_kpis(key, end_year):
         else:
             caveats.append('export revenue counted on spot tail only')
         caveats.append('reserved gas at $0')
-    if elastic_run:
-        caveats.append('net of demand benefit')
     cost_caveat = ' · '.join(caveats)
     chips = [
         kpi_card('Final Price', [final_price,
@@ -2218,10 +2189,6 @@ def update_header_kpis(key, end_year):
     dc_pj = sum(r.get('datacentre_tj', 0) for r in filtered) / 1000
     if dc_pj:
         chips.insert(3, kpi_card('Data Centre Load', f"{dc_pj:,.0f} PJ"))
-    if raised_pj:
-        chips.insert(3, kpi_card('Demand Raised', f"{raised_pj:,.0f} PJ"))
-    if mm_shed_pj:
-        chips.insert(3, kpi_card('Demand Shed', f"{mm_shed_pj:,.0f} PJ"))
     return pretty_key(key), chips
 
 # ---------------------------------------------------------------------------

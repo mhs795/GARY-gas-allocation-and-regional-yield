@@ -99,9 +99,11 @@ def main():
         key = scenario_key(b, w, l, dunkel, gsoo_exp, netback)
         if args.keep and key in out['all_scenarios'] and not dunkel:
             continue
-        jobs.append((key, run_title(w, l, b, dunkel, gsoo_expansions_only=gsoo_exp),
+        jobs.append((key, run_title(w, l, b, dunkel, netback_pricing=netback,
+                                    gsoo_expansions_only=gsoo_exp),
                      dict(winter=w, lng=l, baseline=b, dunkelflaute=dunkel,
-                          mip_gap=args.mip_gap, gsoo_expansions_only=gsoo_exp)))
+                          mip_gap=args.mip_gap, gsoo_expansions_only=gsoo_exp,
+                          netback_pricing=netback)))
 
     workers = args.workers or sweep.default_workers()
     print(f'{len(jobs)} scenarios x {HORIZON_END - HORIZON_START + 1} years '

@@ -46,7 +46,7 @@ sources for `supply.csv`'s reserves and costs, `arcs.csv`'s capacities and tarif
 
 `demand_*.csv`, `gpg_demand_profile*.csv`, `industrial_demand_profile*.csv`,
 `gpg_facilities.csv`, `industrial_facilities_bbg.csv`, `curtailment_params.csv`,
-`gpg_capacity.csv`, `gpg_raise_blocks.csv`, `lng_prices.csv`,
+`lng_prices.csv`,
 `demand_decomposition_validation.csv`, `gsoo/`, `precalculated_results.pkl`.
 
 **Never edit these by hand** — the next regeneration overwrites them. Change the source

@@ -17,7 +17,7 @@ GARY's inputs therefore live in three places, by kind:
                                GSOO workbooks the generators read.
   data/*.csv (generated)       DERIVED series written by regenerate_data.py
                                (demand_*.csv, curtailment_params.csv,
-                               gpg_raise_blocks.csv, lng_prices.csv, ...).
+                               lng_prices.csv, ...).
                                Gitignored — never edit these by hand.
 
 Anything in the first group is set here rather than as a constant in a module, so

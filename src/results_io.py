@@ -63,14 +63,6 @@ SERIES_SCHEMA = {
     # scenarios cached before it was added; readers must tolerate that.
     'distribution': {'Day': 'day', 'Node': 'name', 'Demand': 'val', 'Served': 'val',
                      'Curtailed': 'val'},
-    # Mass-market step demand curve; one row per block that shed something.
-    # Absent from scenarios solved with elastic demand off.
-    'massmarket': {'Day': 'day', 'Node': 'name', 'Block': 'name', 'Demand': 'val',
-                   'Served': 'val', 'Curtailed': 'val'},
-    # Demand taken up because gas was cheap, one row per block that fired.
-    # Absent from scenarios solved with elastic demand off.
-    'demand_raise': {'Day': 'day', 'Node': 'name', 'Tier': 'name', 'Block': 'name',
-                     'Value': 'val'},
     # LNG exports under netback price formation: planned volume, what cleared at
     # the netback, and what was forgone. Absent with the netback lever off.
     'lng': {'Day': 'day', 'Node': 'name', 'Planned': 'val', 'Foundation': 'val',

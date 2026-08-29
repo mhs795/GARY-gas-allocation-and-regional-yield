@@ -171,8 +171,7 @@ def datacentre_label(datacentre):
     return "  ·  ".join(bits) if bits else "data centres (no volume)"
 
 
-def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservation=0.0,
-              elastic_demand=False, foresight=True, datacentre=None,
+def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservation=0.0, foresight=True, datacentre=None,
               netback_pricing=False, gsoo_expansions_only=False):
     """One-line description of a scenario, for the terminal header."""
     bits = [BASELINE_LABELS.get(baseline, baseline), f"Winter {winter}", f"LNG {lng}"]
@@ -186,8 +185,6 @@ def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservatio
         bits.append("LNG netback pricing")
     if gsoo_expansions_only:
         bits.append("GSOO expansions only")
-    if elastic_demand:
-        bits.append("elastic demand")
     if not foresight:
         bits.append("myopic")
     return "  ·  ".join(bits)
@@ -195,7 +192,7 @@ def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservatio
 
 def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
                    baseline="StepChange", dunkelflaute=False, discount_rate=0.07,
-                   foresight=True, reservation=0.0, elastic_demand=False,
+                   foresight=True, reservation=0.0,
                    datacentre=None, netback_pricing=False,
                    respect_contracts=True, gsoo_expansions_only=None,
                    title=None, log=True):
@@ -226,12 +223,6 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     exports being taken at any price. See the header block in model.py, and
     build_lng_prices.py for where the series comes from.
 
-    ``elastic_demand=True`` replaces must-serve mass-market demand with the step
-    demand curves calibrated in build_demand_curves.py, so distribution load
-    sheds when the nodal price exceeds its willingness to pay instead of being
-    served at any cost. Off by default: it changes every scenario, not just
-    reservation runs, so the inelastic case stays the comparison baseline.
-
     ``gsoo_expansions_only=True`` restricts the capacity layer to the committed
     expansions AEMO counts in the 2026 GSOO/VGPR, dropping every candidate GARY's
     own market scan added (Bulloo Interlink, the Geelong FSRUs, Golden Beach,
@@ -250,7 +241,7 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     if gsoo_expansions_only is None:
         gsoo_expansions_only = GSOO_ONLY_DEFAULT
     if log:
-        print(f"\n{title or run_title(winter, lng, baseline, dunkelflaute, reservation, elastic_demand, foresight, datacentre, netback_pricing, gsoo_expansions_only)}",
+        print(f"\n{title or run_title(winter, lng, baseline, dunkelflaute, reservation, foresight, datacentre, netback_pricing, gsoo_expansions_only)}",
               flush=True)
     data = load_data(baseline)
     # Filter ONCE, here, so the capacity layer and the dispatch layer are offered
@@ -260,16 +251,15 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     if foresight:
         return _solve_foresight(data, years, winter, lng, baseline,
                                 dunkelflaute, mip_gap, discount_rate, callback,
-                                reservation, elastic_demand, log, datacentre,
+                                reservation, log, datacentre,
                                 netback_pricing, respect_contracts)
     return _solve_myopic(data, years, winter, lng, baseline,
-                         dunkelflaute, mip_gap, callback, reservation,
-                         elastic_demand, log, datacentre, netback_pricing,
+                         dunkelflaute, mip_gap, callback, reservation, log, datacentre, netback_pricing,
                          respect_contracts)
 
 
 def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
-                  mip_gap, callback, reservation=0.0, elastic_demand=False, log=True,
+                  mip_gap, callback, reservation=0.0, log=True,
                   datacentre=None, netback_pricing=False, respect_contracts=True):
     """Reactive year-by-year solve: each year decides builds with no foresight."""
     built_projects, results = [], []
@@ -283,8 +273,7 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
             year=year,
             already_built=built_projects,
-            baseline=baseline, dunkelflaute=dunkelflaute,
-            elastic_demand=elastic_demand, reserved_by_day=reserved_day,
+            baseline=baseline, dunkelflaute=dunkelflaute, reserved_by_day=reserved_day,
             datacentre=datacentre, netback_pricing=netback_pricing,
             netback_scenario=lng_price_scenario(lng, baseline) if netback_pricing else None,
             reservation_applied=applied, respect_contracts=respect_contracts)
@@ -299,7 +288,6 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
         yr_res['reservation_share_applied'] = applied
         yr_res['reservation_respects_contracts'] = respect_contracts
         yr_res['lng_reserved_tj'] = diverted
-        yr_res['elastic_demand'] = elastic_demand
         cumulative = _accumulate(cumulative, yr_res)
         results.append(yr_res)
         built_projects.extend([b for b in yr_res['builds'] if b not in built_projects])
@@ -371,8 +359,7 @@ def _num_or_none(v):
 
 
 def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
-                     mip_gap, discount_rate, callback, reservation=0.0,
-                     elastic_demand=False, log=True, datacentre=None,
+                     mip_gap, discount_rate, callback, reservation=0.0, log=True, datacentre=None,
                      netback_pricing=False, respect_contracts=True):
     """Two-stage full-horizon solve: perfect-foresight capacity + 365-day dispatch."""
     from capacity_model import CapacityExpansionModel, build_representative_days
@@ -393,8 +380,7 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         gm = GasMarketModel(
             data['nodes'], data['arcs'], data['supply'], demand_yr, data['expansion'],
             year=year,
-            baseline=baseline, dunkelflaute=dunkelflaute,
-            elastic_demand=elastic_demand, reserved_by_day=reserved_day,
+            baseline=baseline, dunkelflaute=dunkelflaute, reserved_by_day=reserved_day,
             datacentre=datacentre, netback_pricing=netback_pricing,
             netback_scenario=lng_price_scenario(lng, baseline) if netback_pricing else None,
             reservation_applied=applied_share, respect_contracts=respect_contracts)
@@ -413,9 +399,8 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
     # --- Pass 2: capacity expansion, perfect foresight over the horizon ----------
     if callback:
         callback(start_year, 0.0)
-    mm_blocks = dispatch_models[start_year].mm_blocks
     rep = build_representative_days(years, demand_all, gpg_all, ind_all,
-                                    data['nodes'], mm_blocks=mm_blocks,
+                                    data['nodes'],
                                     reserved_all=reserved_all, dc_all=dc_all)
     cap_kwargs = dict(
         nodes_df=data['nodes'], arcs_df=data['arcs'], supply_df=data['supply'],
@@ -423,10 +408,6 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         discount_rate=discount_rate,
         strike_gpg=dispatch_models[start_year].strike_gpg,
         strike_ind=dispatch_models[start_year].strike_ind,
-        mm_blocks=mm_blocks,
-        ind_raise=dispatch_models[start_year].ind_raise,
-        gpg_raise=dispatch_models[start_year].gpg_raise,
-        gpg_capacity=dispatch_models[start_year].gpg_capacity,
         lng_arcs=dispatch_models[start_year].lng_arcs,
         lng_source=dispatch_models[start_year].lng_source,
         # One netback and one import cost per year: both track the international
@@ -482,7 +463,6 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         yr_res['reservation_share_applied'] = applied_share
         yr_res['reservation_respects_contracts'] = respect_contracts
         yr_res['lng_reserved_tj'] = diverted_by_year[year]
-        yr_res['elastic_demand'] = elastic_demand
         cumulative = _accumulate(cumulative, yr_res)
         scenario_results.append(yr_res)
         if log:
@@ -531,10 +511,6 @@ def main():
                              "volume, foundation SPAs included. By default a "
                              "reservation is capped at the uncontracted share, "
                              "which is how the Heads of Agreement works")
-    parser.add_argument("--elastic-demand", action="store_true",
-                        help="Price-responsive mass-market demand: use the step "
-                             "demand curve in curtailment_params.csv instead of "
-                             "must-serve distribution volumes")
     parser.add_argument("--gsoo-expansions-only", action="store_true",
                         help="Restrict the capacity layer to the expansions AEMO "
                              "counts as committed in the 2026 GSOO/VGPR, dropping "
@@ -577,7 +553,7 @@ def main():
         args.winter, args.lng, mip_gap=args.mip_gap,
         baseline=args.baseline, dunkelflaute=args.dunkelflaute,
         foresight=not args.myopic, reservation=args.reservation / 100.0,
-        elastic_demand=args.elastic_demand, datacentre=datacentre,
+        datacentre=datacentre,
         netback_pricing=args.netback_pricing,
         gsoo_expansions_only=args.gsoo_expansions_only,
         respect_contracts=not args.break_lng_contracts)
