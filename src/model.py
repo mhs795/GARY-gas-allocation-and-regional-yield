@@ -216,7 +216,17 @@ def lng_foundation_share(year=None, planned_pj=None):
         return flat
     if not planned_pj or planned_pj <= 0:
         return flat if contracted[year] > 0 else 0.0
-    return max(0.0, min(1.0, contracted[year] / float(planned_pj)))
+    # CAPPED AT THE SCALAR, not at 1.0. ACCC's contracted total slightly exceeds
+    # GARY's planned export volume -- producers are over-committed against their own
+    # production and buy from third parties to cover it -- so an uncapped ratio
+    # returns 1.0 and makes export demand perfectly rigid while contracts run. That
+    # is more rigid than reality and more rigid than the model can absorb: it
+    # removed the ~7% uncontracted tail that used to soak up a tight day, and put a
+    # 54 TJ shortfall into 2029 at ~25 days of VOLL. The scalar is ACCC's own
+    # uncontracted share (22 PJ of ~325 PJ, Q1 2026), so it stands as the ceiling
+    # on how much of a year's volume can be take-or-pay; the contract profile then
+    # scales it DOWN as the SPAs expire.
+    return max(0.0, min(flat, contracted[year] / float(planned_pj)))
 
 
 def load_params(data_dir=None):
@@ -1279,6 +1289,17 @@ class GasMarketModel:
                 # every field is still on AEMO's 2P (largely operating) cost and
                 # neither parity anchor binds. See the module header block.
                 p = (m.dual[m.balance[n, t]]/1000 ) if hasattr(m, 'dual') and m.balance[n, t] in m.dual else 0.0
+                # SECOND degeneracy guard. The set test above asks whether a node
+                # EVER carries gas; it passes on a trickle of 0.01 TJ on a single
+                # day, which is not enough to pin the dual. A node with no demand
+                # cannot be losing load, so a dual sitting at VOLL there is
+                # definitionally degenerate -- the balance row is effectively 0 == 0
+                # and the solver reported the penalty. Measured 30 Aug 2026: Amadeus
+                # sat at exactly $300.00 for all of 2049 and 2050, on zero production
+                # and zero arc throughput, once its 2P tranche was exhausted and its
+                # 2C development was never built.
+                if n not in has_demand and p >= VOLL_PER_GJ - 1e-6:
+                    continue
                 res['prices'].append({'Day': t, 'Node': n, 'Price': float(p)})
                 if sv[n, t] > 0.1: res['shortage'].append({'Day': t, 'Node': n, 'Value': float(sv[n, t])})
             for s in m.Supply:
