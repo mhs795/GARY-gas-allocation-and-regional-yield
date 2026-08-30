@@ -148,7 +148,7 @@ slightly *under*-drawn by dispatch.
 withdraw); Moomba holds 70,000 TJ (100 / 120). Gippsland and Surat hold none. The two
 rows dispatch over-produces are exactly the two rows that have a store attached.
 
-### T6 — real (medoid) representative days · IN PROGRESS
+### T6 — real (medoid) representative days · RULED OUT
 
 *Hypothesis.* Averaging a bin destroys COINCIDENCE, not just level. A real cold day is
 cold in Melbourne, Adelaide and Sydney at once, which is when corridors bind; a mean
@@ -164,7 +164,22 @@ dominated by the peak day's extra weight.
 *Tests committed in advance:* does the ~44 PJ/yr southern gap close, and **does the
 build list change** — specifically does a Geelong FSRU appear?
 
-### T7 — storage chronology · QUEUED
+*Result.* **Nothing changed.** Build list byte-identical again (the same 12 projects,
+now across mean days at 13/37/61 AND real days at 37). Southern gap unchanged —
+287\|331, 235\|278, 223\|266. Prices identical to the mean-day run, $24.39 at
+Melbourne in 2033.
+
+So coincidence is not the mechanism either. Averaging within a bin was a real fidelity
+defect, but fixing it moves nothing here.
+
+*Kept anyway*, at `rep_day_mode=medoid`: a real day is a more faithful representation
+than a synthetic average and costs nothing in solve time or annual energy. **But it
+demonstrated no measurable benefit**, so it is complexity carried on principle rather
+than on evidence — revert it to `mean` if that trade is not wanted.
+
+### T7 — storage chronology · IN PROGRESS
+
+### T7 — storage chronology · IN PROGRESS
 
 *Hypothesis, and it now looks stronger than T6.* Representative days are **not
 chronological**, so seasonal storage cannot be represented. Dispatch cycles Iona and
