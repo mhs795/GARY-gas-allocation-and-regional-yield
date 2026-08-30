@@ -1094,6 +1094,7 @@ class GasMarketModel:
         m.supply_cap = pyo.Constraint(m.Supply, m.T, rule=supply_cap_rule)
 
 
+
         def flow_cap_rule(m, a, t):
             extra = sum(m.build[e] * exp_data[e]['NewCapacity'] for e in m.Expansion if exp_data[e]['Target'] == a)
             return m.flow[a, t] <= arc_data[a]['Capacity'] + extra
