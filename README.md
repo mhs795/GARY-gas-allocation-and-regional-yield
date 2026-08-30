@@ -157,7 +157,7 @@ worker processes — see [`docs/running.md`](docs/running.md#parallel-sweeps).
 
 | Control | Options | Effect |
 |---|---|---|
-| **Southern Winter Stress** | Low 1.0× · **Medium 1.5×** · High 2.2× | Multiplies Melbourne / Adelaide / Sydney distribution demand over the winter window. Low is the GSOO-consistent case; Medium and High are stress cases layered on top of it, **not alternative forecasts**. |
+| **Southern Winter Stress** | Low 1.0× · **Medium 1.5×** · High 2.2× | Multiplies Melbourne / Adelaide / Sydney distribution demand over the winter window. Low is the GSOO-consistent case; Medium and High are stress cases layered on top of it, **not alternative forecasts**. ⚠️ **Medium is the dashboard default**, so every headline figure is a stressed run — 8–12% above GSOO annual energy, Melbourne's peak day ~1.8× AEMO's VIC RC&I peak — unless Winter is set to Low. Set it to **Low** for anything you intend to read as an outlook. |
 | **Global LNG Market** | Low · **Medium** · High | With netback pricing **on** (default) it selects the netback *price path*: Low = Accelerated Transition, Medium = this run's own baseline, High = Slower Growth. With netback pricing **off** it scales export *volume* instead. |
 | **SA Dunkelflaute (2027)** | off / on | A wind-and-solar drought in South Australia in 2027, forcing GPG to cover. |
 | **Gas reservation** | off / on + 5/10/20/30% | Carves a share of planned LNG export volume into the domestic market at $0/GJ. See [`docs/scenarios.md`](docs/scenarios.md#gas-reservation). |

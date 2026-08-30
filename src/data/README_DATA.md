@@ -22,8 +22,11 @@ committed, generated data is not.** See the header of `src/params.py` for the re
 | File | Read? |
 |---|---|
 | `GasBBActualFlowStorage.CSV` | **Yes** — the historical trace behind every base profile |
-| `GasBBNameplateRatingCurrent.csv` | **Yes** — GPG nameplate for the expansion cap |
+| `GasBBNameplateRatingCurrent.csv` | No — the GPG expansion cap it once fed is gone. Audited 30 Aug 2026: nothing reads it |
 | `GasBBMediumTermCapacityOutlookFuture.csv` | No |
+
+> Only `GasBBActualFlowStorage.CSV` is live. The other four are kept because they are
+> the raw Bulletin Board download and cheap to hold, not because anything reads them.
 | `GasBBShortTermCapacityOutlookFuture.csv` | No |
 | `GasBBUncontractedCapacityOutlookFuture.csv` | No |
 

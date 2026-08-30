@@ -35,6 +35,11 @@ real node with `IsPotential=True`, the pattern the import terminals already used
 Golden Beach delivers. **Surat's 3,000 TJ/d is still gated at zero** because no
 Terminal targets it — that remains a modelling decision (what unlocks it, at what
 capex), but it is now a data row rather than a code change.
+>
+> **Superseded 30 Aug 2026 — item 3 is now fully closed.** `Bowen_Gas_Project`,
+> `Mahalo_CSG` and `Mt_St_Martin` target the Surat node, all three from AEMO's G26
+> *Field Developments* sheet, and the capex question is answered the same way as
+> every other basin. See item 3 below.
 
 **Item 4 (No earliest-build year) — CLOSED.** `expansion_options.csv` gains
 `EarliestYear`, honoured by both models. `terminal_earliest` stays as the fallback
@@ -351,6 +356,14 @@ a cost step only.
 **This makes item 3 load-bearing, not cosmetic.** Until `Surat_Potential` can produce and
 the south has an equivalent of AEMO's committed/anticipated tranche, GARY cannot represent
 depletion physically — only as a price signal.
+
+> **Superseded 30 Aug 2026.** Both halves of that are now done and this section is
+> history, not current behaviour. The backfill exists — thirteen AEMO field
+> developments, extracted from the G26 *Field Developments* sheet — so the hard stock
+> limit went back in and holds, with a scarcity rent carrying the opportunity cost of
+> depletion into the myopic dispatch layer. There is no cost step any more: each
+> tranche is its own row at its own cost, and depletion is physical. See
+> [`docs/model.md`](docs/model.md#supply-cost-and-depletion).
 
 **Still open:** the early years. ACIL has ~$12-13/GJ by 2027; GARY has a 6.41 mean in 2026.
 See item 11 — the $12 Code price cap is implemented as a ceiling, and ACIL's current view
