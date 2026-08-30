@@ -115,7 +115,7 @@ somewhere else. **This is a supply-mix effect, not a volume one.**
 > the must-serve foundation volume. Those are different quantities and the comparison
 > was meaningless. T5 compares `lng_spot_tj` instead.
 
-### T5 — which source is substituted, and is transport the reason? · IN PROGRESS
+### T5 — which source is substituted? · ANSWERED, and it points at STORAGE
 
 *Hypothesis.* Averaging demand across a month under-states pipeline **congestion**. On
 an averaged day the corridors are slack, so the MIP believes Melbourne can be served
@@ -127,3 +127,54 @@ would explain why T2's load bins changed nothing about the divergence.
 *Method.* Per-node production MIP vs dispatch; LNG spot tail compared like for like;
 and corridor utilisation (mean, max, days above 99%) on MSP, EGP_Rev, VNI_Rev, SWP,
 Bulloo and SEA_Gas, MIP against dispatch.
+
+
+*Result.* Production by node, PJ, MIP plan against dispatch:
+
+| year | Gippsland | **Iona** | **Moomba** | Surat | Port Kembla |
+|---|---|---|---|---|---|
+| 2030 | 131 \| 129 | 26 \| **35** | 77 \| **115** | 1407 \| 1388 | 0 \| 0 |
+| 2031 | 50 \| 31 | 62 \| **114** | 110 \| **121** | 1393 \| 1375 | 0 \| 0 |
+| 2032 | 10 \| 4 | 79 \| 61 | 82 \| 14 | 1379 \| 1361 | 55 \| **182** |
+
+**The LNG spot tail is 0.0 PJ in BOTH layers, every year** — export coupling is ruled
+out as the cause.
+
+The over-draw is not spread across the south. It is concentrated in **Iona** (62 → 114
+in 2031, nearly double) and **Moomba** (77 → 115 in 2030). Gippsland and Surat are
+slightly *under*-drawn by dispatch.
+
+**Iona and Moomba are the two STORAGE nodes.** Iona holds 24,400 TJ (155 inject / 570
+withdraw); Moomba holds 70,000 TJ (100 / 120). Gippsland and Surat hold none. The two
+rows dispatch over-produces are exactly the two rows that have a store attached.
+
+### T6 — real (medoid) representative days · IN PROGRESS
+
+*Hypothesis.* Averaging a bin destroys COINCIDENCE, not just level. A real cold day is
+cold in Melbourne, Adelaide and Sydney at once, which is when corridors bind; a mean
+spreads the same energy over node-day combinations that never co-occurred, so the
+network never looks tight. This would explain why T2's finer bins changed dispatch but
+left the build list byte-identical at 13, 37 and 61 days.
+
+*Method.* `rep_day_mode=medoid` on the Parameters sheet — each bin contributes the real
+day whose total sits closest to the bin mean, weighted by the bin's day count. Annual
+energy fidelity is unaffected: measured **+2.09% medoid against +2.26% mean**, both
+dominated by the peak day's extra weight.
+
+*Tests committed in advance:* does the ~44 PJ/yr southern gap close, and **does the
+build list change** — specifically does a Geelong FSRU appear?
+
+### T7 — storage chronology · QUEUED
+
+*Hypothesis, and it now looks stronger than T6.* Representative days are **not
+chronological**, so seasonal storage cannot be represented. Dispatch cycles Iona and
+Moomba across a real year: inject through summer, withdraw through winter, which
+requires extra PRODUCTION in the injection season. The capacity MIP has only
+`stor_annual` — net withdrawal over the year bounded by the opening stock — which
+permits a store to supply gas without ever being filled. If the MIP gets storage gas
+without paying for the injection, it plans less production from exactly the nodes that
+have stores, which is the pattern T5 measured.
+
+*Method.* Compare annual injection and withdrawal at Iona and Moomba, MIP against
+dispatch, alongside corridor utilisation (the T5 corridor block crashed on a column
+name — the results frame uses `Arc`, not `Name`).

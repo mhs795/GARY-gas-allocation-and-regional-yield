@@ -45,7 +45,8 @@ PEAK_DAY_WEIGHT = P.get('peak_day_weight', 5.0)
 
 
 def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
-                              reserved_all=None, dc_all=None, bins_per_month=None):
+                              reserved_all=None, dc_all=None, bins_per_month=None,
+                              medoid_days=None):
     """Reduce each year's 365 daily profiles to representative days.
 
     Returns {year: [ {weight, demand{node:v}, gpg{node:v}, ind{node:v}} ]} --
@@ -77,6 +78,10 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
     dc_all = dc_all or {}
     k = max(1, int(bins_per_month if bins_per_month is not None
                    else P.get_int('rep_bins_per_month', 3)))
+    # 'medoid' picks a REAL day per bin; 'mean' averages the bin. See the note in the
+    # loop below -- a mean cannot represent a binding corridor.
+    medoid = (medoid_days if medoid_days is not None
+              else P.get_str('rep_day_mode', 'medoid').strip().lower() == 'medoid')
 
     rep = {}
     for y in years:
@@ -100,11 +105,29 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
                 if not chunk:
                     continue
                 w = float(len(chunk))
-                dem = {n: sum(demand_all.get((n, y, d), 0) for d in chunk) / w for n in node_names}
-                gpg = {n: sum(gpg_all.get((n, y, d), 0) for d in chunk) / w for n in node_names}
-                ind = {n: sum(ind_all.get((n, y, d), 0) for d in chunk) / w for n in node_names}
-                dc = {n: sum(dc_all.get((n, y, d), 0) for d in chunk) / w for n in node_names}
-                reserved = sum(reserved_all.get((y, d), 0.0) for d in chunk) / w
+                if medoid:
+                    # A REAL day, the one whose total sits closest to the bin's mean.
+                    # Averaging a bin destroys COINCIDENCE, not just level: a real cold
+                    # day is cold in Melbourne and Adelaide and Sydney at once, which is
+                    # exactly when the corridors bind. A mean spreads the same energy
+                    # over node-day combinations that never co-occurred, so the network
+                    # never looks tight and the investment layer sees no congestion to
+                    # build around. More bins do not help, because each bin is still an
+                    # average -- which is why 13, 37 and 61 representative days produced
+                    # byte-identical build lists.
+                    target = sum(day_total[d] for d in chunk) / w
+                    d0 = min(chunk, key=lambda d: abs(day_total[d] - target))
+                    dem = {n: demand_all.get((n, y, d0), 0) for n in node_names}
+                    gpg = {n: gpg_all.get((n, y, d0), 0) for n in node_names}
+                    ind = {n: ind_all.get((n, y, d0), 0) for n in node_names}
+                    dc = {n: dc_all.get((n, y, d0), 0) for n in node_names}
+                    reserved = reserved_all.get((y, d0), 0.0)
+                else:
+                    dem = {n: sum(demand_all.get((n, y, d), 0) for d in chunk) / w for n in node_names}
+                    gpg = {n: sum(gpg_all.get((n, y, d), 0) for d in chunk) / w for n in node_names}
+                    ind = {n: sum(ind_all.get((n, y, d), 0) for d in chunk) / w for n in node_names}
+                    dc = {n: sum(dc_all.get((n, y, d), 0) for d in chunk) / w for n in node_names}
+                    reserved = sum(reserved_all.get((y, d), 0.0) for d in chunk) / w
                 days_reps.append({'weight': w, 'demand': dem, 'gpg': gpg, 'ind': ind,
                                   'dc': dc, 'reserved': reserved})
         # annual peak day (actual profile) for adequacy
