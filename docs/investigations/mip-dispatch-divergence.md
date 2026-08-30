@@ -80,7 +80,7 @@ than a 2033–35 bump, and the 2036 contract-expiry relief disappeared. The cap 
 is **systematically ~15–19% below what dispatch needs**. Constraining dispatch to it
 manufactures permanent scarcity. **Code removed entirely**, not just switched off.
 
-### T4 — where the divergence actually lives · IN PROGRESS
+### T4 — where the divergence actually lives · ANSWERED: it is the supply MIX
 
 *Method.* Compare MIP against dispatch on three quantities per year, not just southern
 production: **total production**, **LNG export volume**, and **southern production**.
@@ -94,3 +94,36 @@ production: **total production**, **LNG export volume**, and **southern producti
 * MIP total lower, export matches → the representative days under-represent annual
   energy, and the capacity layer has been sizing the system against less demand than
   gets dispatched. This would be the serious one: it undercuts every build decision.
+
+*Result.*
+
+| year | TOTAL production PJ (MIP \| dispatch) | southern PJ (MIP \| dispatch) |
+|---|---|---|
+| 2029 | 1725 \| 1750 | 287 \| 331 |
+| 2030 | 1658 \| 1683 | 234 \| 278 |
+| 2031 | 1632 \| 1657 | 223 \| 266 |
+| 2032 | 1622 \| 1648 | 172 \| 79 |
+
+**Totals agree to within 1–2%.** The serious reading is ruled out: the capacity layer is
+NOT sizing against less demand than gets dispatched. But southern production differs by
+15–19%, so dispatch takes ~44 PJ/yr MORE from the south and ~44 PJ/yr LESS from
+somewhere else. **This is a supply-mix effect, not a volume one.**
+
+> *Measurement error, recorded so it is not repeated.* The LNG column in this test
+> compared the MIP's `lng_export` variable — which is only the contestable **spot
+> tail** — against dispatch's `lng_exported_tj`, which is **total** exports including
+> the must-serve foundation volume. Those are different quantities and the comparison
+> was meaningless. T5 compares `lng_spot_tj` instead.
+
+### T5 — which source is substituted, and is transport the reason? · IN PROGRESS
+
+*Hypothesis.* Averaging demand across a month under-states pipeline **congestion**. On
+an averaged day the corridors are slack, so the MIP believes Melbourne can be served
+from Surat down the MSP/EGP; on real peak days those corridors bind and dispatch is
+forced onto local southern gas instead. If so the fix is in the representative days'
+*shape* — they must preserve the days when transport binds — not in their count, which
+would explain why T2's load bins changed nothing about the divergence.
+
+*Method.* Per-node production MIP vs dispatch; LNG spot tail compared like for like;
+and corridor utilisation (mean, max, days above 99%) on MSP, EGP_Rev, VNI_Rev, SWP,
+Bulloo and SEA_Gas, MIP against dispatch.
