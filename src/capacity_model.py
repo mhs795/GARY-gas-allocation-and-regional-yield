@@ -45,14 +45,29 @@ PEAK_DAY_WEIGHT = P.get('peak_day_weight', 5.0)
 
 
 def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
-                              reserved_all=None, dc_all=None):
+                              reserved_all=None, dc_all=None, bins_per_month=None):
     """Reduce each year's 365 daily profiles to representative days.
 
-    Returns {year: [ {weight, demand{node:v}, gpg{node:v}, ind{node:v}} ]} — 12
-    monthly *mean* days (weighted by days in the month) plus one annual *peak* day
-    (the highest total-demand day, so the capacity layer sizes for stress).
+    Returns {year: [ {weight, demand{node:v}, gpg{node:v}, ind{node:v}} ]} --
+    ``bins_per_month`` load bins within each month plus one annual *peak* day (the
+    highest total-demand day, so the capacity layer sizes for stress).
 
-    ``dc_all`` is the data centre slice of ``ind_all`` — already inside it, not on
+    WITHIN-MONTH RESOLUTION. This used to be one MEAN day per month, which flattens
+    the load-duration curve inside the month completely: a mild day and a cold snap
+    in the same July became one average July day. That matters because the marginal
+    supply differs between them -- cheap southern gas clears a mild day, imports come
+    in on a cold one -- so averaging first and dispatching second is not the same as
+    dispatching each day and averaging after. Measured 30 Aug 2026 at one bin, the
+    MIP planned ~44 PJ/yr LESS southern production than the 365-day dispatch layer
+    actually drew, three years running. That exhausted the southern tranches a year
+    before the plan expected and put 16,008 TJ of shortage into 2032 which the MIP
+    never saw, so it scheduled no build for it.
+
+    Days are sorted by total demand within each month and split into contiguous bins
+    of near-equal count, so each bin is a segment of that month's load-duration curve
+    and carries its own day weight.
+
+    ``dc_all`` is the data centre slice of ``ind_all`` -- already inside it, not on
     top of it. It rides along as ``dc{node: TJ}`` purely so the investment layer
     can net it out of the industrial expansion headroom, exactly as the dispatch
     layer does: the load is firm, so it must not enlarge the raise blocks.
@@ -60,6 +75,8 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
     node_names = nodes_df['Name'].tolist()
     reserved_all = reserved_all or {}
     dc_all = dc_all or {}
+    k = max(1, int(bins_per_month if bins_per_month is not None
+                   else P.get_int('rep_bins_per_month', 3)))
 
     rep = {}
     for y in years:
@@ -74,14 +91,22 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
         for mo, days in by_month.items():
             if not days:
                 continue
-            w = float(len(days))
-            dem = {n: sum(demand_all.get((n, y, d), 0) for d in days) / w for n in node_names}
-            gpg = {n: sum(gpg_all.get((n, y, d), 0) for d in days) / w for n in node_names}
-            ind = {n: sum(ind_all.get((n, y, d), 0) for d in days) / w for n in node_names}
-            dc = {n: sum(dc_all.get((n, y, d), 0) for d in days) / w for n in node_names}
-            reserved = sum(reserved_all.get((y, d), 0.0) for d in days) / w
-            days_reps.append({'weight': w, 'demand': dem, 'gpg': gpg, 'ind': ind,
-                              'dc': dc, 'reserved': reserved})
+            # segments of this month's load-duration curve, mild days first
+            ordered = sorted(days, key=lambda d: day_total[d])
+            n_d = len(ordered)
+            edges = [round(i * n_d / k) for i in range(k + 1)]
+            for lo, hi in zip(edges[:-1], edges[1:]):
+                chunk = ordered[lo:hi]
+                if not chunk:
+                    continue
+                w = float(len(chunk))
+                dem = {n: sum(demand_all.get((n, y, d), 0) for d in chunk) / w for n in node_names}
+                gpg = {n: sum(gpg_all.get((n, y, d), 0) for d in chunk) / w for n in node_names}
+                ind = {n: sum(ind_all.get((n, y, d), 0) for d in chunk) / w for n in node_names}
+                dc = {n: sum(dc_all.get((n, y, d), 0) for d in chunk) / w for n in node_names}
+                reserved = sum(reserved_all.get((y, d), 0.0) for d in chunk) / w
+                days_reps.append({'weight': w, 'demand': dem, 'gpg': gpg, 'ind': ind,
+                                  'dc': dc, 'reserved': reserved})
         # annual peak day (actual profile) for adequacy
         dpk = max(day_total, key=day_total.get)
         days_reps.append({

@@ -233,7 +233,7 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
                    foresight=True, reservation=0.0,
                    datacentre=None, netback_pricing=False,
                    respect_contracts=True, gsoo_expansions_only=None,
-                   allow_import_terminals=None,
+                   allow_import_terminals=None, rep_bins=None,
                    title=None, log=True):
     """Solve a scenario over 2025-2050.
 
@@ -298,7 +298,7 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
         results = _solve_foresight(data, years, winter, lng, baseline,
                                    dunkelflaute, mip_gap, discount_rate, callback,
                                    reservation, log, datacentre,
-                                   netback_pricing, respect_contracts)
+                                   netback_pricing, respect_contracts, rep_bins)
     else:
         results = _solve_myopic(data, years, winter, lng, baseline,
                                 dunkelflaute, mip_gap, callback, reservation, log,
@@ -404,7 +404,7 @@ def _num_or_none(v):
 
 def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
                      mip_gap, discount_rate, callback, reservation=0.0, log=True, datacentre=None,
-                     netback_pricing=False, respect_contracts=True):
+                     netback_pricing=False, respect_contracts=True, rep_bins=None):
     """Two-stage full-horizon solve: perfect-foresight capacity + 365-day dispatch."""
     from capacity_model import CapacityExpansionModel, build_representative_days
     start_year, end_year = years[0], years[-1]
@@ -443,9 +443,13 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
     # --- Pass 2: capacity expansion, perfect foresight over the horizon ----------
     if callback:
         callback(start_year, 0.0)
+    # Load bins per month in the capacity layer. More bins resolve the
+    # load-duration curve inside each month, which is what keeps the MIP's planned
+    # drawdown in step with what the 365-day dispatch layer actually draws.
     rep = build_representative_days(years, demand_all, gpg_all, ind_all,
                                     data['nodes'],
-                                    reserved_all=reserved_all, dc_all=dc_all)
+                                    reserved_all=reserved_all, dc_all=dc_all,
+                                    bins_per_month=rep_bins)
     cap_kwargs = dict(
         nodes_df=data['nodes'], arcs_df=data['arcs'], supply_df=data['supply'],
         expansion_df=data['expansion'], years=years, rep=rep,

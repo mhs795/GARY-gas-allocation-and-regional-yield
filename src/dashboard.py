@@ -923,6 +923,7 @@ _WINTER_DEFAULT_IX = LEVELS.index(P.get_str('winter_default', 'Medium')) \
 _LNG_DEFAULT_IX = LEVELS.index(P.get_str('lng_default', 'Medium')) \
     if P.get_str('lng_default', 'Medium') in LEVELS else 1
 _MIP_GAP_DEFAULT = P.get('mip_gap_default', 0.005)
+_REP_BINS_DEFAULT = P.get_int('rep_bins_per_month', 3)
 # Domestic gas reservation shares offered by the slider, as whole percents.
 RESERVATION_PCTS = [int(round(x * 100)) for x in RESERVATION_LEVELS]
 # Uncontracted share of export volume: the ceiling on a reservation that respects
@@ -1331,6 +1332,19 @@ sidebar = html.Div(className='md-sidebar', children=[
                        marks={0: '0%', 0.01: '1%', 0.02: '2%', 0.05: '5%'},
                        tooltip={'placement': 'bottom', 'always_visible': True})),
 
+        slider_group('Representative days per year',
+            dcc.Slider(id='rep-slider', min=1, max=6, step=1,
+                       marks={k: str(12 * k + 1) for k in range(1, 7)},
+                       value=_REP_BINS_DEFAULT)),
+        html.Div('Load bins per month in the capacity layer, marked as the '
+                 'representative days a year they produce. ONE bin is a single monthly '
+                 'MEAN day, which flattens the load-duration curve inside the month: a '
+                 'mild day and a cold snap become one average day, though cheap southern '
+                 'gas clears the first and an import terminal the second. More bins keep '
+                 'the investment plan in step with what the 365-day dispatch layer '
+                 'actually draws, at roughly linear cost in solve time.',
+                 style={'fontSize': '11px', 'opacity': 0.7, 'marginBottom': '16px'}),
+
         html.Hr(className='md-divider'),
 
         # ── Results ───────────────────────────────────────────────────────
@@ -1561,7 +1575,7 @@ def datacentre_segment(datacentre):
 def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
                  foresight=True, discount=0.07, datacentre=None,
                  netback=False, respect_contracts=True, gsoo_exp=False,
-                 allow_imports=True):
+                 allow_imports=True, rep_bins=None):
     """Cache key for one scenario.
 
     Segment order is load-bearing — pretty_key parses it and the cached results on
@@ -1578,7 +1592,10 @@ def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
             + ('' if allow_imports else '_NoImports')
             + ('_Netback' if netback else '')
             + ('' if foresight else '_Myopic')
-            + (f'_DR{round(discount * 100)}' if foresight and abs(discount - 0.07) > 1e-9 else ''))
+            + (f'_DR{round(discount * 100)}' if foresight and abs(discount - 0.07) > 1e-9 else '')
+            # Only when it differs from the sheet, so every key solved before this
+            # lever existed stays byte-identical.
+            + (f'_Rep{rep_bins}' if rep_bins and rep_bins != _REP_BINS_DEFAULT else ''))
 
 
 def get_filtered(key, end_year):
@@ -1762,6 +1779,7 @@ def show_tab(active):
     State('winter-slider', 'value'),
     State('lng-slider',    'value'),
     State('gap-slider',    'value'),
+    State('rep-slider',    'value'),
     State('baseline-selector', 'value'),
     State('dunkelflaute-toggle', 'value'),
     State('reservation-toggle', 'value'),
@@ -1789,7 +1807,7 @@ def show_tab(active):
     progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
     prevent_initial_call=True,
 )
-def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on, resv_i,
+def run_scenario(set_progress, n_clicks, wi, li, gap, rep_bins, baseline, dunkel, resv_on, resv_i,
                  discount, foresight_v, netback_v, gsoo_exp_v, imports_v, contracts_v,
                  dc_nsw, dc_vic, dc_start, dc_file, refresh):
     w, l = LEVELS[wi], LEVELS[li]
@@ -1814,8 +1832,8 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, baseline, dunkel, resv_on,
     # Built before the solve so it can also title the terminal log.
     key = scenario_key(baseline, w, l, dunkelflaute, reservation, foresight, dr,
                        datacentre, netback, respect_contracts, gsoo_exp,
-                       allow_imports)
-    result = solve_scenario(w, l, mip_gap=gap, callback=_cb,
+                       allow_imports, rep_bins)
+    result = solve_scenario(w, l, mip_gap=gap, rep_bins=rep_bins, callback=_cb,
                             baseline=baseline, dunkelflaute=dunkelflaute,
                             discount_rate=dr, foresight=foresight,
                             reservation=reservation,
@@ -1903,6 +1921,7 @@ def _run_sweep(jobs, data, set_progress):
     Output('run-status',      'children', allow_duplicate=True),
     Input('batch-btn', 'n_clicks'),
     State('gap-slider', 'value'),
+    State('rep-slider', 'value'),
     State('baseline-selector', 'value'),
     State('discount-slider', 'value'),
     State('foresight-toggle', 'value'),
@@ -1929,7 +1948,7 @@ def _run_sweep(jobs, data, set_progress):
     progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
     prevent_initial_call=True,
 )
-def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
+def run_batch(set_progress, n_clicks, gap, rep_bins, baseline, discount, foresight_v,
               resv_on, resv_i, netback_v, gsoo_exp_v, imports_v, contracts_v,
               dc_nsw, dc_vic, dc_start, dc_file, refresh):
     # Every combination: all GSOO baselines x Winter x LNG (dunkelflaute
@@ -1962,12 +1981,13 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     jobs = []
     for b, w, l, dunkel in combos:
         key = scenario_key(b, w, l, dunkel, reservation, foresight, dr, datacentre,
-                           netback, respect_contracts, gsoo_exp, allow_imports)
+                           netback, respect_contracts, gsoo_exp, allow_imports,
+                           rep_bins)
         # Skip already-computed base combos, but always recompute the dunkelflaute
         # case so edits to the event flow through on a re-run.
         if dunkel or key not in data['all_scenarios']:
             jobs.append((key, pretty_key(key),
-                         dict(winter=w, lng=l, mip_gap=gap, baseline=b,
+                         dict(winter=w, lng=l, mip_gap=gap, rep_bins=rep_bins, baseline=b,
                               dunkelflaute=dunkel, discount_rate=dr,
                               foresight=foresight, reservation=reservation,
                               datacentre=datacentre, netback_pricing=netback,
@@ -1988,6 +2008,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     State('winter-slider', 'value'),
     State('lng-slider',    'value'),
     State('gap-slider',    'value'),
+    State('rep-slider',    'value'),
     State('dunkelflaute-toggle', 'value'),
     State('discount-slider', 'value'),
     State('foresight-toggle', 'value'),
@@ -2012,7 +2033,7 @@ def run_batch(set_progress, n_clicks, gap, baseline, discount, foresight_v,
     progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
     prevent_initial_call=True,
 )
-def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
+def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, rep_bins, dunkel,
                           discount, foresight_v, netback_v, gsoo_exp_v, imports_v,
                           contracts_v, dc_nsw, dc_vic, dc_start, dc_file, refresh):
     """Every reservation level x every GSOO baseline, at the selected Winter/LNG case.
@@ -2051,12 +2072,12 @@ def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, dunkel,
     for base, share in combos:
         key = scenario_key(base, w, l, dunkelflaute, share, foresight, dr,
                            datacentre, netback, respect_contracts, gsoo_exp,
-                           allow_imports)
+                           allow_imports, rep_bins)
         # Cached combinations are skipped, so a re-run after adding a level costs
         # one solve rather than the whole sweep. Clear Results to force a rebuild.
         if key not in data['all_scenarios']:
             jobs.append((key, pretty_key(key),
-                         dict(winter=w, lng=l, mip_gap=gap, baseline=base,
+                         dict(winter=w, lng=l, mip_gap=gap, rep_bins=rep_bins, baseline=base,
                               dunkelflaute=dunkelflaute, discount_rate=dr,
                               foresight=foresight, reservation=share,
                               datacentre=datacentre,
