@@ -451,6 +451,12 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
     # sees every year at once, so it states the limit directly as a constraint and
     # there is nothing left to iterate on.
     cap = _build_cap()
+    # THE SCARCITY RENT. Without it the myopic dispatch layer burns each cheap
+    # tranche at full rate and hits a wall the perfect-foresight MIP never saw --
+    # measured at 758 PJ/yr of shortage over 2047-50 before this was added. See
+    # capacity_model.get_scarcity_rents.
+    rents = cap.get_scarcity_rents()
+    globals()['_LAST_RENTS'] = rents
     build_year = cap.get_build_schedule()
     active_by_year = {y: {e for e, by in build_year.items() if by is not None and by <= y} for y in years}
 
@@ -463,6 +469,7 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         gm = dispatch_models[year]
         gm.builds_fixed = active_by_year[year]
         gm.cumulative_pj = cumulative
+        gm.scarcity_rent = rents
         gm.build_model()
         status = gm.solve(mip_gap=mip_gap)
         if status != "ok":
@@ -473,6 +480,10 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         yr_res['reservation_share_applied'] = applied_share
         yr_res['reservation_respects_contracts'] = respect_contracts
         yr_res['lng_reserved_tj'] = diverted_by_year[year]
+        # The scarcity rent this year faced, per supply row -- recorded like the
+        # other run metadata so a result can be read back without re-solving.
+        yr_res['scarcity_rent'] = {(n, pot): v for (n, pot, yy), v in rents.items()
+                                   if yy == year}
         cumulative = _accumulate(cumulative, yr_res)
         scenario_results.append(yr_res)
         if log:

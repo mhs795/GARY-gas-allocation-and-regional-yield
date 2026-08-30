@@ -414,3 +414,26 @@ they have most markets at $12-13/GJ through to 2027, GARY has a 2026 mean of $6.
 **To close it:** decide whether GARY should reproduce the Code as written or as observed.
 They are different models of the same policy and the difference is worth $5/GJ in the near
 term, so it should be a documented switch rather than a silent choice.
+
+## 14. Terminal-year shortage in 2050 — end-of-horizon artefact
+
+The scarcity rent fixed depletion everywhere except the final year: 2050 still shows
+**207,569 TJ** unserved at a $167/GJ mean, against **zero shortage in 2025–2049**.
+
+This is the standard finite-horizon artefact, not a data problem. The capacity MIP
+places no value on gas left in the ground after 2050, so the optimal plan is to
+exhaust the tranches exactly at the horizon — which leaves no margin for the
+difference between the MIP's representative-day accounting and the dispatch layer's
+365 real days with real peaks. The last year absorbs the whole discrepancy.
+
+Three ways out, cheapest first:
+
+1. **Document and move on.** Treat 2050 as a boundary year and do not quote it. This
+   is what the model does today.
+2. **A terminal condition** — require some fraction of each tranche to remain at the
+   horizon, so the model cannot strip-mine the last year. Methodologically the
+   cleanest: it is the salvage value the objective is currently missing.
+3. **Solve past the horizon and report short of it** — run to 2055, publish to 2050.
+   Costs ~20% more solve time and moves the artefact rather than removing it.
+
+Option 2 is the right fix. Until it is done, **2050 results are not usable.**

@@ -549,6 +549,13 @@ class GasMarketModel:
         # {(Node, IsPotential): PJ produced in every earlier year of this run}.
         # Set by the solve loop before build_model(); empty means a fresh basin.
         self.cumulative_pj = {}
+        # {(Node, IsPotential, year): $/GJ} SCARCITY RENT -- the opportunity cost of
+        # producing a PJ now rather than later, from the dual on the capacity MIP's
+        # reserve limit. Set by the solve loop alongside cumulative_pj; empty means
+        # no rent, which is the behaviour before the rent existed. A myopic
+        # year-by-year dispatch WILL burn a finite tranche cheapest-first without
+        # it -- see capacity_model.get_scarcity_rents for what that cost.
+        self.scarcity_rent = {}
         # AEMO 2026 GSOO baseline scenario: StepChange / Accelerated / SlowerGrowth.
         # Selects which per-baseline GPG & industrial demand profiles to load.
         self.baseline = baseline
@@ -871,7 +878,8 @@ class GasMarketModel:
             #
             # Cost of getting gas out of the ground, per field, per day.
             prod_cost = sum(m.production[s[0], s[1], t]
-                            * supply_dict[s]['Cost']
+                            * (supply_dict[s]['Cost']
+                               + self.scarcity_rent.get((s[0], s[1], self.year), 0.0))
                             * 1000 for s in m.Supply for t in m.T)
             # Cost of moving it: each arc's tariff x what flows down it. This is the
             # term that makes a Melbourne price differ from a Surat price.

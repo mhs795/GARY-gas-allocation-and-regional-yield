@@ -405,7 +405,81 @@ class CapacityExpansionModel:
         ok = res.solver.termination_condition in (pyo.TerminationCondition.optimal,
                                                    pyo.TerminationCondition.feasible)
         self.solved = ok
-        return "ok" if ok else str(res.solver.termination_condition)
+        if not ok:
+            return str(res.solver.termination_condition)
+        self._solve_duals()
+        return "ok"
+
+    def _solve_duals(self):
+        """Re-solve with the build decisions fixed, as a pure LP, to get duals.
+
+        Needed for the SCARCITY RENT on m.reserve_limit. Neither backend returns
+        duals while an integer variable is present, even a fixed one, so the
+        binaries are fixed at their MIP values and relaxed to Reals first --
+        the same trick model.py uses to get nodal prices out of its own MILP.
+
+        A failure here is not fatal: rents come back empty and the dispatch layer
+        falls back to bare field costs, which is the pre-rent behaviour.
+        """
+        m = self.model
+        try:
+            for e in m.Expansion:
+                for y in self.years:
+                    m.build[e, y].fix(pyo.value(m.build[e, y]))
+                    m.build[e, y].domain = pyo.Reals
+            m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
+            solvers.make_solver(time_limit=solvers.env_time_limit()).solve(m, tee=False)
+        except Exception:
+            if hasattr(m, 'dual'):
+                del m.dual
+
+    def get_scarcity_rents(self):
+        """Hotelling rent on each stock-limited supply row, {(node, is_pot, year): $/GJ}.
+
+        THE OPPORTUNITY COST OF DEPLETION, and the thing that makes a myopic
+        dispatch ration a finite resource instead of burning it cheapest-first.
+
+        Without it the two layers disagree about depletion and the disagreement is
+        fatal. This MIP has perfect foresight and a horizon-wide reserve limit, so
+        it can SPREAD a basin's reserve thinly across 26 years and never hit a wall.
+        The dispatch layer is myopic: it takes the cheapest gas first at full rate,
+        exhausts Surat's 2P by 2046 and then has nothing, because the backfill the
+        MIP saw no need to build was never built. Measured 30 Aug 2026: 758 PJ/yr
+        of shortage over 2047-50 and a $168/GJ mean price, plus a southern spike in
+        2029-30 as Otway, Gippsland and Cooper ran dry ahead of their backfill.
+
+        The dual on m.reserve_limit is exactly the missing signal: what one more PJ
+        in the ground is worth to the system. Adding it to a field's marginal cost
+        makes the cheap tranche price like the scarce thing it is, so dispatch
+        saves it for the years that value it most and the two layers agree.
+
+        The objective discounts each year, so the dual is on an NPV basis. Dividing
+        by that year's discount factor puts it back on a cash basis -- which makes
+        the rent grow at the discount rate, the Hotelling result, rather than
+        being imposed as one.
+        """
+        m = self.model
+        if not self.solved or not hasattr(m, 'dual') or not hasattr(m, 'reserve_limit'):
+            return {}
+        out = {}
+        for idx in m.reserve_limit:
+            con = m.reserve_limit[idx]
+            if con not in m.dual:
+                continue
+            # The constraint's RHS is in PJ and the objective is in dollars, so the
+            # dual is $/PJ. One PJ is 1e6 GJ, so that is the divisor -- NOT the 1000
+            # that turns TJ into GJ everywhere else in this model. Getting it wrong
+            # by that factor makes the rent 1000x too large, which prices every
+            # developed field out of the market entirely and shorts from year one.
+            # abs() because the sign convention on a <= constraint differs by
+            # backend.
+            lam = abs(float(m.dual[con])) / 1e6
+            if lam <= 0:
+                continue
+            for y in self.years:
+                df = 1.0 / ((1.0 + self.r) ** (y - self.base_year))
+                out[(idx[0], idx[1], y)] = lam / df
+        return out
 
     def get_annual_production_pj(self):
         """Implied annual production per field, ``{(node, is_potential): {year: PJ}}``.

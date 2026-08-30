@@ -232,6 +232,46 @@ a single constraint per row, which is what makes it build backfill *before* the
 tranche it replaces runs out. The old two-pass capacity solve is gone with it —
 it existed only to carry a path-dependent cost step that no longer exists.
 
+### The scarcity rent
+
+A stock limit alone is not enough, and the reason is worth understanding because it
+is a property of the two-layer design rather than of the data.
+
+The capacity MIP has **perfect foresight** and one horizon-wide reserve constraint,
+so it can *ration*: spread Surat's 28,911 PJ thinly across 26 years and never hit a
+wall. The dispatch layer is **myopic** — it solves one year at a time and takes the
+cheapest gas first at full rate. So it exhausted Surat's 2P by 2046 and then had
+nothing, because the backfill the MIP saw no need to build was never built.
+
+Measured on 30 Aug 2026, before the fix:
+
+| | |
+|---|---|
+| 2029–30 | southern spike as Otway, Gippsland and Cooper ran dry ahead of their backfill — 50,371 TJ short, Melbourne $238/GJ |
+| 2047–50 | **758,248 TJ short every year**, mean price $168/GJ, as Surat's 2P went and Bowen Gas Project had not been built |
+
+The missing signal is the **opportunity cost of depletion**. A myopic dispatch facing
+no cost for using up a finite resource will always burn it cheapest-first. The dual
+on the MIP's `reserve_limit` is exactly that cost — what one more PJ in the ground is
+worth to the system — and adding it to the field's marginal cost makes the cheap
+tranche price like the scarce thing it is.
+
+`get_scarcity_rents()` extracts it by fixing the build binaries, relaxing them to
+Reals and re-solving as a pure LP (neither backend returns duals while an integer
+variable is present, even a fixed one — the same trick `model.py` uses for nodal
+prices). The MIP objective discounts each year, so the dual is on an NPV basis;
+dividing by the year's discount factor puts it back on a cash basis, which makes the
+rent **grow at the discount rate**. That is the Hotelling result for an exhaustible
+resource, arrived at rather than imposed.
+
+It also puts the late-horizon price rise where it economically belongs. Capital is no
+longer in the marginal cost, so the thing that lifts prices as the cheap tranches
+deplete is scarcity rent on a finite resource — not a cost step bolted onto a basin.
+
+> **`--myopic` does not get a rent.** That mode runs no capacity MIP, so there is no
+> reserve dual to take. It will burn each tranche cheapest-first and hit the wall
+> described above. Treat its late-horizon results accordingly.
+
 ### Why the stock limit works now and did not before
 
 It was tried on 28 Aug 2026 and reverted the same day: Iona went to zero by 2036,
