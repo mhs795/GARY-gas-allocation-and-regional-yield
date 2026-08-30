@@ -2,7 +2,8 @@
 
 [← back to README](../../README.md)
 
-**Status: open.** Started 30 Aug 2026. Every test is recorded here, failures included,
+**Status: RESOLVED 31 Aug 2026** — the capacity MIP was treating gas storage as a
+free annual supply source. Cause and fix in T7/T8 below. Started 30 Aug 2026. Every test is recorded here, failures included,
 so nothing gets retried by accident.
 
 ## The symptom
@@ -177,9 +178,9 @@ than a synthetic average and costs nothing in solve time or annual energy. **But
 demonstrated no measurable benefit**, so it is complexity carried on principle rather
 than on evidence — revert it to `mean` if that trade is not wanted.
 
-### T7 — storage chronology · IN PROGRESS
+### T7 — storage chronology · **CONFIRMED — THIS IS THE BUG**
 
-### T7 — storage chronology · IN PROGRESS
+### T7 — storage chronology · **CONFIRMED — THIS IS THE BUG**
 
 *Hypothesis, and it now looks stronger than T6.* Representative days are **not
 chronological**, so seasonal storage cannot be represented. Dispatch cycles Iona and
@@ -193,3 +194,55 @@ have stores, which is the pattern T5 measured.
 *Method.* Compare annual injection and withdrawal at Iona and Moomba, MIP against
 dispatch, alongside corridor utilisation (the T5 corridor block crashed on a column
 name — the results frame uses `Arc`, not `Name`).
+
+
+*Result.* Annual storage flows, PJ:
+
+| year | node | injection (MIP \| dispatch) | withdrawal (MIP \| dispatch) |
+|---|---|---|---|
+| 2030 | Moomba | **0.0** \| 7.8 | **35.0** \| 7.8 |
+| 2031 | Iona | **0.0** \| 14.0 | **12.2** \| 14.0 |
+| 2031 | Silver Springs | **0.0** \| 0.3 | **3.7** \| 0.3 |
+
+**The MIP injected exactly zero into every store, in every year, and withdrew anyway.**
+The withdrawals sit exactly on the constraint: Moomba 70,000 TJ × `STORAGE_OPENING` 0.5
+= 35.0 PJ, Iona 24,400 × 0.5 = 12.2 PJ, Silver Springs rate-limited by its 10 TJ/d
+withdrawal. **50.9 PJ/yr of gas that never had to be produced**, against a measured
+divergence of ~44 PJ/yr.
+
+*Cause.* `stor_annual` bounded **net** withdrawal at `STORAGE_OPENING × capacity` and
+never required the store to be refilled. Applied per year, it let the MIP drain half of
+Moomba and half of Iona every year, forever. Dispatch cannot: its inventory returns to
+its opening level, so injection equals withdrawal exactly.
+
+*Why every earlier test came back empty.* This is a missing constraint, not a sampling
+defect — so resolution (T2), day-selection realism (T6) and solver tolerance (T1) could
+never touch it. Totals matched (T4) because the MIP served the same demand; it simply
+did not have to **produce** ~51 PJ of it. And capping dispatch (T3) made things worse
+because it forced dispatch onto a plan built on gas that does not exist.
+
+### T8 — the fix · **VERIFIED**
+
+*Change.* `stor_annual` now requires annual net withdrawal to be **zero**, which is what
+dispatch already does. A store moves gas *within* a year; it is not a source of gas.
+
+| | before | after |
+|---|---|---|
+| MIP net withdrawal | 35.0 / 12.2 / 3.7 PJ | **0.00 at every store, every year** |
+| southern gap 2029 | 287 \| 331 (−15%) | **338 \| 331 (+2%)** |
+| southern gap 2031 | 223 \| 267 (−19%) | **274 \| 267 (+3%)** |
+| Melbourne 2033 | **$24.39** | **$11.95** |
+| shortage | 16,008 TJ in 2032 (at 13 days) | **zero, every year** |
+| builds | 12, unchanged across every test | **13 — `Vopak_Victoria_FSRU` built** |
+
+The gap **changes sign** rather than merely shrinking: the MIP now plans slightly more
+than dispatch draws, the expected direction given representative-day weights sum to 370
+against 365.
+
+And the build list changed for the first time in the investigation. The Geelong FSRU
+that should always have been built — 750 TJ/d straight into Melbourne, against three
+years of $24 prices — now is. With ~51 PJ/yr of phantom storage gas removed, the
+capacity layer finally sees the scarcity dispatch was experiencing.
+
+The 2033–35 price bump is gone: Melbourne $24.39 → **$11.95**, and the whole horizon
+now runs $10.50–$12.81.

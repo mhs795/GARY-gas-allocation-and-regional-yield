@@ -15,7 +15,7 @@ import pyomo.environ as pyo
 
 import params as P
 import solvers
-from model import (IMPORT_NODES, LNG_NODES, STORAGE_CYCLE_COST, STORAGE_OPENING,
+from model import (IMPORT_NODES, LNG_NODES, STORAGE_CYCLE_COST,
                    VOLL_PER_GJ,
                    _declined_capacity, _reserves_pj)
 
@@ -269,7 +269,6 @@ class CapacityExpansionModel:
         arc_data = self.arcs.set_index('Name').to_dict('index')
         supply_dict = self.supply.set_index(['Node', 'IsPotential']).to_dict('index')
         exp_data = self.expansion.set_index('Name').to_dict('index')
-        storage_caps = self.nodes.set_index('Name')['StorageCapacity'].to_dict()
         df = {y: 1.0 / ((1 + self.r) ** (y - self.base_year)) for y in Y}
         wt = {(y, i): self.rep[y][i]['weight'] for (y, i) in YR}
 
@@ -515,11 +514,32 @@ class CapacityExpansionModel:
             m.withdrawal[sn, y, i] <= float(wd_max.get(sn, 0) or 0))
         m.stor_inj = pyo.Constraint(m.StorageNodes, m.YR, rule=lambda m, sn, y, i:
             m.injection[sn, y, i] <= float(inj_max.get(sn, 0) or 0))
-        # Net annual withdrawal cannot exceed what the store held to begin with:
-        # the investment layer's equivalent of the dispatch layer's closed year.
+        # THE YEAR IS CLOSED: a store must be refilled with exactly what it gave up.
+        #
+        # This used to bound NET withdrawal at STORAGE_OPENING x capacity, which was
+        # meant as "the investment layer's equivalent of the dispatch layer's closed
+        # year" and is not that at all. It permits a store to be drained without ever
+        # being filled, and because the bound applies per year it permits that EVERY
+        # year -- so the MIP believed it could take half of Moomba and half of Iona
+        # out of the ground, annually, forever.
+        #
+        # Measured 30 Aug 2026, that is exactly what it did: injection 0.0 PJ into
+        # every store in every year, against withdrawals of 35.0 PJ from Moomba
+        # (70,000 TJ x 0.5), 12.2 from Iona (24,400 x 0.5) and 3.7 from Silver Springs
+        # (rate-limited) -- 50.9 PJ/yr of gas that never had to be produced. Dispatch
+        # cannot do that: its inventory returns to its opening level, so its injection
+        # equals its withdrawal exactly.
+        #
+        # That free gas is the whole divergence. The MIP planned ~44 PJ/yr LESS
+        # production than dispatch drew, concentrated on Iona and Moomba -- the only
+        # two supply rows with a store attached -- which exhausted the southern
+        # tranches a year early and left a hole the MIP never saw. 50.9 against 44.
+        #
+        # Netting to zero is what dispatch does, so the two layers now agree about
+        # what a store is: a way to move gas WITHIN a year, not a source of it.
         m.stor_annual = pyo.Constraint(m.StorageNodes, Y, rule=lambda m, sn, y:
             pyo.quicksum((m.withdrawal[sn, y, i] - m.injection[sn, y, i]) * wt[y, i]
-                         for (yy, i) in YR if yy == y) <= STORAGE_OPENING * storage_caps.get(sn, 0))
+                         for (yy, i) in YR if yy == y) == 0.0)
 
     def solve(self, mip_gap=0.005):
         opt = solvers.make_solver(rel_gap=mip_gap if mip_gap is not None else 0.005,
