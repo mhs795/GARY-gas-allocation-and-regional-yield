@@ -913,6 +913,16 @@ app.index_string = f"""<!DOCTYPE html>
 </html>"""
 
 LEVELS = ['Low', 'Medium', 'High']
+
+# Dashboard opening positions, off the Parameters sheet rather than literals here,
+# so the workbook stays the single place a default is set. WINTER OPENS ON LOW: it
+# used to open on Medium, which is a 1.5x stress case, so every headline figure was
+# a stressed run unless someone moved the slider.
+_WINTER_DEFAULT_IX = LEVELS.index(P.get_str('winter_default', 'Low')) \
+    if P.get_str('winter_default', 'Low') in LEVELS else 0
+_LNG_DEFAULT_IX = LEVELS.index(P.get_str('lng_default', 'Medium')) \
+    if P.get_str('lng_default', 'Medium') in LEVELS else 1
+_MIP_GAP_DEFAULT = P.get('mip_gap_default', 0.005)
 # Domestic gas reservation shares offered by the slider, as whole percents.
 RESERVATION_PCTS = [int(round(x * 100)) for x in RESERVATION_LEVELS]
 # Uncontracted share of export volume: the ceiling on a reservation that respects
@@ -1168,18 +1178,22 @@ sidebar = html.Div(className='md-sidebar', children=[
 
         slider_group('Southern Winter Stress',
             dcc.Slider(id='winter-slider', min=0, max=2, step=1,
-                       marks={i: l for i, l in enumerate(LEVELS)}, value=1)),
+                       marks={i: l for i, l in enumerate(LEVELS)},
+                       value=_WINTER_DEFAULT_IX)),
         html.Div('Multiplies Melbourne / Adelaide / Sydney distribution demand over '
-                 'the winter window. \u2039Low\u203a is the GSOO-consistent case at '
-                 '1.0\u00d7; \u2039Medium\u203a (1.5\u00d7, the default) and '
+                 'the winter window. \u2039Low\u203a (1.0\u00d7, the default) is the '
+                 'GSOO-consistent case; \u2039Medium\u203a (1.5\u00d7) and '
                  '\u2039High\u203a (2.2\u00d7) are stress cases layered on top of it, '
-                 'not alternative forecasts.',
+                 'not alternative forecasts. Medium puts annual domestic energy '
+                 '8\u201312% above the GSOO and Melbourne\u2019s peak day at ~1.8\u00d7 '
+                 'AEMO\u2019s VIC RC&I peak.',
                  style={'marginTop': '-14px', 'marginBottom': '18px',
                         'fontSize': '10px', 'color': '#888', 'lineHeight': '1.35'}),
 
         slider_group('Global LNG Market',
             dcc.Slider(id='lng-slider', min=0, max=2, step=1,
-                       marks={i: l for i, l in enumerate(LEVELS)}, value=1)),
+                       marks={i: l for i, l in enumerate(LEVELS)},
+                       value=_LNG_DEFAULT_IX)),
         html.Div('Scales export volume when netback pricing is off. With it on, '
                  'it selects the netback price path instead \u2014 Low = Accelerated '
                  'Transition, Medium = this run\'s baseline, High = Slower Growth.',
@@ -1311,7 +1325,8 @@ sidebar = html.Div(className='md-sidebar', children=[
                        tooltip={'placement': 'bottom', 'always_visible': True})),
 
         slider_group('Optimality Gap',
-            dcc.Slider(id='gap-slider', min=0, max=0.05, step=0.001, value=0.01,
+            dcc.Slider(id='gap-slider', min=0, max=0.05, step=0.001,
+                       value=_MIP_GAP_DEFAULT,
                        marks={0: '0%', 0.01: '1%', 0.02: '2%', 0.05: '5%'},
                        tooltip={'placement': 'bottom', 'always_visible': True})),
 
@@ -1538,6 +1553,8 @@ def datacentre_segment(datacentre):
     # wants an 'S' -- so their order in the key is free.
     return ('_DCS' + (datacentre.get('label')
                       or datacentre_series.label(datacentre.get('source')))) + cell
+
+
 
 
 def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,

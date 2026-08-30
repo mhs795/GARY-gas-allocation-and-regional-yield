@@ -97,6 +97,22 @@ PARAMETERS = [
      "own number, not a source. Read by both the dispatch model and the capacity "
      "MIP so the two layers value a store identically."),
 
+    ("Dashboard defaults", "winter_default", "Low", "level",
+     "Winter stress level the dashboard opens on. LOW is the GSOO-consistent case "
+     "(multiplier 1.0). It used to open on Medium, which is a 1.5x STRESS case -- "
+     "8-12% above GSOO annual energy with Melbourne's peak day at ~1.8x AEMO's VIC "
+     "RC&I peak -- so every headline figure was a stressed run unless someone moved "
+     "the slider."),
+    ("Dashboard defaults", "lng_default", "Medium", "level",
+     "Global LNG price level the dashboard opens on. Under netback pricing this lever "
+     "selects a PRICE path, not an export volume: Medium is the run's own GSOO "
+     "scenario path, so it is the internally consistent choice."),
+    ("Dashboard defaults", "mip_gap_default", 0.005, "fraction",
+     "Relative MIP gap for the capacity layer. Matches solve_scenario's own default; "
+     "the dashboard slider used to open at 0.01, a wider tolerance than any headless "
+     "run used. That matters more since field developments carry derived CapEx in the "
+     "tens of billions -- 1% of the objective is enough to hide a build decision."),
+
     ("Capacity model", "discount_rate_default", 0.07, "fraction",
      "NPV discount rate for the perfect-foresight capacity MIP"),
     ("Capacity model", "peak_day_weight", 5.0, "days",
