@@ -415,25 +415,46 @@ they have most markets at $12-13/GJ through to 2027, GARY has a 2026 mean of $6.
 They are different models of the same policy and the difference is worth $5/GJ in the near
 term, so it should be a documented switch rather than a silent choice.
 
-## 14. Terminal-year shortage in 2050 — end-of-horizon artefact
+## 14. Terminal-year shortage — PAPERED OVER, not fixed
 
-The scarcity rent fixed depletion everywhere except the final year: 2050 still shows
-**207,569 TJ** unserved at a $167/GJ mean, against **zero shortage in 2025–2049**.
+A finite-horizon model exhausts its reserve tranches exactly at the last year it can
+see: gas left in the ground past the horizon is worth nothing to the objective. That
+last year then absorbs every accounting discrepancy between the capacity layer's
+representative days and the dispatch layer's 365 real days, and shows shortage at
+value-of-lost-load. Measured 30 Aug 2026: **207,569 TJ** in 2050, against **zero in
+2025-2049**.
 
-This is the standard finite-horizon artefact, not a data problem. The capacity MIP
-places no value on gas left in the ground after 2050, so the optimal plan is to
-exhaust the tranches exactly at the horizon — which leaves no margin for the
-difference between the MIP's representative-day accounting and the dispatch layer's
-365 real days with real peaks. The last year absorbs the whole discrepancy.
+**Current treatment.** The model SOLVES to `horizon_end` (2051) and REPORTS to
+`horizon_report_end` (2050), so the artefact lands in a year nobody reads. The extra
+year is not wasted — it sits inside the capacity MIP's foresight, so builds and
+scarcity rents are struck against it. But this moves the artefact; it does not remove
+it, and 2051 would show the same shortage if anyone looked.
 
-Three ways out, cheapest first:
+**The proper fix is a terminal salvage value** on reserves remaining at the horizon,
+so the objective stops valuing leftover gas at zero. Tried on 30 Aug 2026 and
+reverted, for a reason worth recording:
 
-1. **Document and move on.** Treat 2050 as a boundary year and do not quote it. This
-   is what the model does today.
-2. **A terminal condition** — require some fraction of each tranche to remain at the
-   horizon, so the model cannot strip-mine the last year. Methodologically the
-   cleanest: it is the salvage value the objective is currently missing.
-3. **Solve past the horizon and report short of it** — run to 2055, publish to 2050.
-   Costs ~20% more solve time and moves the artefact rather than removing it.
+* Anchored on the published landed import cost ($12.29/GJ in 2050), it cut the 2050
+  shortage 207,569 -> 139,736 TJ but **collapsed the scarcity rents to a flat $2.26
+  for every row** — exactly `df[2050] x 12.29`, the salvage floor. The reserve duals
+  went to ~zero, so the salvage term had *displaced* the scarcity signal rather than
+  complementing it. Without it the rents differentiate properly: Gippsland $4.26,
+  Surat $3.14, Otway $2.75, Cooper $1.45, Amadeus $1.29. A flat rent cannot tell
+  nearly-exhausted Otway from abundant Surat, which is the whole point.
 
-Option 2 is the right fix. Until it is done, **2050 results are not usable.**
+So the salvage anchor is too high relative to the duals it has to coexist with. The
+next thing to try is a lower, still-sourced anchor — the export netback rather than
+landed import parity, or the tranche's own cost.
+
+**Two dead ends already ruled out, so nobody repeats them:**
+
+1. *Normalising the representative-day weights.* A year's weights sum to ~370, not
+   365, so the MIP books ~1.4% more production against each reserve than dispatch
+   draws. Scaling that to 365 made 2050 **worse** (139,736 -> 480,425 TJ): the
+   over-booking makes the MIP conservative, and loosening it let the MIP plan more
+   production than dispatch could sustain. The 1.4% errs in the safe direction.
+2. *Extending the horizon to 2070 and reporting to 2050.* Mechanically it works, but
+   AEMO's demand data ends at **2045** and ACIL Allen's last price anchor is **2050**,
+   so it means inventing ~25 years of both — the model's two most important drivers —
+   and it would change the 2050 answer rather than clean it up. One extra year is a
+   flat hold on published data; twenty-five is a forecast GARY has no basis for.

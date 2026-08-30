@@ -36,7 +36,6 @@ is dear), and DOMESTIC RESERVATION (export volume withheld and offered at $0).
 import pyomo.environ as pyo
 import pandas as pd
 import os
-import re
 
 import datacentre_series
 import params as P
@@ -925,6 +924,8 @@ class GasMarketModel:
 
         arcs_to = {n: [a for a in m.Arcs if arc_data[a]['To'] == n] for n in m.Nodes}
         arcs_from = {n: [a for a in m.Arcs if arc_data[a]['From'] == n] for n in m.Nodes}
+
+        # Fields sitting at each node, for the balance constraint below.
         supply_at = {n: [s for s in m.Supply if s[0] == n] for n in m.Nodes}
 
         def balance_rule(m, n, t):
@@ -992,7 +993,6 @@ class GasMarketModel:
                 0.0, ind_dem.get((n, t), 0) - dc_dem.get((n, t), 0)))
 
         def supply_cap_rule(m, node, is_pot, t):
-            cap = supply_dict[node, is_pot]['Capacity']
             if is_pot:
                 rel_exp = [e for e in m.Expansion if exp_data[e]['Type'] == 'Terminal' and exp_data[e]['Target'] == node]
                 # Sum over every terminal fronting this node rather than taking the
@@ -1159,7 +1159,6 @@ class GasMarketModel:
         # demand nodes too, but their volume is an export commitment.
         dist_nodes = sorted({n for (n, _), v in demand_dict.items()
                              if v > 0 and n not in LNG_NODES and n in set(m.Nodes)})
-        supply_at = {n: [s for s in m.Supply if s[0] == n] for n in m.Nodes}
 
         pv = m.production.get_values()
         fv = m.flow.get_values()

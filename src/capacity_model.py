@@ -16,7 +16,7 @@ import pyomo.environ as pyo
 import params as P
 import solvers
 from model import (IMPORT_NODES, LNG_NODES, STORAGE_CYCLE_COST, STORAGE_OPENING,
-                   VOLL_PER_GJ, WINTER_DAYS,
+                   VOLL_PER_GJ,
                    _declined_capacity, _reserves_pj)
 
 # Day-of-year (1..365, non-leap) -> calendar month.
@@ -252,6 +252,22 @@ class CapacityExpansionModel:
                     m.build[e, y] for y in Y if y <= max(_earliest(e), Y[0])) == 1)
 
         # --- NPV objective ---------------------------------------------------
+        # Annual production against a reserve, PJ. The representative-day weights
+        # sum to ~370 rather than 365 -- the annual peak day carries PEAK_DAY_WEIGHT
+        # on top of twelve full months -- so this books ~1.4% MORE production against
+        # every reserve than the 365-day dispatch layer will actually draw.
+        #
+        # That is deliberately LEFT ALONE. Over-booking makes the MIP conservative:
+        # it plans as though reserves deplete slightly faster than they will, so
+        # dispatch finds gas spare rather than short. Normalising it to 365 was tried
+        # on 30 Aug 2026 and made the terminal year WORSE -- 2050 shortage went from
+        # 139,736 TJ to 480,425 -- because a looser constraint let the MIP plan more
+        # production and dispatch then drained the tranche sooner. The 1.4% errs in
+        # the safe direction; do not "fix" it.
+        def _annual_pj(m, node, is_pot):
+            return pyo.quicksum(m.production[node, is_pot, y, i] * wt[y, i]
+                                for (y, i) in YR) / 1000.0
+
         def obj_rule(m):
             def _supply_cost(s_, y):
                 """Field cost, $/GJ. One tranche, one cost -- see model.py.
@@ -316,7 +332,6 @@ class CapacityExpansionModel:
                 0.0, rd(y, i)['ind'].get(n, 0) - rd(y, i).get('dc', {}).get(n, 0)))
 
         def supply_cap_rule(m, node, is_pot, y, i):
-            cap = supply_dict[node, is_pot]['Capacity']
             if is_pot:
                 rel = [e for e in m.Expansion if exp_data[e]['Type'] == 'Terminal' and exp_data[e]['Target'] == node]
                 # SUM over the relevant terminals, not just the first. Two rival
@@ -352,11 +367,14 @@ class CapacityExpansionModel:
         stock_rows = [s for s in m.Supply if _reserves_pj(supply_dict[s]) is not None]
 
         def reserve_rule(m, node, is_pot):
-            return (pyo.quicksum(m.production[node, is_pot, y, i] * wt[y, i]
-                                 for (y, i) in YR) / 1000.0
-                    <= _reserves_pj(supply_dict[node, is_pot]))
-        m.reserve_limit = pyo.Constraint(
-            pyo.Set(initialize=stock_rows, dimen=2), rule=reserve_rule)
+            return _annual_pj(m, node, is_pot) <= _reserves_pj(supply_dict[node, is_pot])
+        # The index set must be ATTACHED to the model. Passing an inline
+        # pyo.Set(...) as a Constraint index leaves it unconstructed, and only part
+        # of it came back: 6 of 11 rows got reserve constraints, and the five
+        # missing ones were every DEVELOPED (2P) row -- including Surat's, the
+        # tranche that actually runs out. They faced no opportunity cost at all.
+        m.StockRows = pyo.Set(initialize=stock_rows, dimen=2)
+        m.reserve_limit = pyo.Constraint(m.StockRows, rule=reserve_rule)
 
         # Exports draw only on commercial gas, so the free reserved gas cannot
         # simply flow to the trains. See the header block in model.py.
@@ -464,8 +482,9 @@ class CapacityExpansionModel:
         out = {}
         for idx in m.reserve_limit:
             con = m.reserve_limit[idx]
-            if con not in m.dual:
-                continue
+            # A non-binding reserve constraint can be absent from the dual suffix
+            # entirely; absent means a zero dual, not a missing row.
+            lam_raw = float(m.dual[con]) if con in m.dual else 0.0
             # The constraint's RHS is in PJ and the objective is in dollars, so the
             # dual is $/PJ. One PJ is 1e6 GJ, so that is the divisor -- NOT the 1000
             # that turns TJ into GJ everywhere else in this model. Getting it wrong
@@ -473,7 +492,7 @@ class CapacityExpansionModel:
             # developed field out of the market entirely and shorts from year one.
             # abs() because the sign convention on a <= constraint differs by
             # backend.
-            lam = abs(float(m.dual[con])) / 1e6
+            lam = abs(lam_raw) / 1e6
             if lam <= 0:
                 continue
             for y in self.years:

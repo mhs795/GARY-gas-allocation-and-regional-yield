@@ -107,7 +107,9 @@ ANCHORS_FILE = "acil_lng_anchors.csv"
 PARAMS_FILE = "acil_lng_params.csv"
 OUT_FILE = "lng_prices.csv"
 
-YEARS = range(2025, 2051)
+# Follows the workbook horizon rather than a literal, so extending the solved
+# horizon does not silently leave the price series a year short of the demand.
+YEARS = range(P.get_int("horizon_start", 2025), P.get_int("horizon_end", 2051) + 1)
 
 # ACIL Allen Table 2.1 / B.7, "Price of LNG injected into ECGM". Reproducing this
 # is the check that the shipping and regasification adders are being applied the

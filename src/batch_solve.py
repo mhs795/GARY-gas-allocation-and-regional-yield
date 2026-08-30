@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 import os
 import results_io
 from model import GasMarketModel
@@ -63,7 +62,7 @@ def run_batch(baselines=("StepChange", "Accelerated", "SlowerGrowth"),
                     baseline=baseline
                     )
                     model.build_model()
-                    solve_status = model.solve()
+                    model.solve()
 
                     year_results = model.get_results()
                     if not year_results['solved']:

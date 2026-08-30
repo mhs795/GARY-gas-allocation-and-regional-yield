@@ -23,7 +23,6 @@ import os
 import pandas as pd
 
 import params as P
-import numpy as np
 
 BASE = os.path.dirname(__file__)
 DATA = os.path.join(BASE, "data")

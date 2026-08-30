@@ -20,7 +20,11 @@ def _lever(lever, level, default):
 
 
 HORIZON_START = P.get_int('horizon_start', 2025)
-HORIZON_END = P.get_int('horizon_end', 2050)
+HORIZON_END = P.get_int('horizon_end', 2051)
+# Last year anyone SEES. The model solves one year past it so the terminal-year
+# artefact -- a finite horizon exhausts its tranches exactly at the last year it can
+# see -- lands outside the reported range instead of inside it. See TODO item 14.
+HORIZON_REPORT_END = P.get_int('horizon_report_end', 2050)
 
 # Which Source value in expansion_options.csv counts as "in the GSOO".
 GSOO_SOURCE = P.get_str('expansion_source_gsoo', 'GSOO')
@@ -290,13 +294,36 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
                                           allow_import_terminals)
     years = list(range(HORIZON_START, HORIZON_END + 1))
     if foresight:
-        return _solve_foresight(data, years, winter, lng, baseline,
-                                dunkelflaute, mip_gap, discount_rate, callback,
-                                reservation, log, datacentre,
-                                netback_pricing, respect_contracts)
-    return _solve_myopic(data, years, winter, lng, baseline,
-                         dunkelflaute, mip_gap, callback, reservation, log, datacentre, netback_pricing,
-                         respect_contracts)
+        results = _solve_foresight(data, years, winter, lng, baseline,
+                                   dunkelflaute, mip_gap, discount_rate, callback,
+                                   reservation, log, datacentre,
+                                   netback_pricing, respect_contracts)
+    else:
+        results = _solve_myopic(data, years, winter, lng, baseline,
+                                dunkelflaute, mip_gap, callback, reservation, log,
+                                datacentre, netback_pricing, respect_contracts)
+    return _trim_to_report_horizon(results)
+
+
+def _trim_to_report_horizon(results):
+    """Drop the years solved past ``horizon_report_end`` before anyone sees them.
+
+    The model solves to HORIZON_END and reports to HORIZON_REPORT_END, one year
+    short. A finite-horizon model exhausts its reserve tranches exactly at the last
+    year it can see -- gas left in the ground past the horizon is worth nothing to
+    the objective -- so that year absorbs every accounting discrepancy between the
+    capacity layer's representative days and the dispatch layer's 365 real days, and
+    shows shortage at value-of-lost-load. Measured 30 Aug 2026 at 207,569 TJ.
+
+    Solving one year long does not FIX that; it moves it into a year nobody reads,
+    which is the standard treatment for a terminal-condition artefact. The proper
+    fix is a salvage value on remaining reserves -- tried and reverted the same day,
+    see TODO item 14 -- so this stays until that lands.
+
+    The extra year still does real work: it is in the capacity MIP's foresight, so
+    builds and scarcity rents are struck against it.
+    """
+    return [r for r in results if r.get('Year', 0) <= HORIZON_REPORT_END]
 
 
 def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,

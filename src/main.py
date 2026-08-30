@@ -1,6 +1,5 @@
 import argparse
 import pandas as pd
-import os
 
 import solvers
 from scenarios import run_base_case, run_high_winter_demand, run_high_lng_demand

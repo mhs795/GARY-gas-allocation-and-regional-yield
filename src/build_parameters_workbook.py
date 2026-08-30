@@ -28,7 +28,16 @@ WORKBOOK = os.path.join(DATA, "gary_parameters.xlsx")
 # (Group, Parameter, Value, Unit, Source/Note)
 PARAMETERS = [
     ("Horizon", "horizon_start", 2025, "year", "First modelled year"),
-    ("Horizon", "horizon_end", 2050, "year", "Last modelled year"),
+    ("Horizon", "horizon_end", 2051, "year",
+     "Last SOLVED year. One year beyond horizon_report_end on purpose: a "
+     "finite-horizon model exhausts its reserve tranches exactly at the last year it "
+     "can see, so that year absorbs every accounting discrepancy and shows shortage. "
+     "Solving one year past the reporting horizon pushes that artefact into a year "
+     "nobody reads."),
+    ("Horizon", "horizon_report_end", 2050, "year",
+     "Last year PRESENTED. Results beyond this are solved but trimmed off before they "
+     "reach the dashboard or a caller -- see solve.solve_scenario. Keep it strictly "
+     "below horizon_end."),
 
     ("Value of lost load", "voll_per_gj", 300.0, "A$/GJ",
      "Price on unserved must-serve gas. NOTE the National Gas Rules set VoLL at "
