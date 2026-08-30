@@ -4,6 +4,7 @@
 
 Every lever, what it does mechanically, and what it does to the answer.
 
+- [The standard scenario set](#the-standard-scenario-set)
 - [Baselines](#baselines)
 - [Southern winter stress](#southern-winter-stress)
 - [Global LNG market](#global-lng-market)
@@ -11,6 +12,51 @@ Every lever, what it does mechanically, and what it does to the answer.
 - [Gas reservation](#gas-reservation)
 - [Data centre gas demand](#data-centre-gas-demand)
 - [Scenario keys and the cache](#scenario-keys-and-the-cache)
+
+---
+
+## The standard scenario set
+
+`src/run_standard_set.py` solves these sixteen and writes them to the results cache.
+They replace the 3×3×3 grid `regen_results.py` produces, which spent 18 of its 27 runs
+on winter multipliers and never touched the import-terminal, expansion-filter or data
+centre axes — the ones that discriminate now that supply is stock-limited and export
+volume becomes contestable in 2036.
+
+```bash
+python src/run_standard_set.py            # solve all sixteen
+python src/run_standard_set.py --keep     # skip keys already cached
+python src/run_standard_set.py --list     # print the set and exit
+```
+
+| # | Block | Baseline | Winter | LNG | Other levers | What it tells you |
+|---|---|---|---|---|---|---|
+| **1** | outlook | Step Change | Medium | Medium | — | **The reference case.** Central GSOO demand on its own price path |
+| 2 | outlook | Accelerated | Medium | Medium | — | Fast transition |
+| 3 | outlook | Slower Growth | Medium | Medium | — | Slow transition; the netback hits the $12 Code cap 2040–50 |
+| 4 | outlook | Step Change | Medium | **Low** | — | Weak global LNG price — does export stop before 2036? |
+| 5 | outlook | Step Change | Medium | **High** | — | Strong global price |
+| **6** | weather | Step Change | **Low** | Medium | — | **Warm winter (0.91×)** — how much it lowers prices |
+| 7 | weather | Step Change | **High** | Medium | — | Cold stress (1.5×), the peak-day adequacy test |
+| 8 | weather | Step Change | Medium | Medium | SA Dunkelflaute 2027 | Wind drought; sits inside the 0.93 contract era |
+| **9** | structural | Step Change | Medium | Medium | **no import terminals** | Imports are the only thing capping southern prices — remove them and the south inherits Queensland's rent dynamic |
+| 10 | structural | Step Change | Medium | Medium | GSOO expansions only | Drops NEAP, `Cooper_2C`, `Amadeus_2C` and the market-scan pipelines |
+| 11 | structural | Step Change | Medium | Medium | 20% reservation | Confirms it can only deliver 7% while the foundation SPAs run |
+| 12 | datacentre | Step Change | Medium | Medium | data centres (NSW series) | The reference plus firm compute load |
+| 13 | datacentre | Step Change | **High** | Medium | data centres (NSW series) | Peak coincidence — data centre load cannot shed, so it goes to VOLL rather than a strike |
+| 14 | datacentre | Step Change | Medium | Medium | no imports + data centres | The real data centre stress: firm load with no import price cap |
+| **15** | reservation | Step Change | Medium | Medium | **20% reservation, breaks contracts** | What 20% actually does before 2036 |
+| **16** | reservation | Step Change | Medium | Medium | **20% reservation, breaks contracts** + data centres | The same, with firm compute load |
+
+**Pairs that are meant to be read against each other.** 15 against 1, and 16 against 12,
+isolate the reservation — those pairs differ by nothing else. 11 against 15 shows what the
+contract cap costs: the same 20% slider, respected (delivers 7%) and broken (delivers 20%).
+6 · 1 · 7 is the weather spread, 0.91× / 1.0× / 1.5×.
+
+> Every run has netback pricing **on**. It is the default and the documented ACIL Allen
+> methodology, and with the supply side stock-limited it is no longer safe to turn off:
+> without the netback ceiling the trains revert to must-serve demand at any price, and
+> export demand bids a depleting resource up to value of lost load.
 
 ---
 
