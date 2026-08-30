@@ -28,6 +28,18 @@ for _mo in range(1, 13):
             _MONTH_OF_DAY[_d] = _mo
             _d += 1
 
+def _salvage_rate(row, backstop):
+    """What one GJ still in the ground is worth at the horizon, $/GJ.
+
+    The backstop price less this row's own extraction cost, floored at zero: a
+    tranche that costs more to lift than the substitute costs to buy is worth
+    nothing in the ground. Netting is what makes the credit differ by basin.
+    """
+    if not backstop:
+        return 0.0
+    return max(0.0, float(backstop) - float(row['Cost']))
+
+
 # Days represented by the annual peak day (adequacy).
 PEAK_DAY_WEIGHT = P.get('peak_day_weight', 5.0)
 
@@ -93,6 +105,7 @@ class CapacityExpansionModel:
                  lng_arcs=(), lng_source=(), netback_by_year=None,
                  import_cost_by_year=None, lng_nameplate=None, foundation_share=0.0,
                  reservation_applied=0.0, respect_contracts=True,
+                 salvage_price=None,
                  ):
         self.nodes, self.arcs, self.supply, self.expansion = nodes_df, arcs_df, supply_df, expansion_df
         self.years = list(years)
@@ -120,7 +133,20 @@ class CapacityExpansionModel:
         # stays must-serve demand, the spot tail bids at the netback up to spare
         # liquefaction capacity.
         self.lng_nameplate = dict(lng_nameplate or {})
-        self.foundation_share = float(foundation_share)
+        # {year: share} or a scalar. The take-or-pay share is TIME-VARYING because
+        # the contracts are: ACCC has the Queensland foundation SPAs expiring from
+        # 2031 with a sharp drop after 2035, so must-serve export demand disappears
+        # mid-horizon and the rest becomes contestable. Holding one scalar across
+        # 26 years is what let inelastic export demand bid a depleting resource up
+        # to VOLL. A bare float still works and applies to every year.
+        if isinstance(foundation_share, dict):
+            self.foundation_share_by_year = {int(k): float(v)
+                                             for k, v in foundation_share.items()}
+            self.foundation_share = float(max(self.foundation_share_by_year.values(),
+                                              default=0.0))
+        else:
+            self.foundation_share_by_year = {}
+            self.foundation_share = float(foundation_share)
         # Same reservation treatment as dispatch: reserved gas comes off the export
         # ceiling, tail first.
         self.reserve_applied = float(reservation_applied or 0.0)
@@ -131,7 +157,17 @@ class CapacityExpansionModel:
                                   if terminal_earliest is None else terminal_earliest)
         self.base_year = (P.get_int('capacity_base_year', 2025)
                           if base_year is None else base_year)
+        # $/GJ that gas is worth at the horizon -- the BACKSTOP price, i.e. what the
+        # substitute costs. Landed imported LNG here, which is genuinely GARY's
+        # backstop. Without a terminal value the objective prices leftover gas at
+        # zero, so the optimal plan exhausts every tranche exactly at the last year
+        # and that year shorts at VOLL. None disables it.
+        self.salvage_price = salvage_price
         self.solved = False
+
+    def _foundation(self, y):
+        """Take-or-pay share of planned export volume in year ``y``."""
+        return self.foundation_share_by_year.get(y, self.foundation_share)
 
     def build_model(self):
         m = pyo.ConcreteModel(); self.model = m
@@ -174,7 +210,7 @@ class CapacityExpansionModel:
             m.lng_export[n, y, i] <= max(
                 0.0, self.lng_nameplate.get(n, 0.0)
                 - self.rep[y][i]['demand'].get(n, 0)
-                * (self.foundation_share - self.reserve_from_foundation
+                * (self._foundation(y) - self.reserve_from_foundation
                    + self.reserve_applied)))
 
         m.build = pyo.Var(m.Expansion, Y, domain=pyo.Binary)   # build project e in year y
@@ -296,6 +332,27 @@ class CapacityExpansionModel:
                                    for n in m.LNGNodes))
                 for (y, i) in YR)
             capex = pyo.quicksum(m.build[e, y] * exp_data[e]['CapEx'] * df[y] for e in m.Expansion for y in Y)
+            # TERMINAL SALVAGE VALUE, net of extraction cost.
+            #
+            # Gas left in a tranche at the horizon is worth what the substitute costs
+            # LESS what you would still pay to lift it -- it is un-extracted, so the
+            # gross backstop price overstates it. That netting is also what keeps the
+            # credit BASIN-SPECIFIC: Surat's $12.29-3.65 = $8.64 against Otway's
+            # $12.29-7.27 = $5.02.
+            #
+            # A first attempt (30 Aug 2026) credited the gross price identically for
+            # every basin. It was uniform by construction, so every scarcity rent
+            # collapsed to the same $2.26 floor and stopped distinguishing a
+            # nearly-exhausted basin from an abundant one. Do not drop the netting.
+            #
+            # This is the Hotelling terminal condition: the rent rises until the
+            # price reaches the backstop exactly as the resource runs out.
+            if self.salvage_price:
+                salvage = pyo.quicksum(
+                    df[Y[-1]] * _salvage_rate(supply_dict[s], self.salvage_price) * 1e6
+                    * (_reserves_pj(supply_dict[s]) - _annual_pj(m, s[0], s[1]))
+                    for s in m.Supply if _reserves_pj(supply_dict[s]) is not None)
+                return ops + capex - salvage
             return ops + capex
         m.obj = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
 
@@ -313,7 +370,7 @@ class CapacityExpansionModel:
                     + (m.gpg_curtail[n, y, i] if n in m.GPGNodes else 0)
                     + (m.ind_curtail[n, y, i] if n in m.INDNodes else 0)
                     == (r['demand'].get(n, 0)
-                        * max(0.0, self.foundation_share - self.reserve_from_foundation)
+                        * max(0.0, self._foundation(y) - self.reserve_from_foundation)
                         if n in m.LNGNodes else r['demand'].get(n, 0))
                     + (m.lng_export[n, y, i] if n in m.LNGNodes else 0)
                     + r['gpg'].get(n, 0) + r['ind'].get(n, 0)
@@ -479,6 +536,12 @@ class CapacityExpansionModel:
         m = self.model
         if not self.solved or not hasattr(m, 'dual') or not hasattr(m, 'reserve_limit'):
             return {}
+        # The rent has TWO components once a terminal value exists, and dispatch
+        # needs both: the reserve dual, plus the salvage the last PJ forgoes by being
+        # produced. Passing the dual alone under-prices gas relative to the plan
+        # dispatch is executing, so it over-produces.
+        df_last = 1.0 / ((1.0 + self.r) ** (self.years[-1] - self.base_year))
+        supply_dict = self.supply.set_index(['Node', 'IsPotential']).to_dict('index')
         out = {}
         for idx in m.reserve_limit:
             con = m.reserve_limit[idx]
@@ -493,11 +556,13 @@ class CapacityExpansionModel:
             # abs() because the sign convention on a <= constraint differs by
             # backend.
             lam = abs(lam_raw) / 1e6
-            if lam <= 0:
+            salvage_npv = df_last * _salvage_rate(supply_dict[(idx[0], idx[1])],
+                                                  self.salvage_price)
+            if lam + salvage_npv <= 0:
                 continue
             for y in self.years:
                 df = 1.0 / ((1.0 + self.r) ** (y - self.base_year))
-                out[(idx[0], idx[1], y)] = lam / df
+                out[(idx[0], idx[1], y)] = (lam + salvage_npv) / df
         return out
 
     def get_annual_production_pj(self):

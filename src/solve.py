@@ -174,7 +174,8 @@ def _year_demand(data, year, winter, lng, reservation=0.0, netback_pricing=False
         dm.loc[(dm['Year'] == year) & (dm['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])), 'Demand'] *= lng_mult
     return apply_lng_reservation(dm[dm['Year'] == year].copy(), reservation,
                                  respect_contracts=respect_contracts,
-                                 scale_demand=not netback_pricing)
+                                 scale_demand=not netback_pricing,
+                                 year=year)
 
 
 # Long-form baseline names for the one-line run header; the dashboard's dropdown
@@ -460,8 +461,14 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         import_cost_by_year={
             y: _import_injection_cost(dispatch_models[y].lng_prices)
             for y in years} if netback_pricing else None,
+        # Backstop price for the terminal salvage value: what replacement gas costs
+        # landed in the final year. Published (ACIL Allen injection cost), not chosen.
+        salvage_price=(float(dispatch_models[years[-1]].lng_prices['Import_Injection_AUD_GJ'])
+                       if netback_pricing else 14.0),
         lng_nameplate=dispatch_models[start_year].lng_nameplate,
-        foundation_share=dispatch_models[start_year].foundation_share,
+        # Per-year, not a scalar: the contracts expire mid-horizon, so the MIP has
+        # to see the same must-serve profile the dispatch layer will face.
+        foundation_share={y: dispatch_models[y].foundation_share for y in years},
         reservation_applied=applied_share, respect_contracts=respect_contracts)
     def _build_cap():
         c = CapacityExpansionModel(**cap_kwargs)

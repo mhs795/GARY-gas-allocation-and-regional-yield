@@ -30,6 +30,41 @@ That is the number every price chart plots, and the number the **Final Price** K
 summarises (production-weighted). See [`model.md`](model.md#reading-a-dual) for the
 mechanics, including nodes whose dual is degenerate and therefore suppressed.
 
+### It now includes a depletion cost, and that changes what it means
+
+Since the supply side moved to a hard stock basis (30 Aug 2026) a GARY price is
+**marginal social cost including depletion**, not marginal extraction cost. Two terms
+sit inside it:
+
+```
+nodal price  =  extraction cost  +  scarcity rent  +  transport
+```
+
+The **scarcity rent** is the opportunity cost of using up a finite tranche: producing a
+PJ today is a PJ unavailable later. Formally it is the dual on the capacity MIP's
+reserve constraint — what the system would save if a basin held one more PJ. It is the
+textbook Hotelling rent, and like any Hotelling rent it **grows at the discount rate**,
+which falls out of the dual and the discount factor rather than being imposed.
+
+It is not a payment anyone makes. Nobody is billed a rent; it is the shadow value of
+scarcity, and it accrues to whoever owns the resource as economic profit.
+
+**It can be the larger term.** Surat's rent starts at $4.14/GJ against an extraction
+cost of $3.65 — so more than half the marginal value of Queensland gas is scarcity, not
+cost — and it compounds. Before the stock limit this term was implicitly **zero**, i.e.
+GARY assumed gas was effectively unlimited. That was equally an assumption, just an
+invisible one.
+
+**Where the rent shows up, and where it does not.** A node with an import terminal is
+capped by import parity and barely moves: Melbourne runs $10.77 → $11.24 across the
+horizon. A node with neither a terminal nor economic backfill carries the full rent —
+Gladstone reaches $26.91 by 2050 and Darwin $21.61, against a netback of $7.12.
+
+> **Read a rent-bearing price carefully.** A high dual at an import-inaccessible node
+> is telling you the resource serving it is scarce and its replacement is not being
+> built. That is a real result, but it is a statement about depletion and investment,
+> not a forecast of what a buyer there would contract at.
+
 ## 2. The LNG netback
 
 ACIL Allen produce the wholesale gas price projections behind AEMO's GSOO. Their model,

@@ -158,9 +158,65 @@ def lng_train_nameplate():
     return out
 
 
-def lng_foundation_share():
-    """Share of planned export volume under take-or-pay foundation SPAs."""
-    return P.get('lng_foundation_share', 0.93)
+def _contracted_export_pj():
+    """{year: PJ} still under Queensland LNG foundation SPAs, from the workbook.
+
+    The LNG_Contracts sheet, sourced from ACCC's Gas Inquiry June 2025 interim
+    update: 16,301 PJ of remaining contracted exports to 2036 (Chart 1), expiring
+    "from 2031" with "a sharp drop off in exports ... after 2035". Empty if the
+    sheet is missing, in which case callers fall back to the flat scalar.
+    """
+    df = P.sheet('LNG_Contracts')
+    if df.empty:
+        return {}
+    cols = {str(c).strip(): c for c in df.columns}
+    # The sheet carries a sourcing preamble above the series, so the Year/
+    # Contracted_PJ header lands mid-sheet and pandas does not see it as columns.
+    if 'Year' not in cols:
+        hdr = df.index[df.iloc[:, 0].astype(str).str.strip() == 'Year']
+        if len(hdr) == 0:
+            return {}
+        body = df.iloc[hdr[0] + 1:, :2]
+    else:
+        body = df[[cols['Year'], cols['Contracted_PJ']]]
+    out = {}
+    for _, r in body.iterrows():
+        try:
+            out[int(float(r.iloc[0]))] = max(0.0, float(r.iloc[1]))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def lng_foundation_share(year=None, planned_pj=None):
+    """Share of planned export volume under take-or-pay foundation SPAs.
+
+    TIME-VARYING, because the contracts are. GARY used to hold this at a flat 0.93
+    for all 26 years -- one quarter's ACCC snapshot applied to 2051 -- which meant
+    93% of export volume stayed physically must-serve for 15 years after the SPAs
+    underpinning it had expired. With depletion switched on that was not harmless:
+    inelastic export demand bidding against a shrinking resource drove Queensland
+    and Darwin prices to $27/GJ against a $7.12 netback, and to VOLL beyond.
+
+    A take-or-pay obligation is FINANCIAL, not physical. Once the contracts end
+    there is nothing to force a cargo, so the share falls to zero and every
+    remaining molecule of export volume becomes contestable -- the trains bid at
+    the netback like any other buyer, and Queensland gas is priced by supply and
+    demand rather than by an expired commitment.
+
+    ``planned_pj`` is that year's planned export volume; the share is the
+    contracted volume over it, capped at 1. Without a year (or without the sheet)
+    this returns the flat scalar, which is the pre-2026 behaviour.
+    """
+    flat = P.get('lng_foundation_share', 0.93)
+    if year is None:
+        return flat
+    contracted = _contracted_export_pj()
+    if not contracted or year not in contracted:
+        return flat
+    if not planned_pj or planned_pj <= 0:
+        return flat if contracted[year] > 0 else 0.0
+    return max(0.0, min(1.0, contracted[year] / float(planned_pj)))
 
 
 def load_params(data_dir=None):
@@ -389,7 +445,20 @@ WINTER_DAYS = range(P.get_int('winter_day_start', 150),
                     P.get_int('winter_day_end', 250) + 1)
 
 
-def apply_lng_reservation(demand_df, share, respect_contracts=True, scale_demand=True):
+def planned_export_pj(demand_df):
+    """Planned LNG export volume in a year's demand frame, PJ.
+
+    The denominator for the foundation share: contracted volume over planned
+    volume is what fraction of a year's exports is actually take-or-pay.
+    """
+    if demand_df is None or 'Node' not in getattr(demand_df, 'columns', []):
+        return 0.0
+    mask = demand_df['Node'].isin(LNG_NODES)
+    return float(demand_df.loc[mask, 'Demand'].sum()) / 1000.0
+
+
+def apply_lng_reservation(demand_df, share, respect_contracts=True, scale_demand=True,
+                          year=None):
     """Divert ``share`` (0-1) of LNG export volume to the domestic market.
 
     Returns ``(demand frame, TJ diverted, {day: TJ reserved}, share applied)``.
@@ -432,7 +501,8 @@ def apply_lng_reservation(demand_df, share, respect_contracts=True, scale_demand
         return demand_df, 0.0, {}, 0.0
     applied = share
     if respect_contracts:
-        uncontracted = max(0.0, 1.0 - lng_foundation_share())
+        uncontracted = max(0.0, 1.0 - lng_foundation_share(
+            year, planned_export_pj(demand_df)))
         applied = min(share, uncontracted)
     if not applied:
         return demand_df, 0.0, {}, 0.0
@@ -679,7 +749,9 @@ class GasMarketModel:
         # volume: together these replace the old export_headroom multiple with the
         # two things that actually bound an export decision.
         self.lng_nameplate = lng_train_nameplate() if self.netback_pricing else {}
-        self.foundation_share = lng_foundation_share() if self.netback_pricing else 0.0
+        self.foundation_share = (lng_foundation_share(self.year,
+                                                      planned_export_pj(self.demand))
+                                 if self.netback_pricing else 0.0)
         if self.netback_pricing:
             # LNG imports are priced on ACIL Allen's injection cost (Asian LNG
             # + shipping + regasification, Table 2.1) rather than the single flat
