@@ -97,12 +97,11 @@ PARAMETERS = [
      "own number, not a source. Read by both the dispatch model and the capacity "
      "MIP so the two layers value a store identically."),
 
-    ("Dashboard defaults", "winter_default", "Low", "level",
-     "Winter stress level the dashboard opens on. LOW is the GSOO-consistent case "
-     "(multiplier 1.0). It used to open on Medium, which is a 1.5x STRESS case -- "
-     "8-12% above GSOO annual energy with Melbourne's peak day at ~1.8x AEMO's VIC "
-     "RC&I peak -- so every headline figure was a stressed run unless someone moved "
-     "the slider."),
+    ("Dashboard defaults", "winter_default", "Medium", "level",
+     "Winter level the dashboard opens on. MEDIUM is the central GSOO case "
+     "(multiplier 1.0, AEMO's weather-averaged series). Low is an unseasonably "
+     "warm winter (0.91x) and High a deliberate stress (1.5x) beyond any observed "
+     "winter."),
     ("Dashboard defaults", "lng_default", "Medium", "level",
      "Global LNG price level the dashboard opens on. Under netback pricing this lever "
      "selects a PRICE path, not an export volume: Medium is the run's own GSOO "
@@ -205,10 +204,10 @@ PARAMETERS = [
 
 # Winter and LNG demand levers, currently coded in solve.py.
 SCENARIO_LEVERS = [
-    ("Winter", "Low", 1.0, "", "", "Multiplier on Melbourne/Adelaide/Sydney "
+    ("Winter", "Low", 0.91, "", "", "UNSEASONABLY WARM WINTER -- the warmest of the seven full Bulletin Board winters (2019-2025), detrended. Multiplier on Melbourne/Adelaide/Sydney "
      "distribution demand over the winter window"),
-    ("Winter", "Medium", 1.5, "", "", ""),
-    ("Winter", "High", 2.2, "", "", ""),
+    ("Winter", "Medium", 1.0, "", "", "THE CENTRAL GSOO CASE -- AEMO's weather-averaged series, unmodified. The default."),
+    ("Winter", "High", 1.5, "", "", "STRESS CASE, deliberately beyond observed weather: the coldest Bulletin Board winter is only 1.08x detrended."),
     ("LNG", "Low", 0.04, 2026, 2030, "Annual decline step applied to LNG export "
      "demand; see get_lng_mult in solve.py for the piecewise path"),
     ("LNG", "Medium", 1.0, "", "", "Flat, no adjustment"),

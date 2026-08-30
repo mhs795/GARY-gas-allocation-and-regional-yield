@@ -32,16 +32,24 @@ interpretation — see [`pricing.md`](pricing.md#the-price-series).
 
 ## Southern winter stress
 
-| Level | Multiplier |
-|---|---|
-| Low | 1.0× — the **GSOO-consistent case** |
-| **Medium** | 1.5× (default) |
-| High | 2.2× |
+| Level | Multiplier | What it is |
+|---|---|---|
+| Low | 0.91× | **Unseasonably warm winter** — the warmest of the seven full Bulletin Board winters (2019–2025), detrended |
+| **Medium** | 1.0× | **The central GSOO case** (default) — AEMO's series as published, weather-averaged |
+| High | 1.5× | **Stress**, deliberately beyond observed weather |
 
 Multiplies Melbourne / Adelaide / Sydney distribution demand over the winter window.
 
-> Medium and High are **stress cases layered on top of the baseline, not alternative
-> forecasts.** Low is the only level that reproduces the GSOO as published.
+**Low and Medium are weather cases; High is not.** Low is measured rather than chosen:
+southern PIPE demand over the winter window across 2019–2025, detrended first because the
+raw series falls 2.6%/yr on structural decline, which is not weather. The detrended
+residuals run **0.911 (2023) to 1.076 (2022)**, standard deviation 0.046.
+
+> **High is an adequacy test, not a cold winter.** At 1.5× it puts annual domestic energy
+> 8–12% above the GSOO and Melbourne's peak day at ~1.8× AEMO's VIC RC&I peak. The
+> *coldest* winter in the record is only **1.08×** detrended. If you want a
+> weather-realistic cold case rather than a stress test, set High to 1.08 on the
+> `Scenario_Levers` sheet.
 
 ## Global LNG market
 

@@ -5,8 +5,8 @@ multipliers and never touches the import-terminal, expansion-filter or data cent
 axes, which are the ones that discriminate now that supply is stock-limited. This
 is the rationalised set: fewer runs, more axes.
 
-Blocks: OUTLOOK at Winter Low (the GSOO-consistent case -- Medium and High are
-stress cases layered on top, not alternative forecasts), ADEQUACY stress,
+Blocks: OUTLOOK at Winter Medium (the central GSOO case -- AEMO's weather-averaged
+series), ADEQUACY stress at Winter High plus the warm-winter downside at Low,
 STRUCTURAL/policy, and DATA CENTRES.
 
     python src/run_standard_set.py                 # all of it, into the cache
@@ -45,16 +45,16 @@ def build():
     B, L, M, H = 'StepChange', 'Low', 'Medium', 'High'
     common = dict(netback_pricing=True)
     S = []
-    # --- A. OUTLOOK: Winter Low, the GSOO-consistent case ---------------------
-    S += [('A outlook', dict(baseline=B, winter=L, lng=M, **common)),
-          ('A outlook', dict(baseline='Accelerated', winter=L, lng=M, **common)),
-          ('A outlook', dict(baseline='SlowerGrowth', winter=L, lng=M, **common)),
-          ('A outlook', dict(baseline=B, winter=L, lng=L, **common)),
-          ('A outlook', dict(baseline=B, winter=L, lng=H, **common))]
-    # --- B. ADEQUACY: demand stress on the central baseline --------------------
-    S += [('B adequacy', dict(baseline=B, winter=M, lng=M, **common)),
-          ('B adequacy', dict(baseline=B, winter=H, lng=M, **common)),
-          ('B adequacy', dict(baseline=B, winter=M, lng=M, dunkelflaute=True, **common))]
+    # --- A. OUTLOOK: Winter Medium, the central GSOO case ---------------------
+    S += [('A outlook', dict(baseline=B, winter=M, lng=M, **common)),
+          ('A outlook', dict(baseline='Accelerated', winter=M, lng=M, **common)),
+          ('A outlook', dict(baseline='SlowerGrowth', winter=M, lng=M, **common)),
+          ('A outlook', dict(baseline=B, winter=M, lng=L, **common)),
+          ('A outlook', dict(baseline=B, winter=M, lng=H, **common))]
+    # --- B. WEATHER: the warm downside and the cold stress ---------------------
+    S += [('B weather', dict(baseline=B, winter=L, lng=M, **common)),
+          ('B weather', dict(baseline=B, winter=H, lng=M, **common)),
+          ('B weather', dict(baseline=B, winter=M, lng=M, dunkelflaute=True, **common))]
     # --- C. STRUCTURAL: what the system may build, and policy ------------------
     S += [('C structural', dict(baseline=B, winter=M, lng=M,
                                 allow_import_terminals=False, **common)),
@@ -63,7 +63,7 @@ def build():
           ('C structural', dict(baseline=B, winter=M, lng=M,
                                 reservation=0.20, **common))]
     # --- D. DATA CENTRES: firm load that cannot shed ---------------------------
-    S += [('D datacentre', dict(baseline=B, winter=L, lng=M, datacentre=dc, **common)),
+    S += [('D datacentre', dict(baseline=B, winter=M, lng=M, datacentre=dc, **common)),
           ('D datacentre', dict(baseline=B, winter=H, lng=M, datacentre=dc, **common)),
           ('D datacentre', dict(baseline=B, winter=M, lng=M, datacentre=dc,
                                 allow_import_terminals=False, **common))]
@@ -72,9 +72,9 @@ def build():
     # while the foundation SPAs run, so respect_contracts=False is the only way to
     # see what 20% actually does before 2036. The pair differs ONLY by data centre
     # load, so the two read against each other directly.
-    S += [('E reservation', dict(baseline=B, winter=L, lng=M, reservation=0.20,
+    S += [('E reservation', dict(baseline=B, winter=M, lng=M, reservation=0.20,
                                  respect_contracts=False, **common)),
-          ('E reservation', dict(baseline=B, winter=L, lng=M, reservation=0.20,
+          ('E reservation', dict(baseline=B, winter=M, lng=M, reservation=0.20,
                                  respect_contracts=False, datacentre=dc, **common))]
     return S
 

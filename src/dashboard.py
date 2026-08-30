@@ -918,8 +918,8 @@ LEVELS = ['Low', 'Medium', 'High']
 # so the workbook stays the single place a default is set. WINTER OPENS ON LOW: it
 # used to open on Medium, which is a 1.5x stress case, so every headline figure was
 # a stressed run unless someone moved the slider.
-_WINTER_DEFAULT_IX = LEVELS.index(P.get_str('winter_default', 'Low')) \
-    if P.get_str('winter_default', 'Low') in LEVELS else 0
+_WINTER_DEFAULT_IX = LEVELS.index(P.get_str('winter_default', 'Medium')) \
+    if P.get_str('winter_default', 'Medium') in LEVELS else 1
 _LNG_DEFAULT_IX = LEVELS.index(P.get_str('lng_default', 'Medium')) \
     if P.get_str('lng_default', 'Medium') in LEVELS else 1
 _MIP_GAP_DEFAULT = P.get('mip_gap_default', 0.005)
@@ -1181,12 +1181,13 @@ sidebar = html.Div(className='md-sidebar', children=[
                        marks={i: l for i, l in enumerate(LEVELS)},
                        value=_WINTER_DEFAULT_IX)),
         html.Div('Multiplies Melbourne / Adelaide / Sydney distribution demand over '
-                 'the winter window. \u2039Low\u203a (1.0\u00d7, the default) is the '
-                 'GSOO-consistent case; \u2039Medium\u203a (1.5\u00d7) and '
-                 '\u2039High\u203a (2.2\u00d7) are stress cases layered on top of it, '
-                 'not alternative forecasts. Medium puts annual domestic energy '
-                 '8\u201312% above the GSOO and Melbourne\u2019s peak day at ~1.8\u00d7 '
-                 'AEMO\u2019s VIC RC&I peak.',
+                 'the winter window. \u2039Medium\u203a (1.0\u00d7, the default) is the '
+                 'CENTRAL GSOO case \u2014 AEMO\u2019s weather-averaged series. '
+                 '\u2039Low\u203a (0.91\u00d7) is an unseasonably warm winter, the '
+                 'warmest of the seven Bulletin Board winters once the 2.6%/yr '
+                 'structural decline is removed. \u2039High\u203a (1.5\u00d7) is a '
+                 'deliberate stress beyond observed weather \u2014 the coldest winter '
+                 'on record is only 1.08\u00d7.',
                  style={'marginTop': '-14px', 'marginBottom': '18px',
                         'fontSize': '10px', 'color': '#888', 'lineHeight': '1.35'}),
 
