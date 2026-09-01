@@ -76,6 +76,16 @@ def build():
                                  respect_contracts=False, **common)),
           ('E reservation', dict(baseline=B, winter=M, lng=M, reservation=0.20,
                                  respect_contracts=False, datacentre=dc, **common))]
+    # --- F. THE SAME RESERVATION, CONTRACTS RESPECTED --------------------------
+    # Block E's twins under the legally realistic rule: the reservation may only
+    # take UNCONTRACTED export volume, so the 20% ask is capped at the spot tail.
+    # E minus F is the cost of breaking the foundation SPAs; F on its own is what
+    # a reservation announced today would actually deliver. The no-data-centre
+    # member of the pair is the 'C structural' reservation run above -- same
+    # kwargs, same cache key -- so it is not repeated here; --keep will skip it if
+    # you ever re-solve the set.
+    S += [('F reservation', dict(baseline=B, winter=M, lng=M, reservation=0.20,
+                                 datacentre=dc, **common))]
     return S
 
 
