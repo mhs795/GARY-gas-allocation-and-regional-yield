@@ -412,13 +412,17 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
     # --- Pass 1: assemble every year's demand + GPG/industrial (events applied) ---
     dispatch_models, demand_all, gpg_all, ind_all = {}, {}, {}, {}
     diverted_by_year, reserved_all, dc_all = {}, {}, {}
-    applied_share = 0.0
+    # Per year, not one scalar. Under respect_contracts the applied share is capped
+    # at that year's uncontracted tail, which grows as the SPAs expire, so the last
+    # year's value describes none of the others.
+    applied_by_year = {}
     for year in years:
         # Applied here, before the representative days are built, so the capacity
         # layer sizes the network against the same post-reservation demand the
         # dispatch layer will face.
         demand_yr, diverted_by_year[year], reserved_day, applied_share = _year_demand(
             data, year, winter, lng, reservation, netback_pricing, respect_contracts)
+        applied_by_year[year] = applied_share
         for d, v in reserved_day.items():
             reserved_all[(year, d)] = v
         gm = GasMarketModel(
@@ -473,7 +477,9 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         # Per-year, not a scalar: the contracts expire mid-horizon, so the MIP has
         # to see the same must-serve profile the dispatch layer will face.
         foundation_share={y: dispatch_models[y].foundation_share for y in years},
-        reservation_applied=applied_share, respect_contracts=respect_contracts)
+        # Per-year for the same reason foundation_share is, and they are read
+        # together: the cap is on the contracted share PLUS the reservation.
+        reservation_applied=applied_by_year, respect_contracts=respect_contracts)
     def _build_cap():
         c = CapacityExpansionModel(**cap_kwargs)
         c.build_model()
@@ -515,7 +521,7 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         yr_res = gm.get_results()
         yr_res['Year'] = year
         yr_res['reservation_share'] = reservation
-        yr_res['reservation_share_applied'] = applied_share
+        yr_res['reservation_share_applied'] = applied_by_year[year]
         yr_res['reservation_respects_contracts'] = respect_contracts
         yr_res['lng_reserved_tj'] = diverted_by_year[year]
         # The scarcity rent this year faced, per supply row -- recorded like the

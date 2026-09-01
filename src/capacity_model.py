@@ -197,10 +197,24 @@ class CapacityExpansionModel:
             self.foundation_share = float(foundation_share)
         # Same reservation treatment as dispatch: reserved gas comes off the export
         # ceiling, tail first.
-        self.reserve_applied = float(reservation_applied or 0.0)
-        _uncontracted = max(0.0, 1.0 - self.foundation_share)
-        self.reserve_from_foundation = (0.0 if respect_contracts
-                                        else max(0.0, self.reserve_applied - _uncontracted))
+        #
+        # PER-YEAR, for the same reason foundation_share is. With contracts
+        # respected the applied share is capped at the uncontracted tail, and that
+        # tail grows from ~7% to 100% as the SPAs expire mid-horizon -- so a single
+        # scalar cannot describe it. Passing one meant the investment layer sized
+        # the network against the FINAL year's share (the full 20%, contracts long
+        # gone) in every year, while dispatch correctly reserved 7% while the SPAs
+        # ran. Contract-BREAKING runs were unaffected: there the applied share is
+        # the requested one in every year, so any single year's value is right.
+        self.respect_contracts = bool(respect_contracts)
+        if isinstance(reservation_applied, dict):
+            self.reserve_applied_by_year = {int(k): float(v)
+                                            for k, v in reservation_applied.items()}
+            self.reserve_applied = float(max(self.reserve_applied_by_year.values(),
+                                             default=0.0))
+        else:
+            self.reserve_applied_by_year = {}
+            self.reserve_applied = float(reservation_applied or 0.0)
         self.terminal_earliest = (P.get_int('terminal_earliest', 2028)
                                   if terminal_earliest is None else terminal_earliest)
         self.base_year = (P.get_int('capacity_base_year', 2025)
@@ -216,6 +230,21 @@ class CapacityExpansionModel:
     def _foundation(self, y):
         """Take-or-pay share of planned export volume in year ``y``."""
         return self.foundation_share_by_year.get(y, self.foundation_share)
+
+    def _reserve(self, y):
+        """Reservation share actually applied in year ``y``."""
+        return self.reserve_applied_by_year.get(y, self.reserve_applied)
+
+    def _reserve_from_foundation(self, y):
+        """How much of year ``y``'s reservation has to come out of contracted gas.
+
+        Zero when the run respects contracts -- that is what respecting them means.
+        Otherwise it is whatever the reservation asks for beyond that year's
+        uncontracted tail, which shrinks to nothing once the SPAs expire.
+        """
+        if self.respect_contracts:
+            return 0.0
+        return max(0.0, self._reserve(y) - max(0.0, 1.0 - self._foundation(y)))
 
     def build_model(self):
         m = pyo.ConcreteModel(); self.model = m
@@ -258,8 +287,8 @@ class CapacityExpansionModel:
             m.lng_export[n, y, i] <= max(
                 0.0, self.lng_nameplate.get(n, 0.0)
                 - self.rep[y][i]['demand'].get(n, 0)
-                * (self._foundation(y) - self.reserve_from_foundation
-                   + self.reserve_applied)))
+                * (self._foundation(y) - self._reserve_from_foundation(y)
+                   + self._reserve(y))))
 
         m.build = pyo.Var(m.Expansion, Y, domain=pyo.Binary)   # build project e in year y
         m.reserved_prod = pyo.Var(m.YR, domain=pyo.NonNegativeReals)
@@ -417,7 +446,7 @@ class CapacityExpansionModel:
                     + (m.gpg_curtail[n, y, i] if n in m.GPGNodes else 0)
                     + (m.ind_curtail[n, y, i] if n in m.INDNodes else 0)
                     == (r['demand'].get(n, 0)
-                        * max(0.0, self._foundation(y) - self.reserve_from_foundation)
+                        * max(0.0, self._foundation(y) - self._reserve_from_foundation(y))
                         if n in m.LNGNodes else r['demand'].get(n, 0))
                     + (m.lng_export[n, y, i] if n in m.LNGNodes else 0)
                     + r['gpg'].get(n, 0) + r['ind'].get(n, 0)
