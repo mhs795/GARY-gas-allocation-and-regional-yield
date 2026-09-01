@@ -292,6 +292,18 @@ Either way it is the cost of serving what was served, **not a welfare measure**.
 carries the applicable caveat under the number, and **Gas Reserved** shows the percentage
 actually taken up.
 
+> **The capacity MIP does not use that figure.** Its objective is the same construction,
+> and it is minimised to choose builds -- so a number "not comparable across reservation
+> levels" would have been deciding what gets built. The investment objective therefore
+> costs `reserved_prod` at what the tranche costs to LIFT ($3.65/GJ at Surat), while
+> dispatch keeps it at $0. Dispatch only needs the merit order, and the level of its
+> objective changes nothing about which gas flows; the MIP weighs its objective directly
+> against CapEx. Left uncosted the tranche was worth $6.4bn NPV against a $1.0bn import
+> terminal, and every reservation run declined to build it -- dropping real southern
+> capacity to chase a saving that was a transfer, not a resource. Costing it breaks no
+> mechanism: export eligibility, the reserved cap and the shared field limit are all
+> constraints, not prices.
+
 ## Data centre gas demand
 
 A "what if" lever for hyperscale data centre load, stated in either of two ways:

@@ -392,9 +392,39 @@ class CapacityExpansionModel:
                     return self.import_cost_by_year[y]
                 return supply_dict[s_]['Cost']
 
+            def _reserved_cost(y):
+                """What the reserved tranche costs to LIFT, $/GJ. Not what it sells for.
+
+                The reservation prices this gas at $0 to the domestic buyer -- that is
+                the policy, and dispatch keeps it, because there the price is only
+                setting merit order and the level of the objective changes nothing
+                about which gas flows.
+
+                HERE THE LEVEL IS THE DECISION. This objective is weighed directly
+                against CapEx, so leaving the tranche at $0 tells the planner that
+                ~96 PJ/yr arrives from nowhere at no resource cost. It does not: by
+                supply_cap the reserved gas displaces commercial production one for
+                one out of the same capped field, so the system lifts the same
+                molecules and simply charges nobody for some of them. Uncosted, that
+                came to $6.4bn NPV against the $1.0bn terminal the reservation runs
+                then declined to build -- the plan was dropping real capacity to chase
+                a bookkeeping saving. docs/scenarios.md already warns that System Cost
+                is not comparable across reservation levels for exactly this reason;
+                this objective IS that number, so the warning had to be honoured here
+                rather than only on the KPI card.
+
+                Costing it changes no mechanism -- export eligibility, the reserved
+                cap and the shared capacity limit are all constraints, not prices. It
+                makes the reservation cost-NEUTRAL to the investment layer, which is
+                what it physically is: same gas, same lifting cost, different pocket.
+                """
+                rows = [s_ for s_ in m.Supply if s_[0] in self.lng_source and not s_[1]]
+                return min((_supply_cost(s_, y) for s_ in rows), default=0.0)
+
             ops = pyo.quicksum(
                 df[y] * wt[y, i] * (
                     pyo.quicksum(m.production[s[0], s[1], y, i] * _supply_cost(s, y) * 1000 for s in m.Supply)
+                    + m.reserved_prod[y, i] * _reserved_cost(y) * 1000
                     + pyo.quicksum(m.flow[a, y, i] * arc_data[a]['Cost'] * 1000 for a in m.Arcs)
                     + pyo.quicksum(m.shortage[n, y, i] * VOLL_PER_GJ * 1000 for n in m.Nodes)
                     + pyo.quicksum((m.injection[sn, y, i] + m.withdrawal[sn, y, i])
