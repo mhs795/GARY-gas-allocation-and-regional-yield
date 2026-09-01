@@ -12,6 +12,10 @@ STRUCTURAL/policy, and DATA CENTRES.
     python src/run_standard_set.py                 # all of it, into the cache
     python src/run_standard_set.py --keep          # skip keys already cached
     python src/run_standard_set.py --list          # print the set and exit
+
+Every run finishes by writing output/domestic_price_summary.xlsx off the cache --
+levels and percent-change-against-central, with a chart on each tab. See
+export_price_summary.py; --no-export skips it.
 """
 import argparse
 import os
@@ -21,6 +25,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import datacentre_series
+import export_price_summary
 import results_io
 import sweep
 from dashboard import scenario_key, pretty_key
@@ -111,6 +116,8 @@ def main():
                     help='Merge into the cache, skipping keys already present')
     ap.add_argument('--list', action='store_true', help='Print the set and exit')
     ap.add_argument('--mip-gap', type=float, default=0.005)
+    ap.add_argument('--no-export', action='store_true',
+                    help='Skip the domestic price summary workbook')
     args = ap.parse_args()
 
     spec = build()
@@ -145,6 +152,15 @@ def main():
     sweep.run_jobs(jobs, workers=args.workers, on_done=done)
     results_io.save({'all_scenarios': out}, CACHE)
     print(f"\n{len(out)} scenarios in the cache; {(time.time()-t0)/60:.1f} min total")
+
+    # Off the cache, not off `out`, so a --keep run exports the whole set rather
+    # than only what it just solved. Never fatal: the solves are the expensive
+    # part and they are already safely on disk by here.
+    if not args.no_export:
+        try:
+            export_price_summary.write_summary()
+        except Exception as exc:
+            print(f"  price summary export failed: {exc}")
 
 
 if __name__ == '__main__':
