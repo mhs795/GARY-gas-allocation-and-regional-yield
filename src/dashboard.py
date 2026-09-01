@@ -1004,7 +1004,12 @@ def short_key(k):
         parts.append('Dunk27')
     mo = re.search(r'_Reserve(\d+)(incl)?', k)
     if mo:
-        parts.append(f'Res{mo.group(1)}%' + ('+contract' if mo.group(2) else ''))
+        # 'incl' in the key is short for "including contracted volume", i.e. the
+        # reservation overrides the SPAs. '+contract' read as the opposite -- the
+        # run that RESPECTS contracts -- and next to a plain 'Res20%' that is
+        # exactly backwards, so both halves of the pair now say which they are.
+        parts.append(f'Res{mo.group(1)}% '
+                     + ('breaks contracts' if mo.group(2) else 'uncontracted only'))
     dcs = re.search(_DCS_RE, k)
     if dcs:
         parts.append(f'DC series {dcs.group(1)}')
