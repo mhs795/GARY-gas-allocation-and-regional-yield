@@ -33,6 +33,7 @@ run_standard_set.py calls write_summary() once the solves land, so the workbook 
 never staler than the cache it came from.
 """
 import argparse
+import math
 import os
 import sys
 
@@ -95,11 +96,33 @@ def pct_frame(levels, central=CENTRAL):
     return (levels.div(base, axis=0) - 1.0) * 100.0
 
 
-def _line_chart(book, sheet, df, cols, title, y_title, size, y_range=None):
+def half_grid(lo, hi):
+    """`lo`/`hi` snapped out onto a 0.5 grid, so the axis reads in halves.
+
+    Outward, not to the nearest: rounding a max of 21.03 to 21.0 would put the
+    peak of the series on the frame or just past it. The bound moves away from
+    the data, never into it, so nothing is ever clipped to tidy the axis.
+
+    Degenerate ranges (a flat series) still get half a unit of air either side --
+    an axis whose min equals its max has nothing to draw against.
+    """
+    lo, hi = math.floor(lo * 2) / 2, math.ceil(hi * 2) / 2
+    return (lo - 0.5, hi + 0.5) if lo == hi else (lo, hi)
+
+
+def _line_chart(book, sheet, df, cols, title, y_title, size, span_zero=False):
     """A line chart over `cols` of `df`, sourced from `sheet`.
 
     Row 1 holds the headers and column A the years, so a DataFrame column at
     position `i` is spreadsheet column `i + 1` and its values run rows 2..n+1.
+
+    The y-axis is bounded explicitly on a 0.5 grid rather than left to autoscale,
+    which is what keeps the tick labels round numbers instead of whatever the
+    renderer picks off the data. `span_zero` additionally forces the axis to
+    include zero -- wanted on the percent-change charts, where "above or below
+    central" must not depend on where the axis starts, and not on the levels
+    chart, where a $/GJ series in the teens would be squashed into the top of a
+    frame that starts at nothing.
     """
     chart = book.add_chart({'type': 'line'})
     n = len(df)
@@ -111,12 +134,18 @@ def _line_chart(book, sheet, df, cols, title, y_title, size, y_range=None):
             'marker':     {'type': 'none'},
             'smooth':     False,
         })
+    plotted = df.iloc[:, list(cols)]
+    lo, hi = float(plotted.min().min()), float(plotted.max().max())
+    if span_zero:
+        lo, hi = min(0.0, lo), max(0.0, hi)
+    lo, hi = half_grid(lo, hi)
     chart.set_title({'name': title})
     chart.set_x_axis({'name': 'Year'})
-    y_axis = {'name': y_title, 'major_gridlines': {'visible': True}}
-    if y_range:
-        y_axis['min'], y_axis['max'] = y_range
-    chart.set_y_axis(y_axis)
+    chart.set_y_axis({'name': y_title, 'min': lo, 'max': hi,
+                      # Halves, so one decimal is exactly enough: it shows the
+                      # .5 ticks and invents no precision beyond them.
+                      'num_format': '0.0',
+                      'major_gridlines': {'visible': True}})
     chart.set_size(size)
     if len(cols) == 1:
         chart.set_legend({'none': True})     # the title already names the series
@@ -153,7 +182,8 @@ def write_summary(cache=CACHE, out=OUT, log=True):
         xl.sheets[PCT_SHEET].insert_chart(
             f'A{n + 4}',
             _line_chart(book, PCT_SHEET, pct_out, all_cols,
-                        f'Change against {central_label}', '% vs central', wide))
+                        f'Change against {central_label}', '% vs central', wide,
+                        span_zero=True))
 
         # One panel per scenario, off the same grid rather than a copy of it. The
         # combined chart above answers "which scenarios move together"; these
@@ -165,14 +195,13 @@ def write_summary(cache=CACHE, out=OUT, log=True):
         for i, name in enumerate(pct_out.columns):
             if name == central_label:
                 continue
-            # Each panel autoscales to its own series -- a common scale would
+            # Each panel scales to its own series -- a common scale would
             # flatten the small movers against the reservation runs -- but the
             # axis is forced to span zero, so "above or below central" is never
             # an artefact of where the axis happens to start.
-            lo, hi = float(pct_out[name].min()), float(pct_out[name].max())
             chart = _line_chart(book, PCT_SHEET, pct_out, [i], name,
                                 '% vs central', {'width': 560, 'height': 300},
-                                y_range=(min(0.0, lo), max(0.0, hi)))
+                                span_zero=True)
             # Two per row, spaced to clear a 560x300 chart at default row
             # heights and column widths with a margin either side.
             row, side = divmod(slot, 2)
