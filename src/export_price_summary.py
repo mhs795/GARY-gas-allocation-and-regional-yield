@@ -1,6 +1,6 @@
 """Domestic volume-weighted delivered price for every cached scenario, as a workbook.
 
-Two tabs, the shape the price comparisons have always been read in:
+Three tabs, the shape the price comparisons have always been read in:
 
   levels          $/GJ, one row per year, one column per scenario
   percent change  the same grid as % against the central case
@@ -17,6 +17,15 @@ The central case is Step Change / Winter Medium / LNG Medium with netback pricin
 so its own percent-change column is zero by construction and every other column
 reads as a deviation from the run the commentary treats as the base case.
 
+Charts are written with xlsxwriter, not openpyxl. openpyxl emits a chart Excel
+will open but a stricter reader will not: it gives the category axis
+``axPos="l"`` -- both axes claiming the left -- and omits ``<c:delete>`` and
+``<c:crosses>`` altogether. Excel infers the missing pieces; OnlyOffice draws
+nothing. xlsxwriter writes the axes out in full, so the same file renders in
+Excel, OnlyOffice and LibreOffice alike. openpyxl is still the right tool for
+READING workbooks elsewhere in this repo; it is chart output specifically that
+this module avoids it for.
+
     python src/export_price_summary.py                  # write output/
     python src/export_price_summary.py --out some.xlsx  # somewhere else
 
@@ -28,8 +37,6 @@ import os
 import sys
 
 import pandas as pd
-from openpyxl.chart import LineChart, Reference
-from openpyxl.utils import get_column_letter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -43,6 +50,8 @@ OUT = os.path.join(ROOT, 'output', 'domestic_price_summary.xlsx')
 
 # The run everything else is measured against.
 CENTRAL = 'Base_StepChange_Winter_Medium_LNG_Medium_Netback'
+
+LEVELS_SHEET, PCT_SHEET, PANEL_SHEET = 'levels', 'percent change', 'charts'
 
 
 def key_order(keys):
@@ -86,73 +95,36 @@ def pct_frame(levels, central=CENTRAL):
     return (levels.div(base, axis=0) - 1.0) * 100.0
 
 
-def _add_chart(ws, df, title, y_title, anchor):
-    """A line chart of every column in `df`, anchored below the data."""
-    chart = LineChart()
-    chart.title = title
-    chart.y_axis.title = y_title
-    chart.x_axis.title = 'Year'
-    chart.height, chart.width = 12, 30
-    chart.style = 2
-    n_rows, n_cols = len(df), len(df.columns)
-    # Column A is Year, so the series span B..(n_cols+1); min_row=1 pulls the
-    # header in as each series name, which is what titles the legend.
-    data = Reference(ws, min_col=2, max_col=n_cols + 1, min_row=1, max_row=n_rows + 1)
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(Reference(ws, min_col=1, min_row=2, max_row=n_rows + 1))
-    for s in chart.series:
-        s.smooth = False
-        s.marker.symbol = 'none'
-    ws.add_chart(chart, anchor)
+def _line_chart(book, sheet, df, cols, title, y_title, size, y_range=None):
+    """A line chart over `cols` of `df`, sourced from `sheet`.
 
-
-def _add_panel_charts(book, ws_pct, df, skip=None):
-    """One small percent-change chart per scenario, on their own 'charts' tab.
-
-    The combined chart on the 'percent change' tab has every series on one pair of
-    axes, which answers "which scenarios move together" but buries any single line
-    among sixteen others. These are the same data one panel at a time, so a single
-    scenario's shape can be read on its own.
-
-    Each panel autoscales to its own series -- a common scale would flatten the
-    small movers against the reservation runs -- but the axis is forced to span
-    zero, so "above or below central" is never an artefact of where the axis
-    happens to start.
+    Row 1 holds the headers and column A the years, so a DataFrame column at
+    position `i` is spreadsheet column `i + 1` and its values run rows 2..n+1.
     """
-    ws = book.create_sheet('charts')
-    n_rows = len(df)
-    col = 0
-    for i, name in enumerate(df.columns):
-        if name == skip:
-            continue
-        # Excel column i+2: column A is Year.
-        ref = Reference(ws_pct, min_col=i + 2, min_row=1, max_row=n_rows + 1)
-        chart = LineChart()
-        chart.title = name
-        chart.y_axis.title = '% vs central'
-        chart.x_axis.title = 'Year'
-        chart.height, chart.width = 8, 15
-        chart.style = 2
-        chart.legend = None                      # one series; the title names it
-        chart.add_data(ref, titles_from_data=True)
-        chart.set_categories(Reference(ws_pct, min_col=1, min_row=2,
-                                       max_row=n_rows + 1))
-        for ser in chart.series:
-            ser.smooth = False
-            ser.marker.symbol = 'none'
-        lo, hi = float(df[name].min()), float(df[name].max())
-        chart.y_axis.scaling.min = min(0.0, lo)
-        chart.y_axis.scaling.max = max(0.0, hi)
-        # Two panels per row, spaced to clear a 15cm x 8cm chart at default
-        # column widths and row heights.
-        row, side = divmod(col, 2)
-        ws.add_chart(chart, f'{get_column_letter(1 + side * 10)}{1 + row * 17}')
-        col += 1
-    return ws
+    chart = book.add_chart({'type': 'line'})
+    n = len(df)
+    for i in cols:
+        chart.add_series({
+            'name':       [sheet, 0, i + 1],
+            'categories': [sheet, 1, 0, n, 0],
+            'values':     [sheet, 1, i + 1, n, i + 1],
+            'marker':     {'type': 'none'},
+            'smooth':     False,
+        })
+    chart.set_title({'name': title})
+    chart.set_x_axis({'name': 'Year'})
+    y_axis = {'name': y_title, 'major_gridlines': {'visible': True}}
+    if y_range:
+        y_axis['min'], y_axis['max'] = y_range
+    chart.set_y_axis(y_axis)
+    chart.set_size(size)
+    if len(cols) == 1:
+        chart.set_legend({'none': True})     # the title already names the series
+    return chart
 
 
 def write_summary(cache=CACHE, out=OUT, log=True):
-    """Read the results cache and write the two-tab workbook. Returns its path."""
+    """Read the results cache and write the three-tab workbook. Returns its path."""
     scenarios = results_io.load(cache).get('all_scenarios', {})
     if not scenarios:
         raise SystemExit(f"no scenarios in {cache}")
@@ -163,25 +135,53 @@ def write_summary(cache=CACHE, out=OUT, log=True):
     # dashboard's own shorthand, so the columns are named the way the app names them.
     labels = {k: short_key(k) for k in levels.columns}
     levels_out, pct_out = levels.rename(columns=labels), pct.rename(columns=labels)
+    central_label = short_key(CENTRAL)
+    n = len(levels_out)
 
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    with pd.ExcelWriter(out, engine='openpyxl') as xl:
-        levels_out.to_excel(xl, sheet_name='levels')
-        pct_out.to_excel(xl, sheet_name='percent change')
-        # Anchored clear of the data so neither chart sits on a cell it plots.
-        _add_chart(xl.book['levels'], levels_out,
-                   'Domestic volume-weighted delivered price',
-                   '$/GJ', f'A{len(levels_out) + 4}')
-        _add_chart(xl.book['percent change'], pct_out,
-                   f'Change against {short_key(CENTRAL)}',
-                   '% vs central', f'A{len(pct_out) + 4}')
-        # Central is skipped: its own percent-change column is zero by
-        # construction, so its panel would be a flat line at the axis.
-        _add_panel_charts(xl.book, xl.book['percent change'], pct_out,
-                          skip=short_key(CENTRAL))
+    with pd.ExcelWriter(out, engine='xlsxwriter') as xl:
+        levels_out.to_excel(xl, sheet_name=LEVELS_SHEET)
+        pct_out.to_excel(xl, sheet_name=PCT_SHEET)
+        book = xl.book
+        wide = {'width': 960, 'height': 460}
+
+        all_cols = range(len(levels_out.columns))
+        xl.sheets[LEVELS_SHEET].insert_chart(
+            f'A{n + 4}',                       # clear of the data it plots
+            _line_chart(book, LEVELS_SHEET, levels_out, all_cols,
+                        'Domestic volume-weighted delivered price', '$/GJ', wide))
+        xl.sheets[PCT_SHEET].insert_chart(
+            f'A{n + 4}',
+            _line_chart(book, PCT_SHEET, pct_out, all_cols,
+                        f'Change against {central_label}', '% vs central', wide))
+
+        # One panel per scenario, off the same grid rather than a copy of it. The
+        # combined chart above answers "which scenarios move together"; these
+        # answer "what does this one do", which sixteen overlaid series cannot.
+        # Central is skipped -- its column is zero by construction, so its panel
+        # would be a flat line on the axis.
+        panels = book.add_worksheet(PANEL_SHEET)
+        slot = 0
+        for i, name in enumerate(pct_out.columns):
+            if name == central_label:
+                continue
+            # Each panel autoscales to its own series -- a common scale would
+            # flatten the small movers against the reservation runs -- but the
+            # axis is forced to span zero, so "above or below central" is never
+            # an artefact of where the axis happens to start.
+            lo, hi = float(pct_out[name].min()), float(pct_out[name].max())
+            chart = _line_chart(book, PCT_SHEET, pct_out, [i], name,
+                                '% vs central', {'width': 560, 'height': 300},
+                                y_range=(min(0.0, lo), max(0.0, hi)))
+            # Two per row, spaced to clear a 560x300 chart at default row
+            # heights and column widths with a margin either side.
+            row, side = divmod(slot, 2)
+            panels.insert_chart(row * 17 + 1, side * 10, chart)
+            slot += 1
+
     if log:
         print(f"  wrote {os.path.relpath(out, ROOT)}  "
-              f"({len(levels_out.columns)} scenarios x {len(levels_out)} years)")
+              f"({len(levels_out.columns)} scenarios x {n} years)")
     return out
 
 

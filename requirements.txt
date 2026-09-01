@@ -12,4 +12,5 @@ multiprocess
 zstandard        # results-cache compression (falls back to stdlib gzip)
 psutil
 python-docx
-openpyxl         # .xlsx read/write: parameters workbook, price summary export
+openpyxl         # .xlsx reading: parameters workbook, field developments
+xlsxwriter       # .xlsx chart output (openpyxl's chart axis XML is malformed)
