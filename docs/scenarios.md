@@ -298,11 +298,47 @@ actually taken up.
 > costs `reserved_prod` at what the tranche costs to LIFT ($3.65/GJ at Surat), while
 > dispatch keeps it at $0. Dispatch only needs the merit order, and the level of its
 > objective changes nothing about which gas flows; the MIP weighs its objective directly
-> against CapEx. Left uncosted the tranche was worth $6.4bn NPV against a $1.0bn import
-> terminal, and every reservation run declined to build it -- dropping real southern
-> capacity to chase a saving that was a transfer, not a resource. Costing it breaks no
-> mechanism: export eligibility, the reserved cap and the shared field limit are all
-> constraints, not prices.
+> against CapEx, where $0 is not a merit-order device but a discount. The $0 is a
+> **transfer** from producer to consumer, and a cost-minimising objective has no business
+> containing one -- by `supply_cap` the reserved gas displaces commercial production one
+> for one out of the same capped field, so the system lifts the same molecules either way.
+> Costing it breaks no mechanism: export eligibility, the reserved cap and the shared
+> field limit are all constraints, not prices.
+>
+> **It did not change what gets built, and that was a surprise.** Uncosted, the tranche
+> was worth $6.4bn NPV against the $1.0bn Vopak Victoria FSRU that every reservation run
+> declines to build, so the change was made expecting the terminal to come back. It did
+> not: the build is identical and the contract-respecting run moved from +3.88% to +4.35%
+> against central. **Shortage is zero TJ in every year of both runs** -- the MIP never had
+> an adequacy case for the terminal, so the decision was never binding on the saving. The
+> change stands on the transfer argument alone. Do not re-derive the causal one from the
+> size of the number.
+
+### Why a reservation on uncontracted gas RAISES the domestic price
+
+Counter-intuitive and, as far as the model is concerned, real. `Res20% uncontracted only`
+sits about **+4.4%** above central on the volume-weighted delivered price, while the
+contract-breaking version sits about -3.1% below it.
+
+The reserved gas arrives at **Surat**. That relieves the national balance without
+relieving the southern one, and it is enough that the capacity plan stops building the
+Victorian import terminal it builds in the central case. The south still needs the gas, so
+it comes down the pipes instead of arriving locally as LNG, and the Surat->Melbourne
+spread widens:
+
+| | 2030 | 2033 | 2036 | 2040 | 2045 |
+|---|---|---|---|---|---|
+| central | 1.53 | 1.16 | 3.53 | 3.01 | 1.70 |
+| `Res20%` uncontracted | 1.91 | 2.26 | 4.32 | 3.19 | 2.52 |
+
+The headline price is volume-weighted per node-**day**, so winter -- when both the volumes
+and the prices are high -- carries the average, and that is exactly when the southern
+transport differential bites. Adelaide and Melbourne run $0.9-1.6/GJ dearer; Brisbane,
+sitting on the free gas, is flat to slightly cheaper.
+
+The policy reading: a reservation capped at the uncontracted tail delivers gas to the
+wrong end of the country, and by making the national balance look comfortable it
+discourages the southern infrastructure that would actually lower southern prices.
 
 ## Data centre gas demand
 

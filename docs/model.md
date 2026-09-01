@@ -62,6 +62,7 @@ out.
 | `gpg_pen` | Σ `gpg_curtail` × $22/GJ × 1000 | GPG shed at its strike |
 | `ind_pen` | Σ `ind_curtail` × $120/GJ × 1000 | Large industrial shed at its strike |
 | `lng_benefit` | Σ `lng_export` × netback × 1000 | Export revenue. **Subtracted**, not added. |
+| `reserved_cost` | Σ `reserved_prod` × field cost × 1000 | **Capacity MIP only.** Lifting the reserved tranche. Dispatch prices it at $0 — that is the reservation, and there the price only sets merit order. The MIP weighs its objective against CapEx, so a $0 tranche would be a discount on the build decision rather than a merit-order device. See `capacity_model._reserved_cost`. |
 
 ```
 minimise   prod_cost + trans_cost + shortage_penalty + storage_cost
