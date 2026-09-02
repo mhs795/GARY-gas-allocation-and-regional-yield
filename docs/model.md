@@ -303,47 +303,52 @@ Costs* sheet says what is inside it:
 > include the cost of **drilling and completion and marginal gas processing plant
 > costs**."
 
-So the 2P cost is an operating basis and the 2C cost is a full cost. GARY splits
-them on exactly that reading:
+So the 2P cost is an operating basis and the 2C cost is a full cost, and **GARY
+carries the 2C capital in the gas price rather than as a build cost**:
 
-* the **2C supply row** carries the basin's **operating** basis -- its 2P cost --
-  in `Cost`, with AEMO's published full cost kept alongside in `AEMOFullCost`;
-* the **capital** comes out in `expansion_options.csv`, derived as
-  `(AEMOFullCost - Cost) x Reserves_PJ` for the basin and shared across that
-  basin's developments pro rata on `NewCapacity`.
+* the **2C supply row** carries AEMO's published full cost directly in `Cost`
+  (Surat $6.65/GJ, Gippsland $15.76, Otway $15.62, Cooper $11.63, Amadeus $16.94),
+  with the same figure kept in `AEMOFullCost` as the provenance;
+* the **field development** in `expansion_options.csv` carries **zero CapEx**. It
+  still exists and still gates the tranche -- a potential supply row produces only
+  if its development is built -- but it charges no capital of its own.
 
-| Basin | derived development capital |
-|---|---|
-| Surat/Bowen | $69.8bn |
-| Gippsland | $21.1bn |
-| Cooper/Eromanga | $5.1bn |
-| Otway | $2.4bn |
-| Amadeus | $2.0bn |
-| **Beetaloo** | **not split -- see below** |
+### A field development is a capacity gate, not a capital decision
 
-The split is applied **only where AEMO publishes both a 2P and a 2C cost.** Beetaloo
-has no published 2P at all, so there is nothing to split the capital out with: its
-supply row carries AEMO's full $9.15/GJ and its developments carry no derived
-capital. Scaling the full cost on other basins' 2P/2C ratios would put a GARY number
-where AEMO has published none, so it is not done. Different basins get different
-treatment because different data exists, which is the correct outcome rather than an
-inconsistency to paper over.
+**This is deliberate, and it is the one place where a `build` decision does not mean
+what it means everywhere else.** Read the two kinds of row differently:
 
-> **Why the magnitude matters.** GARY's project CapEx idiom is $0.25-1bn, and an
-> earlier version of this split used it: field developments were put on operating
-> cost and charged a project-scale lump sum at Golden Beach's $1.6m/TJ-d unit rate.
-> That understates development capital by more than an order of magnitude -- $0.8bn
-> against $21.1bn for Gippsland -- and it hands domestic backfill an unbeatable
-> advantage over an import terminal, which *is* charged its full cost. If the
-> domestic-versus-import trade-off ever looks lopsided, this is the first thing to
-> check.
+| | what `build[e]` buys | where its capital sits |
+|---|---|---|
+| **Field development** (Bowen, Judith, Otway, Cooper 2C, Amadeus 2C, Beetaloo) | permission for a 2C tranche to flow | in the tranche's `Cost`, recovered per GJ produced |
+| **Pipeline / import terminal** (ECGG, FSRUs, Port Kembla) | physical capacity that did not exist | in `CapEx`, annualised at 8%/yr in `exp_capex` |
 
-**A field development row therefore does not mean what a pipeline row means.** Every
-candidate targeting a basin draws on one shared reserve row, so building 375 of
-Gippsland's 500 TJ/d buys ~75% of the pool and pays ~75% of its capital.
-`Golden_Beach` carries $15.8bn on that basis, against an announced project cost near
-$600m. Read those rows as "this project and the share of the basin's contingent
-development it carries", not as a build cost. The `Note` column says so on each.
+An import terminal or a pipeline is a genuine lumpy capital commitment and there is
+no per-GJ channel to put it in; choosing between two Geelong FSRUs on build cost is
+exactly what that `CapEx` is for. A field development is not that. Its capital is
+already inside AEMO's blended $/GJ, so charging it again as a lump would bill it
+twice -- the same double-count `_import_injection_cost` removes on the other side.
+
+> **Why it is done this way -- a real failure, not a preference.** The capital used
+> to be split out as a lump: the 2C row took the basin's operating basis and the
+> development carried `(AEMOFullCost - Cost) x Reserves_PJ`, shared pro rata on
+> deliverability. The numbers were right; the STRUCTURE was wrong. A per-GJ cost
+> recovers capital as gas is produced, but a binary build charges **100% of a
+> basin's development capital to reach any of it**. For Surat that was
+> `$3.00/GJ x 23,270 PJ = $69.8bn` as one indivisible decision, $5.5bn/yr
+> annualised. The MIP never took it. Across every scenario in the standard set,
+> **Surat 2C sat at 0% used** while 2P ran down to 71%, the scarcity rent on what
+> remained compounded to $8/GJ, and LNG exports stopped in 2038 against a GSOO that
+> has them at 1000 PJ/yr to 2045. GARY was not disagreeing with AEMO about the
+> resource -- the reserves are AEMO's -- it was pricing half of it as unreachable.
+> If exports or southern prices ever look structurally wrong again, check whether a
+> tranche is stranded behind a lump before believing the depletion story.
+
+**Beetaloo already worked this way** and now simply stops being the exception. It has
+no published 2P to split against, so its supply row always carried AEMO's full
+$9.15/GJ and its pilots always carried zero CapEx. Scaling a full cost on other
+basins' 2P/2C ratios would put a GARY number where AEMO has published none, so it is
+still not done.
 
 **Import terminals are the other side of the same rule.** They carry their `CapEx`
 explicitly, so ACIL Allen's **$1.50/GJ regasification** allowance comes back off the

@@ -194,32 +194,59 @@ def southern_envelope():
 
 
 def derived_capex():
-    """Development capital implied by AEMO's own numbers, per basin and per project.
+    """Check that field development capital is carried PER GJ, not as a lump.
 
     AEMO publishes no CapEx, only a blended $/GJ that its Production Costs note says
     includes "operating cost, capital costs, royalty, tax and a return on capital".
-    supply.csv splits that: a 2C row carries the basin's OPERATING basis in `Cost`
-    and AEMO's published full cost in `AEMOFullCost`. The capital is the gap, over
-    the resource that capital develops, shared across the basin's developments pro
-    rata on the deliverability each brings.
 
-    This is the check that expansion_options.csv has not drifted from supply.csv.
+    GARY used to split that: the 2C row carried the basin's OPERATING basis in
+    `Cost`, and the capital -- the gap to `AEMOFullCost`, over the whole tranche --
+    became a lump CapEx on the fronting development, shared pro rata on
+    deliverability. That is what this function computed, and the numbers were right.
+    The STRUCTURE was wrong, and badly so.
+
+    A per-GJ cost recovers capital as gas is produced. A binary build charges 100%
+    of the basin's development capital to reach ANY of it. For Surat that was
+    $3.00/GJ x 23,270 PJ = $69.8bn as one indivisible decision, $5.5bn/yr
+    annualised, and the MIP never took it: Surat 2C sat at 0% used across every
+    scenario while 2P ran down to 71%, the scarcity rent on what was left compounded
+    to $8/GJ, and LNG exports stopped in 2038 against a GSOO that has them running
+    at 1000 PJ/yr to 2045. The model was not disagreeing with AEMO about the
+    resource -- the reserves come from AEMO -- it was pricing half of it as
+    unreachable.
+
+    So the gap now lives in the 2C row's `Cost`, reproducing AEMO's published full
+    cost exactly, and the field developments carry zero CapEx. They still exist, and
+    they still gate the tranche: a potential row produces only if its development is
+    built. What they no longer do is charge a basin's entire capital up front.
+
+    NOTE THE ASYMMETRY, it is deliberate. A field development is now a
+    CAPACITY GATE with no capital of its own, because its capital is in the gas
+    price. An import terminal or a pipeline is a genuine capital decision and keeps
+    its CapEx -- there is no per-GJ channel to put it in, and choosing between two
+    Geelong FSRUs on build cost is exactly what that CapEx is for. Beetaloo already
+    worked the first way: its gap is $0.00 and its pilots carry zero CapEx.
+
+    This function now checks that separation holds.
     """
     sup = pd.read_csv(os.path.join(DATA, 'supply.csv'))
     exp = pd.read_csv(os.path.join(DATA, 'expansion_options.csv'))
     c2c = sup[(sup['IsPotential']) & (sup['Tranche'] == '2C')]
+    # Capital belongs in the gas price: Cost must BE the published full cost, so the
+    # residual gap is zero. per_basin is what a lump would have been, kept only so
+    # the report can show what is no longer being charged up front.
     per_basin = {r['Node']: (r['AEMOFullCost'] - r['Cost']) * r['Reserves_PJ'] * 1e6
                  for _, r in c2c.iterrows()}
     out = []
-    for node, capex in per_basin.items():
+    for _, r in c2c.iterrows():
+        node = r['Node']
         devs = exp[(exp['Type'] == 'Terminal') & (exp['Target'] == node)]
-        total = devs['NewCapacity'].sum()
+        gap_ok = abs(r['AEMOFullCost'] - r['Cost']) <= 0.005
         for _, d in devs.iterrows():
-            want = capex * d['NewCapacity'] / total
             out.append({'Name': d['Name'], 'Basin': node,
-                        'Expected_CapEx': round(want),
-                        'In_File': int(d['CapEx']),
-                        'Matches': abs(want - d['CapEx']) <= max(1.0, 0.001 * want)})
+                        'Cost_is_full_cost': gap_ok,
+                        'CapEx_in_file': int(d['CapEx']),
+                        'Matches': gap_ok and int(d['CapEx']) == 0})
     return pd.DataFrame(out), per_basin
 
 
