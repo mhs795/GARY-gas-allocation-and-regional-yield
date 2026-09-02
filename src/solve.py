@@ -26,6 +26,20 @@ HORIZON_END = P.get_int('horizon_end', 2051)
 # see -- lands outside the reported range instead of inside it. See TODO item 14.
 HORIZON_REPORT_END = P.get_int('horizon_report_end', 2050)
 
+# Terminal-value fixed point: how many extra capacity solves to spend chasing it,
+# and the tau movement (years) below which it is called settled.
+SALVAGE_MAX_PASSES = P.get_int('salvage_max_passes', 4)
+SALVAGE_TAU_TOL = P.get('salvage_tau_tol', 0.25)
+
+
+def _nameplate_tau(cap, key):
+    """The row's own reserves-to-production ratio, the first-pass guess."""
+    from capacity_model import _reserve_to_production_years
+    try:
+        return _reserve_to_production_years(cap._supply_row(key))
+    except Exception:
+        return None
+
 # Which Source value in expansion_options.csv counts as "in the GSOO".
 GSOO_SOURCE = P.get_str('expansion_source_gsoo', 'GSOO')
 GSOO_ONLY_DEFAULT = str(P.get_str('gsoo_expansions_only', 'FALSE')).strip().upper() in ('TRUE', '1', 'YES')
@@ -507,13 +521,54 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
             raise RuntimeError(f"Capacity model failed: {st}")
         return c
 
-    # --- Pass 2: the investment MIP -----------------------------------------
-    # One pass. It used to be two: depletion was carried as a path-dependent COST
-    # step, so the MIP had to be solved once to learn the production path and again
-    # against the stepped costs. Reserves are a hard stock limit now and the MIP
-    # sees every year at once, so it states the limit directly as a constraint and
-    # there is nothing left to iterate on.
+    # --- Pass 2: the investment MIP, iterated to a terminal-value fixed point ----
+    # The salvage credit scales the margin on leftover gas by 1/(1+r.tau), where tau
+    # is how many years of production the stock represents. tau therefore has to be
+    # measured on the stock LEFT AT THE HORIZON -- but that is an output of the very
+    # solve it feeds, so it is a fixed point and has to be iterated.
+    #
+    # The first pass uses each row's NAMEPLATE ratio, which asks how long the tranche
+    # would take to sell if none of it had been produced. At the horizon that is the
+    # wrong question, and wrong in one direction: it treats a nearly-exhausted Surat
+    # as though it still held twenty years of gas, and so under-prices its last
+    # molecules. Measured 3 Sep 2026 at the 2051 horizon, Surat 2P finished with 772
+    # PJ of 28,911 left -- 0.7 years of production, not 19.8.
+    #
+    # THE ITERATION IS SELF-CORRECTING. A higher salvage makes the MIP produce less,
+    # which leaves more stock, which lengthens tau, which lowers the salvage again.
+    # Negative feedback, so it settles. (Setting the salvage to the model's own
+    # marginal value at the horizon instead is POSITIVE feedback -- every pass adds
+    # the reserve dual back on and the credit walks up to the backstop, which is
+    # exactly the flat-supply-curve bug this whole line of work started from. Do not
+    # do that.)
+    #
+    # Damped at 50% because the first correction is large and undamped passes
+    # overshoot; capped at SALVAGE_MAX_PASSES because a fixed point that has not
+    # settled by then is telling us something the tolerance will not fix.
     cap = _build_cap()
+    tau_now = {}
+    for _pass in range(SALVAGE_MAX_PASSES):
+        measured = cap.measured_tau()
+        if not measured:
+            break
+        moved = 0.0
+        nxt = {}
+        for k, tau_m in measured.items():
+            prev = tau_now.get(k, _nameplate_tau(cap, k))
+            if tau_m < 0.0 or prev is None:
+                nxt[k] = tau_m
+                continue
+            blend = 0.5 * prev + 0.5 * tau_m
+            moved = max(moved, abs(blend - prev))
+            nxt[k] = blend
+        tau_now = nxt
+        if log:
+            print(f"    salvage pass {_pass + 1}: max tau move {moved:.2f} yr", flush=True)
+        if moved < SALVAGE_TAU_TOL:
+            break
+        cap_kwargs['tau_override'] = tau_now
+        cap = _build_cap()
+    globals()['_LAST_TAU'] = tau_now
     # THE SCARCITY RENT. Without it the myopic dispatch layer burns each cheap
     # tranche at full rate and hits a wall the perfect-foresight MIP never saw --
     # measured at 758 PJ/yr of shortage over 2047-50 before this was added. See

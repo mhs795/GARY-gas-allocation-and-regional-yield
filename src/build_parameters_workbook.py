@@ -117,6 +117,14 @@ PARAMETERS = [
      "NPV discount rate for the perfect-foresight capacity MIP"),
     ("Capacity model", "peak_day_weight", 5.0, "days",
      "Days represented by the annual peak representative day (adequacy)"),
+    ("Capacity model", "salvage_max_passes", 0, "passes",
+     "Extra capacity solves spent chasing the terminal-value fixed point. The salvage "
+     "credit scales leftover margin by 1/(1+r.tau) and tau must be measured on the stock "
+     "left AT THE HORIZON, which is an output of the solve it feeds. Self-correcting "
+     "(more salvage -> less production -> more stock left -> longer tau -> less salvage), "
+     "so it settles; 0 disables the iteration and falls back to each row nameplate ratio."),
+    ("Capacity model", "salvage_tau_tol", 0.25, "years",
+     "Stop iterating once no row moves its reserves-to-production ratio by more than this."),
     ("Capacity model", "terminal_earliest", 2028, "year",
      "Earliest build year for an LNG import terminal"),
     ("Capacity model", "capacity_base_year", 2025, "year", "Discounting base year"),

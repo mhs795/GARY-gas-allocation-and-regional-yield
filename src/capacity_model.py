@@ -129,7 +129,7 @@ def _reserve_to_production_years(row):
     return reserves / annual_pj
 
 
-def _salvage_rate(row, backstop, discount_rate):
+def _salvage_rate(row, backstop, discount_rate, tau=None):
     """What one GJ still in the ground is worth at the horizon, $/GJ.
 
     THREE things are netted off, and the third is the one that was missing.
@@ -165,10 +165,13 @@ def _salvage_rate(row, backstop, discount_rate):
     margin = float(backstop) - float(row['Cost'])
     if margin <= 0.0:
         return 0.0
-    tau = _reserve_to_production_years(row)
+    if tau is None:
+        tau = _reserve_to_production_years(row)
     if tau is None:
         return margin
-    return margin / (1.0 + float(discount_rate) * tau)
+    if tau < 0.0:
+        return 0.0
+    return margin / (1.0 + float(discount_rate) * float(tau))
 
 
 # Days represented by the annual peak day (adequacy).
@@ -284,7 +287,7 @@ class CapacityExpansionModel:
                  lng_arcs=(), lng_source=(), netback_by_year=None,
                  import_cost_by_year=None, lng_nameplate=None, foundation_share=0.0,
                  reservation_applied=0.0, respect_contracts=True,
-                 salvage_price=None,
+                 salvage_price=None, tau_override=None,
                  ):
         self.nodes, self.arcs, self.supply, self.expansion = nodes_df, arcs_df, supply_df, expansion_df
         self.years = list(years)
@@ -362,13 +365,18 @@ class CapacityExpansionModel:
         # Queensland extraction cost pays the field for a haul it never performed.
         self.backstop_at_node = _backstop_at_wellhead(self.nodes, self.arcs,
                                                       salvage_price)
+        # {(node, is_potential): years} reserves-to-production ratio measured on the
+        # stock ACTUALLY LEFT at the horizon, from a previous solve. None means use
+        # the row's nameplate ratio, which is the first-iteration guess. See
+        # solve._solve_foresight for the fixed point this feeds.
+        self.tau_override = dict(tau_override or {})
         self.solved = False
 
     def _salvage(self, s):
         """Terminal $/GJ credit on one supply row ``(node, is_potential)``."""
         row = self._supply_row(s)
         return _salvage_rate(row, self.backstop_at_node.get(s[0], self.salvage_price),
-                             self.r)
+                             self.r, self.tau_override.get(s))
 
     def _supply_row(self, s):
         if not hasattr(self, '_supply_ix'):
@@ -861,6 +869,47 @@ class CapacityExpansionModel:
             for y in self.years:
                 df = 1.0 / ((1.0 + self.r) ** (y - self.base_year))
                 out[(idx[0], idx[1], y)] = (lam + salvage_npv) / df
+        return out
+
+    def measured_tau(self):
+        """``{(node, is_pot): years}`` R/P ratio on the stock LEFT at the horizon.
+
+        The nameplate ratio in ``_reserve_to_production_years`` asks "how long would
+        this tranche take to sell if none of it had been produced?" -- which is the
+        right question in 2025 and the wrong one at the horizon, where most of the
+        cheap tranches are nearly gone. This asks it of the stock that is actually
+        still there once the plan has run.
+
+        It is the difference between a terminal value that says "Surat holds twenty
+        years of gas, so its last molecules are worth little" and one that notices
+        Surat has 772 PJ left and is nearly exhausted, so its last molecules are
+        worth nearly the full margin.
+
+        THE ITERATION IS SELF-CORRECTING, which is why it is safe to run to a fixed
+        point: a higher salvage makes the MIP produce less, which leaves MORE stock,
+        which lengthens tau, which LOWERS the salvage. Negative feedback. Contrast
+        setting the salvage to the model's own marginal value at the horizon, which
+        is positive feedback -- each pass adds the reserve dual again and the credit
+        walks up to the backstop, which is the flat-supply-curve bug we started from.
+        """
+        prod = self.get_annual_production_pj()
+        last = self.years[-1]
+        out = {}
+        for s_ in self.model.Supply:
+            row = self._supply_row(s_)
+            reserves = _reserves_pj(row)
+            if reserves is None:
+                continue
+            produced = sum(prod.get(s_, {}).values())
+            left = max(0.0, float(reserves) - produced)
+            # Deliverability at the horizon, given what has been taken out of it.
+            daily = _declined_capacity(row, last, produced)
+            annual = daily * 365.0 / 1000.0
+            if annual <= 0.0:
+                # Nothing left to produce it with, so the stock cannot be realised.
+                out[s_] = -1.0
+                continue
+            out[s_] = left / annual
         return out
 
     def get_annual_production_pj(self):

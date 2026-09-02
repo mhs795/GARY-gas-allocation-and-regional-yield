@@ -608,3 +608,49 @@ of every result. Not attempted. The same three-horizon test decides whether it w
 
 **Do not read a late-horizon result as an economic finding until this is closed.** The
 2050 export path is a statement about where the horizon was placed.
+
+### Item 16, addendum 3 Sep 2026 — the terminal value cannot fix this, measured
+
+The obvious next move after the tau fix was to measure tau on the stock ACTUALLY LEFT at
+the horizon rather than on nameplate reserves, iterating to a fixed point (nameplate asks
+how long a tranche would take to sell if none of it had been produced -- the wrong
+question at the horizon, where Surat 2P finishes with 772 PJ of 28,911 left). Built it,
+ran it, and it is a dead end. Recorded so nobody rebuilds it.
+
+It converges properly -- damped 50%, tau moves 1.48, 0.74, 0.37, 0.19 years over four
+passes -- and it is the better specification. It changes nothing: **exports 23,101 ->
+23,070 PJ, every scarcity rent identical to two decimals**, for 40% more solve time.
+
+**Why, and this is the finding.** The salvage credit and the reserve dual are
+**perfectly substitutable**. The credit is `rate x (Reserves - sum q)`, whose only
+non-constant part is `+rate` per unit produced; the constraint contributes `+lambda` per
+unit at the margin. The MIP picks total production where the marginal cost clears, so
+lowering `rate` simply raises `lambda` one for one:
+
+| run | salvage rate | salvage @2050 | reserve dual @2050 | TOTAL rent |
+|---|---|---|---|---|
+| shipped, gross backstop | 8.64 | 8.07 | 0.00 | **8.07** |
+| nameplate tau | 2.57 | 2.40 | 1.77 | **4.17** |
+| fixed point, measured tau | 0.00 | 0.00 | 4.17 | **4.17** |
+
+The tau fix mattered only because it moved the credit from a level where the reserve
+constraint was SLACK -- lambda exactly 0.00, the model hoarding, 72% of 2P drawn -- to one
+where it BINDS. Once binding, the total is pinned by the budget and further reductions in
+the credit are absorbed. There is a floor, and no terminal value reaches below it.
+
+**So the horizon sensitivity is the constraint's shape, not the terminal value's level**,
+and item 16's fix stands: give the MIP a per-year stock. `sum q <= R` over a window makes
+gas produced in 2025 and 2050 perfect substitutes against one budget, with no notion of
+WHEN the stock runs out, so the budget's tightness -- and hence the whole rent path -- is
+set by how many years were solved.
+
+**One caveat on that fix, stated honestly.** Part of this may not be a bug at all. If
+demand over a longer window genuinely exceeds recoverable reserves then gas genuinely IS
+scarcer, and the 2050 price genuinely does depend on post-2050 demand, which GARY has no
+source for. A per-year stock would make depletion physical and time-specific, which is
+worth having on its own merits (requirement B), but it will not make the answer
+independent of an assumption nobody has yet written down.
+
+The iteration is left in the code and OFF (`salvage_max_passes = 0`). Turn it on if
+`reserve_limit` is ever replaced by a per-year stock, where the substitution above no
+longer holds.
