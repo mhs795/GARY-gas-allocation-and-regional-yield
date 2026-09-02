@@ -5,6 +5,9 @@ Three tabs, the shape the price comparisons have always been read in:
   levels          $/GJ, one row per year, one column per scenario
   percent change  the same grid as % against the central case
   charts          one percent-change panel per scenario, read off that grid
+  system cost     total system cost, the central case's breakdown, and mean
+                  composition by scenario -- written only when the cache carries
+                  the model's recorded cost components
 
 The price is dashboard.headline_price -- the volume-weighted price at the DEMAND
 nodes, weighted by what physically arrived at each node each day. Importing it
@@ -53,6 +56,14 @@ OUT = os.path.join(ROOT, 'output', 'domestic_price_summary.xlsx')
 CENTRAL = 'Base_StepChange_Winter_Medium_LNG_Medium_Netback'
 
 LEVELS_SHEET, PCT_SHEET, PANEL_SHEET = 'levels', 'percent change', 'charts'
+COST_SHEET = 'system cost'
+
+# The objective's own terms, in the order they read as a cost stack. lng_revenue is
+# negative -- the system is PAID for an export cargo -- so it is charted apart from
+# the costs rather than stacked with them.
+COST_TERMS = ['production', 'transport', 'storage', 'capex',
+              'gpg_curtailment', 'ind_curtailment', 'shortage']
+COST_ALL = COST_TERMS + ['lng_revenue']
 
 
 def key_order(keys):
@@ -110,7 +121,47 @@ def half_grid(lo, hi):
     return (lo - 0.5, hi + 0.5) if lo == hi else (lo, hi)
 
 
-def _line_chart(book, sheet, df, cols, title, y_title, size, span_zero=False):
+def cost_frames(scenarios, central=CENTRAL):
+    """(total by scenario, component breakdown for `central`, mean $bn/yr by scenario).
+
+    All in $bn. Returns ``None`` if the cache predates cost-component recording --
+    the components are written by the model at solve time (see
+    ``GasMarketModel.get_results``), because reconstructing them from the saved
+    frames cannot be made to tie: it has to re-derive the year-varying import cost,
+    the per-row scarcity rent, the foundation/spot export split and the $0 reserved
+    tranche that sits inside ``production``. A breakdown whose parts do not sum to
+    the total is worse than no breakdown, so this reports nothing rather than
+    something close.
+    """
+    have = [k for k in scenarios
+            if scenarios[k] and scenarios[k][0].get('cost_components')]
+    if not have:
+        return None
+    keys = [k for k in key_order(scenarios) if k in have]
+    total = pd.DataFrame({
+        short_key(k): pd.Series({int(r['Year']): r['total_cost'] / 1e9
+                                 for r in scenarios[k]}).sort_index()
+        for k in keys})
+    total.index.name = 'Year'
+    if central in scenarios and central in have:
+        br = pd.DataFrame({
+            t: pd.Series({int(r['Year']): r['cost_components'].get(t, 0.0) / 1e9
+                          for r in scenarios[central]}).sort_index()
+            for t in COST_ALL})
+    else:
+        br = pd.DataFrame(columns=COST_ALL)
+    br.index.name = 'Year'
+    mean = pd.DataFrame({
+        t: {short_key(k): sum(r['cost_components'].get(t, 0.0)
+                              for r in scenarios[k]) / len(scenarios[k]) / 1e9
+            for k in keys}
+        for t in COST_ALL})
+    mean.index.name = 'Scenario'
+    return total, br, mean
+
+
+def _line_chart(book, sheet, df, cols, title, y_title, size, span_zero=False,
+                first_row=0):
     """A line chart over `cols` of `df`, sourced from `sheet`.
 
     Row 1 holds the headers and column A the years, so a DataFrame column at
@@ -128,9 +179,9 @@ def _line_chart(book, sheet, df, cols, title, y_title, size, span_zero=False):
     n = len(df)
     for i in cols:
         chart.add_series({
-            'name':       [sheet, 0, i + 1],
-            'categories': [sheet, 1, 0, n, 0],
-            'values':     [sheet, 1, i + 1, n, i + 1],
+            'name':       [sheet, first_row, i + 1],
+            'categories': [sheet, first_row + 1, 0, first_row + n, 0],
+            'values':     [sheet, first_row + 1, i + 1, first_row + n, i + 1],
             'marker':     {'type': 'none'},
             'smooth':     False,
         })
@@ -150,6 +201,72 @@ def _line_chart(book, sheet, df, cols, title, y_title, size, span_zero=False):
     if len(cols) == 1:
         chart.set_legend({'none': True})     # the title already names the series
     return chart
+
+
+def _stacked_chart(book, sheet, df, first_row, title, size):
+    """Stacked column over every column of `df`, sourced from `sheet`.
+
+    `first_row` is the 0-indexed sheet row holding the headers. lng_revenue is
+    negative and stacks below the axis, which is the honest picture: it is the one
+    term the system is PAID rather than pays.
+    """
+    chart = book.add_chart({'type': 'column', 'subtype': 'stacked'})
+    n = len(df)
+    for i in range(len(df.columns)):
+        chart.add_series({
+            'name':       [sheet, first_row, i + 1],
+            'categories': [sheet, first_row + 1, 0, first_row + n, 0],
+            'values':     [sheet, first_row + 1, i + 1, first_row + n, i + 1],
+        })
+    chart.set_title({'name': title})
+    chart.set_x_axis({'name': 'Year'})
+    chart.set_y_axis({'name': '$bn', 'num_format': '0.0',
+                      'major_gridlines': {'visible': True}})
+    chart.set_size(size)
+    return chart
+
+
+def write_cost_sheet(xl, scenarios):
+    """The system-cost tab: totals, the central case's breakdown, and composition.
+
+    Returns False when the cache carries no components, so the caller can say so
+    rather than publish an empty tab.
+    """
+    frames = cost_frames(scenarios)
+    if frames is None:
+        return False
+    total, br, mean = frames
+    book, sheet = xl.book, COST_SHEET
+    wide = {'width': 900, 'height': 420}
+
+    # Rows are laid out first so the tables never collide; charts go to the right
+    # of them rather than below, so neither can land on a cell it plots.
+    r_total, r_break, r_mean = 1, 1 + len(total) + 4, 1 + len(total) + 4 + len(br) + 4
+    total.to_excel(xl, sheet_name=sheet, startrow=r_total)
+    br.to_excel(xl, sheet_name=sheet, startrow=r_break)
+    mean.to_excel(xl, sheet_name=sheet, startrow=r_mean)
+    ws = xl.sheets[sheet]
+    ws.write(r_total - 1, 0, 'Total system cost, $bn')
+    ws.write(r_break - 1, 0, f'Cost breakdown, {short_key(CENTRAL)}, $bn')
+    ws.write(r_mean - 1, 0, 'Mean $bn/yr by component')
+    ws.write(r_mean + len(mean) + 2, 0,
+             'Terms are the dispatch objective\'s own, signed as they enter it, so they '
+             'sum to total_cost exactly. lng_revenue is negative: the system is PAID for '
+             'an export cargo.')
+    ws.write(r_mean + len(mean) + 3, 0,
+             'NOT comparable across reservation levels: the reserved tranche is priced at '
+             '$0 in dispatch, so reserving more always lowers the figure. See '
+             'docs/scenarios.md.')
+    ws.set_column(0, 0, 34)
+
+    ws.insert_chart(r_total, 10,
+                    _line_chart(book, sheet, total, range(len(total.columns)),
+                                'Total system cost', '$bn', wide,
+                                first_row=r_total))
+    ws.insert_chart(r_break, 10,
+                    _stacked_chart(book, sheet, br, r_break,
+                                   f'Cost breakdown, {short_key(CENTRAL)}', wide))
+    return True
 
 
 def write_summary(cache=CACHE, out=OUT, log=True):
@@ -208,9 +325,12 @@ def write_summary(cache=CACHE, out=OUT, log=True):
             panels.insert_chart(row * 17 + 1, side * 10, chart)
             slot += 1
 
+        cost_ok = write_cost_sheet(xl, scenarios)
+
     if log:
+        note = '' if cost_ok else '  (no system-cost tab: cache predates cost components)'
         print(f"  wrote {os.path.relpath(out, ROOT)}  "
-              f"({len(levels_out.columns)} scenarios x {n} years)")
+              f"({len(levels_out.columns)} scenarios x {n} years){note}")
     return out
 
 

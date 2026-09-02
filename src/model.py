@@ -1000,6 +1000,19 @@ class GasMarketModel:
             # same objective GasMark solves -- the point of the netback section
             # above. Because benefits are bounded above (every raise and export
             # block has a cap), the sum cannot run away negative.
+            # Kept as the SAME expression objects the objective is summed from, so a
+            # breakdown reported later cannot drift from the total. Reconstructing
+            # these from the saved result frames was tried and abandoned: it has to
+            # re-derive the year-varying import cost, the per-row scarcity rent, the
+            # foundation/spot export split and the $0 reserved tranche sitting inside
+            # `production`, and each of those is a place to silently disagree with the
+            # objective. Read them here or not at all.
+            self._cost_terms = {
+                'production': prod_cost, 'transport': trans_cost,
+                'shortage': shortage_penalty, 'storage': storage_cost,
+                'capex': exp_capex, 'gpg_curtailment': gpg_pen,
+                'ind_curtailment': ind_pen, 'lng_revenue': -lng_benefit,
+            }
             return (prod_cost + trans_cost + shortage_penalty + storage_cost + exp_capex
                     + gpg_pen + ind_pen - lng_benefit)
         m.obj = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
@@ -1399,6 +1412,11 @@ class GasMarketModel:
         for e in m.Expansion:
             if pyo.value(m.build[e]) > 0.5: res['builds'].append(e)
         res['total_cost'] = pyo.value(m.obj)
+        # The objective's own terms, in dollars, signed as they enter it -- so they
+        # sum to total_cost exactly. lng_revenue is negative: the system is PAID for
+        # an export cargo.
+        res['cost_components'] = {k: float(pyo.value(v))
+                                  for k, v in getattr(self, '_cost_terms', {}).items()}
         res['solved'] = getattr(self, 'solved', True)
         # Collapse the per-day record lists into packed columns straight away: a
         # full batch holds every scenario in memory at once, and the dicts cost
