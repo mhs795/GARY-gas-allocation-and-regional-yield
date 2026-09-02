@@ -654,3 +654,46 @@ independent of an assumption nobody has yet written down.
 The iteration is left in the code and OFF (`salvage_max_passes = 0`). Turn it on if
 `reserve_limit` is ever replaced by a per-year stock, where the substitution above no
 longer holds.
+
+
+## 17. AEMO's reserves and its decline rates do not reconcile
+
+**Measured 3 Sep 2026.** Follow each 2P field along AEMO's own `DeclineRate` from its
+own nameplate capacity, and total what it produces over 2025-50. Compare that with the
+reserves AEMO states for the same field:
+
+| tranche | PJ/yr | decline | 26yr output | reserves | ratio |
+|---|---|---|---|---|---|
+| Surat 2P | 1,460 | 1.0% | 33,574 | 28,911 | **1.2x** |
+| Amadeus 2P | 20 | 3.0% | 366 | 230 | **1.6x** |
+| Gippsland 2P | 280 | 12.0% | 2,246 | 1,108 | **2.0x** |
+| Moomba 2P | 146 | 3.0% | 2,662 | 850 | **3.1x** |
+| Iona 2P | 128 | 0.0% | 3,322 | 304 | **10.9x** |
+
+Every field's decline curve would produce more gas than the field holds -- Iona by
+nearly eleven times. Both numbers are AEMO's, from the same 2026 GSOO supply workbook.
+
+**This is not a bug in GARY, and GARY already survives it**, because `_declined_capacity`
+caps production at the remaining stock. But it means something worth knowing: **the
+reserve limit is what binds, and the decline curve is close to decorative** for the
+southern fields. Depletion in GARY has always been reserve-driven, not decline-driven.
+
+**Where it bites.** It forces a choice about the SHAPE of the production path that
+neither input settles, and the two available shapes are both wrong at the ends:
+
+* **Plateau-then-cliff** (what GARY does now). Produce flat at capacity, hit the reserve
+  wall, stop. Trusts the decline rate for the early path and the reserves for the total.
+* **Decline-from-day-one** (`prod <= stock/tau`, tried on `experiment/per-year-stock`).
+  Smooth, physical, and far too aggressive: 1/tau is 5x AEMO's decline for Surat and
+  infinitely faster for Iona, which AEMO holds flat. Southern supply collapses early and
+  QCLNG foundation contracts go 134,496 TJ short over 2029 and 2033-35.
+
+A real reservoir does neither. It holds a plateau set by facility capacity, then declines
+when pressure can no longer sustain it. **Implementing plateau-then-decline needs a
+threshold -- the reserves-to-production ratio at which plateau ends -- and neither AEMO
+input supplies one.** Deriving it from the decline rates means building on the half of
+the data that does not reconcile with reserves; picking it by which value makes the
+export path look right is fitting the model to a conclusion.
+
+**Open question for the modeller, not for the code:** when the two conflict, which does
+GARY trust? Everything about the shape of late-horizon supply follows from that answer.
