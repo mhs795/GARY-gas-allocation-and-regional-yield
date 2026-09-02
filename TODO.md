@@ -479,3 +479,75 @@ landed import parity, or the tranche's own cost.
    so it means inventing ~25 years of both — the model's two most important drivers —
    and it would change the 2050 answer rather than clean it up. One extra year is a
    flat hold on published data; twenty-five is a forecast GARY has no basis for.
+
+   > **REOPENED AND ADOPTED 2 Sep 2026, to 2065 — read this before trusting a late
+   > year.** The objection above is still right about what it costs, and the cost is
+   > now being paid deliberately, because the salvage value that item 14 wanted has
+   > landed and brought a worse artefact with it (item 15). Two things changed:
+   >
+   > * **It is a hold, not a forecast.** Nothing is invented. GARY already held the
+   >   GPG and industrial profiles flat from 2045 across 2046-51 and already held the
+   >   nearest LNG price outside the published range — `_load_year_profile` clamps,
+   >   `load_lng_prices` holds, `datacentre_series.value_for` holds. Annual demand was
+   >   the one series that did NOT hold (a bare `Year == year` filter returned an
+   >   empty frame, i.e. ZERO demand, the most extreme assumption available, not a
+   >   neutral one); it now holds too. The pad is the existing convention run longer.
+   > * **Changing the 2050 answer is the point.** Item 15 shows the terminal condition
+   >   contaminates roughly the decade before `horizon_end` whatever the salvage price
+   >   is. Leaving 2050 one year from the horizon does not preserve a clean answer,
+   >   it preserves a contaminated one.
+   >
+   > **What it costs, stated plainly.** The reported 2050 now rests on ~15 years of
+   > flat-held demand and price beyond the published data, and on ~20 years of flat
+   > GPG/industrial profile. Reserves are drawn against 41 years of demand instead of
+   > 27, so every basin rations harder than it did — that is a real change to the
+   > reported window and not a neutral one. A late-horizon result is a statement about
+   > the terminal condition as much as about the gas.
+
+
+## 15. The salvage credit cancels the field cost at the horizon — REAL, deferred
+
+**At `horizon_end` every molecule is worth the backstop regardless of what it costs
+to lift.** `get_scarcity_rents` de-discounts the salvage credit, so the rent it
+implies reaches the full salvage rate exactly at the last solved year. Put that into
+the production test and the field cost drops out:
+
+```
+produce iff   Cost + rent(y) + transport <= price(y)
+at y = HORIZON_END:   Cost + (backstop - Cost) + transport <= price
+                      backstop + transport <= price          <- Cost has cancelled
+```
+
+Measured 2 Sep 2026 on the 2051-horizon run, Step Change central, 2050 wellhead value
+as `Cost + rent`:
+
+| tranche | Cost | rent | wellhead |
+|---|---|---|---|
+| Surat 2P | 3.65 | 8.07 | **11.72** |
+| Surat 2C | 6.65 | 5.27 | **11.92** |
+| Moomba 2P | 8.45 | 3.59 | **12.04** |
+
+Three tranches spanning $3.65-8.45/GJ converge on the backstop. Since the backstop is
+an IMPORT price and the netback is an EXPORT price, and import parity exceeds export
+parity by the shipping-plus-regas wedge in any net-exporting basin, **exports at the
+horizon are excluded by construction — for every basin, at any cost, including free
+gas.** The observed consequence was LNG exports going 901 PJ -> 0 between 2037 and
+2038 and never resuming, against a demand frame planning 1,000-1,134 PJ/yr to 2050.
+
+**Partly addressed 2 Sep 2026, not fixed.** Two changes went in:
+
+* `_backstop_at_wellhead` nets the haul to a regasification terminal off the credit,
+  because the backstop is a price AT a terminal and a reserve tranche is not. Surat's
+  salvage falls $8.64 -> $6.14/GJ, Beetaloo's to zero (it costs $9.15 to lift against
+  a $7.46 delivered backstop). This is a straight bug fix and stands on its own.
+* `horizon_end` 2051 -> 2065, so the contaminated decade sits outside the reported
+  window. See item 14 dead end 2 for what that costs.
+
+**Neither touches the cancellation.** It is structural in the form of the credit, not
+its level: a constant terminal value, de-discounted, will always overtake a
+flat-to-declining netback somewhere, and the crossing is a cliff rather than a taper
+because the export block is homogeneous. The real fix is to close the model on its
+OWN final-year marginal value — salvage = that year's node shadow price less Cost —
+so holding and selling are indifferent at the horizon by construction and the price
+adjusts instead of the quantity going to zero. That needs a two-pass solve and was
+not attempted here.

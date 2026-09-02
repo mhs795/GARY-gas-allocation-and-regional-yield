@@ -28,12 +28,15 @@ WORKBOOK = os.path.join(DATA, "gary_parameters.xlsx")
 # (Group, Parameter, Value, Unit, Source/Note)
 PARAMETERS = [
     ("Horizon", "horizon_start", 2025, "year", "First modelled year"),
-    ("Horizon", "horizon_end", 2051, "year",
-     "Last SOLVED year. One year beyond horizon_report_end on purpose: a "
-     "finite-horizon model exhausts its reserve tranches exactly at the last year it "
-     "can see, so that year absorbs every accounting discrepancy and shows shortage. "
-     "Solving one year past the reporting horizon pushes that artefact into a year "
-     "nobody reads."),
+    ("Horizon", "horizon_end", 2065, "year",
+     "Last SOLVED year. Well beyond horizon_report_end on purpose. The terminal "
+     "salvage credit is de-discounted in get_scarcity_rents, so the Hotelling rent "
+     "it implies grows at the discount rate and reaches the full salvage rate exactly "
+     "at this year -- which means the last decade before it is contaminated by the "
+     "horizon whatever the salvage price is. Solving to 2065 and reporting to 2050 "
+     "puts that contaminated tail outside the window anyone reads. Series that end "
+     "earlier (demand 2051, LNG prices 2051, GPG/industrial profiles 2045) hold their "
+     "last published year across the padding; that is padding, not a forecast."),
     ("Horizon", "horizon_report_end", 2050, "year",
      "Last year PRESENTED. Results beyond this are solved but trimmed off before they "
      "reach the dashboard or a caller -- see solve.solve_scenario. Keep it strictly "

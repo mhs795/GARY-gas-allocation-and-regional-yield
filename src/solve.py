@@ -165,14 +165,25 @@ def _year_demand(data, year, winter, lng, reservation=0.0, netback_pricing=False
     selects a netback price path instead (see lng_price_scenario).
     """
     dm = data['demand'].copy()
+    # HOLD THE LAST PUBLISHED YEAR past the end of the demand file, the way
+    # load_lng_prices holds the nearest year and _load_year_profile clamps to
+    # 2045. The file runs to 2051; horizon_end is solved beyond that so the
+    # terminal condition lands outside the reporting window (see the Horizon rows
+    # in the parameters workbook), and a bare ``Year == year`` filter would hand
+    # those padding years an EMPTY frame -- zero demand, which is not a neutral
+    # assumption but the most extreme one available. Holding the last year flat
+    # is padding, not a forecast: the padded years are never reported.
+    dyear = min(max(int(year), int(dm['Year'].min())), int(dm['Year'].max()))
     winter_mult = _lever('Winter', winter,
                          {"Low": 1.0, "Medium": 1.5, "High": 2.2}[winter])
-    dm.loc[(dm['Year'] == year) & (dm['Node'].isin(['Melbourne', 'Adelaide', 'Sydney'])) &
+    dm.loc[(dm['Year'] == dyear) & (dm['Node'].isin(['Melbourne', 'Adelaide', 'Sydney'])) &
            (dm['Day'] >= 150) & (dm['Day'] <= 250), 'Demand'] *= winter_mult
     if not netback_pricing:
         lng_mult = get_lng_mult(lng, year)
-        dm.loc[(dm['Year'] == year) & (dm['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])), 'Demand'] *= lng_mult
-    return apply_lng_reservation(dm[dm['Year'] == year].copy(), reservation,
+        dm.loc[(dm['Year'] == dyear) & (dm['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])), 'Demand'] *= lng_mult
+    # The frame comes from dyear; the CONTRACT rules still key off the real year,
+    # because the foundation SPAs expire on their own calendar, not the file's.
+    return apply_lng_reservation(dm[dm['Year'] == dyear].copy(), reservation,
                                  respect_contracts=respect_contracts,
                                  scale_demand=not netback_pricing,
                                  year=year)
@@ -235,7 +246,7 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
                    respect_contracts=True, gsoo_expansions_only=None,
                    allow_import_terminals=None, rep_bins=None,
                    title=None, log=True):
-    """Solve a scenario over 2025-2050.
+    """Solve a scenario over the horizon, reported to ``horizon_report_end``.
 
     ``foresight=True`` (default) uses the two-stage full-horizon method: a
     perfect-foresight capacity model chooses builds across the whole horizon, then
@@ -309,20 +320,28 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
 def _trim_to_report_horizon(results):
     """Drop the years solved past ``horizon_report_end`` before anyone sees them.
 
-    The model solves to HORIZON_END and reports to HORIZON_REPORT_END, one year
-    short. A finite-horizon model exhausts its reserve tranches exactly at the last
-    year it can see -- gas left in the ground past the horizon is worth nothing to
-    the objective -- so that year absorbs every accounting discrepancy between the
+    The model solves to HORIZON_END and reports to HORIZON_REPORT_END. A
+    finite-horizon model exhausts its reserve tranches exactly at the last year it
+    can see -- gas left in the ground past the horizon is worth nothing to the
+    objective -- so that year absorbs every accounting discrepancy between the
     capacity layer's representative days and the dispatch layer's 365 real days, and
     shows shortage at value-of-lost-load. Measured 30 Aug 2026 at 207,569 TJ.
 
-    Solving one year long does not FIX that; it moves it into a year nobody reads,
-    which is the standard treatment for a terminal-condition artefact. The proper
-    fix is a salvage value on remaining reserves -- tried and reverted the same day,
-    see TODO item 14 -- so this stays until that lands.
+    The salvage value on remaining reserves now exists, so the last year no longer
+    empties the basins. It replaced that artefact with a subtler one: the credit is
+    de-discounted in get_scarcity_rents, so the Hotelling rent it implies GROWS AT
+    THE DISCOUNT RATE and hits the full salvage rate exactly at HORIZON_END. The
+    decade before the horizon is contaminated by it whatever the salvage price --
+    a rent compounding at 7%/yr against a netback drifting down ~1%/yr crosses
+    somewhere, and at the crossing exports stop dead rather than tapering.
 
-    The extra year still does real work: it is in the capacity MIP's foresight, so
-    builds and scarcity rents are struck against it.
+    So the pad is now FIFTEEN years, not one: solved to 2065, reported to 2050,
+    which puts the contaminated tail outside the window anyone reads. This moves
+    the artefact rather than fixing it -- see TODO item 15 for the cancellation bug
+    still underneath.
+
+    The padded years do real work: they are in the capacity MIP's foresight, so
+    builds and scarcity rents are struck against them.
     """
     return [r for r in results if r.get('Year', 0) <= HORIZON_REPORT_END]
 

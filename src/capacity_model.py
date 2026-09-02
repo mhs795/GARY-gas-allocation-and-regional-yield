@@ -2,7 +2,7 @@
 Capacity-expansion layer (perfect foresight) for the two-stage GARY solve.
 
 This is the INVESTMENT model: it co-optimises *what to build and when* across the
-whole 2025-2050 horizon with foresight, on a reduced temporal grid (12 monthly
+whole solved horizon with foresight, on a reduced temporal grid (12 monthly
 representative days + one annual peak day per year) so it stays small and fast.
 The chosen build schedule is then handed to the full-resolution (365-day) dispatch
 model in solve.py, which is what produces the reported operations and prices.
@@ -11,6 +11,8 @@ Objective is a proper NPV: each year's operating cost is discounted, and each
 project's full CapEx is charged once, discounted to its build year.
 """
 import calendar
+import heapq
+
 import pyomo.environ as pyo
 
 import params as P
@@ -28,12 +30,86 @@ for _mo in range(1, 13):
             _MONTH_OF_DAY[_d] = _mo
             _d += 1
 
+def _least_cost_paths(arcs_df):
+    """``{(from, to): $/GJ}`` least-cost transport between nodes, self-pairs at 0.
+
+    Dijkstra over the arcs that HAVE capacity today. A reversal or a greenfield
+    route the model has not chosen -- ``Bulloo``, ``SEA_Gas_Rev``, ``EGP_Rev`` and
+    ``NEAP`` all carry base capacity 0 -- is not a path a molecule can take unless
+    that project is built, so counting it here would understate what it costs to
+    move gas and therefore overstate what gas in the ground is worth. Conservative
+    in the direction that matters.
+    """
+    adj = {}
+    nodes = set()
+    for _, a in arcs_df.iterrows():
+        nodes.update((a['From'], a['To']))
+        if float(a.get('Capacity') or 0) <= 0:
+            continue
+        adj.setdefault(a['From'], []).append((a['To'], float(a['Cost'])))
+    out = {(n, n): 0.0 for n in nodes}
+    for src in nodes:
+        dist = {src: 0.0}
+        q = [(0.0, src)]
+        while q:
+            d, n = heapq.heappop(q)
+            if d > dist.get(n, float('inf')):
+                continue
+            for nxt, w in adj.get(n, []):
+                nd = d + w
+                if nd < dist.get(nxt, float('inf')):
+                    dist[nxt] = nd
+                    heapq.heappush(q, (nd, nxt))
+        for n, d in dist.items():
+            out[(src, n)] = d
+    return out
+
+
+def _backstop_at_wellhead(nodes_df, arcs_df, backstop, import_nodes=IMPORT_NODES):
+    """``{node: $/GJ}`` the import backstop netted back to each supply node.
+
+    THE BACKSTOP IS A PRICE AT A REGASIFICATION TERMINAL, NOT AT A WELLHEAD, and
+    the two are dollars a gigajoule apart. ``salvage_price`` is the cost of
+    injecting imported LNG, so it is struck at Port Kembla, Geelong or Adelaide. A
+    Surat molecule left in the ground only earns that by displacing one of those
+    cargoes, which means being railed south first -- $1.53 up the SWQP reversal
+    plus $0.97 into Adelaide. Crediting the gross terminal price against a
+    Queensland extraction cost pays the field for a haul it never performed.
+
+    So the value of a tranche at its own node is the terminal price less the
+    cheapest run from that node to a terminal: ``max_i (backstop - sp(n, i))``.
+
+    DELIBERATELY NOT the import-parity price at each demand centre. Propagating
+    the backstop outward -- terminal price plus the haul from a terminal to the
+    centre -- prices Brisbane's alternative at $16.09/GJ, because the only imports
+    that could reach Brisbane come up the SWQP from Port Kembla. Valuing Surat gas
+    against that is circular: Brisbane's alternative is expensive precisely because
+    Surat is its natural supplier, and the credit would come out ABOVE the gross
+    backstop ($15.39 at the Surat wellhead) rather than below it. That is the
+    opposite of the correction. Netting to the terminal is the conservative read
+    and the only one that cannot pay a field for its own scarcity.
+
+    Returns the gross ``backstop`` for a node the network cannot connect to any
+    terminal, which is the pre-netting behaviour and errs high rather than
+    stranding a basin.
+    """
+    if not backstop:
+        return {}
+    sp = _least_cost_paths(arcs_df)
+    out = {}
+    for n in {a for a, _ in sp}:
+        runs = [sp[(n, i)] for i in import_nodes if (n, i) in sp]
+        out[n] = float(backstop) - min(runs) if runs else float(backstop)
+    return out
+
+
 def _salvage_rate(row, backstop):
     """What one GJ still in the ground is worth at the horizon, $/GJ.
 
-    The backstop price less this row's own extraction cost, floored at zero: a
-    tranche that costs more to lift than the substitute costs to buy is worth
-    nothing in the ground. Netting is what makes the credit differ by basin.
+    The backstop price AT THIS ROW'S OWN NODE (see ``_backstop_at_wellhead``) less
+    the row's extraction cost, floored at zero: a tranche that costs more to lift
+    than the substitute costs to buy is worth nothing in the ground. Netting both
+    the transport and the extraction cost is what makes the credit differ by basin.
     """
     if not backstop:
         return 0.0
@@ -225,7 +301,23 @@ class CapacityExpansionModel:
         # zero, so the optimal plan exhausts every tranche exactly at the last year
         # and that year shorts at VOLL. None disables it.
         self.salvage_price = salvage_price
+        # ...netted back to each supply node, because the backstop is a price at a
+        # regasification terminal and a reserve tranche is not. See
+        # _backstop_at_wellhead: crediting the gross terminal price against a
+        # Queensland extraction cost pays the field for a haul it never performed.
+        self.backstop_at_node = _backstop_at_wellhead(self.nodes, self.arcs,
+                                                      salvage_price)
         self.solved = False
+
+    def _salvage(self, s):
+        """Terminal $/GJ credit on one supply row ``(node, is_potential)``."""
+        row = self._supply_row(s)
+        return _salvage_rate(row, self.backstop_at_node.get(s[0], self.salvage_price))
+
+    def _supply_row(self, s):
+        if not hasattr(self, '_supply_ix'):
+            self._supply_ix = self.supply.set_index(['Node', 'IsPotential']).to_dict('index')
+        return self._supply_ix[s]
 
     def _foundation(self, y):
         """Take-or-pay share of planned export volume in year ``y``."""
@@ -465,7 +557,7 @@ class CapacityExpansionModel:
             # price reaches the backstop exactly as the resource runs out.
             if self.salvage_price:
                 salvage = pyo.quicksum(
-                    df[Y[-1]] * _salvage_rate(supply_dict[s], self.salvage_price) * 1e6
+                    df[Y[-1]] * self._salvage(s) * 1e6
                     * (_reserves_pj(supply_dict[s]) - _annual_pj(m, s[0], s[1]))
                     for s in m.Supply if _reserves_pj(supply_dict[s]) is not None)
                 return ops + capex - salvage
@@ -693,8 +785,7 @@ class CapacityExpansionModel:
             # abs() because the sign convention on a <= constraint differs by
             # backend.
             lam = abs(lam_raw) / 1e6
-            salvage_npv = df_last * _salvage_rate(supply_dict[(idx[0], idx[1])],
-                                                  self.salvage_price)
+            salvage_npv = df_last * self._salvage((idx[0], idx[1]))
             if lam + salvage_npv <= 0:
                 continue
             for y in self.years:
