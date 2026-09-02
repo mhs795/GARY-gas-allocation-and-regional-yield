@@ -273,6 +273,74 @@ deplete is scarcity rent on a finite resource — not a cost step bolted onto a 
 > reserve dual to take. It will burn each tranche cheapest-first and hit the wall
 > described above. Treat its late-horizon results accordingly.
 
+### The terminal value, and what the rent is actually made of
+
+**The rent above is not just the reserve dual.** It has two components, and on
+current data the second is the larger by an order of magnitude:
+
+```
+rent(node, tranche, y) = ( reserve_dual + salvage_npv ) / discount_factor(y)
+```
+
+Without a terminal value the objective prices leftover gas at **zero**, so the
+optimal plan empties every tranche in the last year it can see and that year shorts
+at VOLL — 207,569 TJ, measured 30 Aug 2026. The salvage credit is what stops that.
+
+**How the credit is built, in three steps.** Each nets something real off the one
+before, and each is load-bearing:
+
+| step | what it is | Surat 2P |
+|---|---|---|
+| `salvage_price` | ACIL Allen's landed **import injection** cost in the final solved year — the backstop, i.e. what the substitute costs. Published, not chosen. | **$12.29**/GJ |
+| `_backstop_at_wellhead` | less the cheapest run from this node **to a regasification terminal**. The backstop is a price at Port Kembla, Geelong or Adelaide, not at a wellhead; a basin only earns it by delivering there. Surat's cheapest is Adelaide, $1.53 up the SWQP reversal plus $0.97 on MAPS. | −$2.50 → **$9.79** |
+| `_salvage_rate` | less the row's own **extraction cost**, floored at zero. The gas is un-extracted, so the delivered price overstates what it is worth in the ground. | −$3.65 → **$6.14** |
+
+Both nettings are what make the credit basin-specific, which is the whole point — a
+uniform credit collapses every rent onto the same floor and stops distinguishing a
+nearly-exhausted basin from an abundant one. The 2 Sep 2026 values:
+
+| | Surat | Moomba | Gippsland | Iona | Amadeus | Beetaloo |
+|---|---|---|---|---|---|---|
+| **2P** | 6.14 | 2.87 | 5.37 | 3.22 | 1.42 | — |
+| **2C** | 3.14 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+
+Beetaloo at zero is the netting working: $9.15/GJ to lift against a $7.46 delivered
+backstop is not worth holding.
+
+**Where it enters.** Twice, and they must agree:
+
+* **Investment.** `obj_rule` subtracts `df[last] × salvage_rate × (Reserves − produced)`,
+  so the MIP weighs leaving gas in the ground directly against CapEx.
+* **Dispatch.** `get_scarcity_rents` adds `salvage_npv` to the reserve dual before
+  de-discounting, because passing the dual alone under-prices gas relative to the
+  plan dispatch is executing, and it over-produces.
+
+> **KNOWN BUG — the credit cancels the field cost at the horizon.** Because the
+> credit is de-discounted, the rent it implies **grows at the discount rate** and
+> reaches the full salvage rate exactly at `horizon_end`. Put that into the
+> production test and `Cost` drops out:
+>
+> ```
+> produce iff  Cost + rent(y) + transport <= price(y)
+> at horizon:  Cost + (backstop_at_node - Cost) + transport <= price
+>              backstop_at_node + transport <= price     <- Cost has cancelled
+> ```
+>
+> Every tranche is then worth the backstop regardless of what it costs to lift, and
+> since the backstop is an import price and the netback an export price, **exports
+> at the horizon are excluded by construction, at any cost.** Measured before the
+> netting: Surat 2P, Surat 2C and Moomba 2P — spanning $3.65–8.45/GJ — all converged
+> on $11.7–12.0 in 2050, and LNG exports went 901 PJ to 0 between 2037 and 2038.
+>
+> This is structural in the FORM of the credit, not its level: a constant terminal
+> value, de-discounted, overtakes a flat-to-declining netback somewhere, and the
+> crossing is a cliff rather than a taper because the export block is homogeneous.
+> The netting lowers it; `horizon_end` = 2065 moves the contaminated decade outside
+> the reported window. **Neither fixes it.** See [`TODO.md`](../TODO.md) item 15 —
+> the real close is the model's own final-year marginal value, which needs a two-pass
+> solve. Until then, treat any late-horizon export result as a statement about the
+> terminal condition as much as about the gas.
+
 ### Why the stock limit works now and did not before
 
 It was tried on 28 Aug 2026 and reverted the same day: Iona went to zero by 2036,

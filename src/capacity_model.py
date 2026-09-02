@@ -540,13 +540,22 @@ class CapacityExpansionModel:
                                    for n in m.LNGNodes))
                 for (y, i) in YR)
             capex = pyo.quicksum(m.build[e, y] * exp_data[e]['CapEx'] * df[y] for e in m.Expansion for y in Y)
-            # TERMINAL SALVAGE VALUE, net of extraction cost.
+            # TERMINAL SALVAGE VALUE, net of BOTH the haul and the extraction cost.
             #
             # Gas left in a tranche at the horizon is worth what the substitute costs
-            # LESS what you would still pay to lift it -- it is un-extracted, so the
-            # gross backstop price overstates it. That netting is also what keeps the
-            # credit BASIN-SPECIFIC: Surat's $12.29-3.65 = $8.64 against Otway's
-            # $12.29-7.27 = $5.02.
+            # AT THIS NODE, less what you would still pay to lift it. Two nettings,
+            # and both are load-bearing:
+            #
+            #   HAUL       the backstop is struck at a regasification terminal, so a
+            #              basin only earns it by delivering there. _backstop_at_wellhead
+            #              takes off the cheapest run to one: Surat $12.29 - $2.50 to
+            #              Adelaide = $9.79.
+            #   EXTRACTION the gas is un-extracted, so the delivered price overstates
+            #              what it is worth in the ground: $9.79 - $3.65 = $6.14.
+            #
+            # Netting is also what keeps the credit BASIN-SPECIFIC -- Surat $6.14
+            # against Iona's $3.22 and Beetaloo's $0.00, the last because it costs
+            # $9.15/GJ to lift against a $7.46 delivered backstop.
             #
             # A first attempt (30 Aug 2026) credited the gross price identically for
             # every basin. It was uniform by construction, so every scarcity rent
