@@ -173,6 +173,14 @@ Bowen Gas Project's 3,000 TJ/d is GARY's own — AEMO records the project as Pro
 with capacity "Not Currently Available" — sized to draw the 23,270 PJ of Surat/Bowen
 2C down over the remaining horizon.
 
+> **Superseded 2 Sep 2026 on the capex half.** The $69.8bn lump is gone. A per-GJ cost
+> recovers capital as gas is produced; a binary build charged 100% of the basin's
+> development capital to reach any of it, and the MIP never took it — Surat 2C sat at 0%
+> used in every scenario. The gap now lives in the 2C supply row's `Cost`, reproducing
+> AEMO's published full cost, and all three developments carry **zero CapEx**: they gate
+> the tranche, they do not buy it. The sizing half stands, at the current 3,148 TJ/d.
+> See [`docs/model.md`](docs/model.md#a-field-development-is-a-capacity-gate-not-a-capital-decision).
+
 ## 4. No earliest-build year for pipeline candidates
 
 `terminal_earliest` (2028) gates Type=Terminal only. `NEAP` is a 2030s project per APA

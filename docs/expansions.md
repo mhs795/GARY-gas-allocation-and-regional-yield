@@ -60,32 +60,41 @@ its basin's **2C** tranche in `supply.csv`, which cannot produce at all until on
 
 | Project | Basin | Capacity | CapEx | Date | AEMO status |
 |---|---|---|---|---|---|
-| `Golden_Beach` | Gippsland | 375 TJ/d | $15.8bn ¶ | 2029 | Anticipated |
-| `Judith` | Gippsland | 125 TJ/d | $5.3bn ¶ | 2029 | Undeveloped |
-| `Bowen_Gas_Project` | Surat/Bowen | 3,148 TJ/d ◊ | $68.2bn ¶ | 2030 | Proposed |
-| `Mahalo_CSG` | Surat/Bowen | 50 TJ/d | $1.1bn ¶ | 2026 | Not approved for development (FEED) |
-| `Mt_St_Martin` | Surat/Bowen | 22 TJ/d | $0.5bn ¶ | 2027 | Uncertain project |
-| `Otway_Annie` | Otway | 12 TJ/d ◊ | $0.6bn ¶ | 2028 | Potential development |
-| `Otway_Juliet` | Otway | 12 TJ/d ◊ | $0.6bn ¶ | 2028 | Potential development |
-| `Otway_Nestor` | Otway | 10 TJ/d ◊ | $0.5bn ¶ | 2033 | Potential development |
-| `Otway_Elanora` | Otway | 9 TJ/d ◊ | $0.4bn ¶ | 2035 | Potential development |
-| `Otway_Wobbegong` | Otway | 9 TJ/d ◊ | $0.4bn ¶ | 2037 | Potential development |
-| `Beetaloo_Dev` | Beetaloo | 450 TJ/d | **none** ¤ | — | Appraisal |
-| `Beetaloo_Pilot` | Beetaloo | 40 TJ/d | **none** ¤ | 2026 | Appraisal (pilot figure, not full field) |
-| `Carpentaria_Pilot` | Beetaloo | 25 TJ/d | **none** ¤ | 2025 | Committed |
+| `Golden_Beach` | Gippsland | 375 TJ/d | **none** ¶ | 2029 | Anticipated |
+| `Judith` | Gippsland | 125 TJ/d | **none** ¶ | 2029 | Undeveloped |
+| `Bowen_Gas_Project` | Surat/Bowen | 3,148 TJ/d ◊ | **none** ¶ | 2030 | Proposed |
+| `Mahalo_CSG` | Surat/Bowen | 50 TJ/d | **none** ¶ | 2026 | Not approved for development (FEED) |
+| `Mt_St_Martin` | Surat/Bowen | 22 TJ/d | **none** ¶ | 2027 | Uncertain project |
+| `Otway_Annie` | Otway | 12 TJ/d ◊ | **none** ¶ | 2028 | Potential development |
+| `Otway_Juliet` | Otway | 12 TJ/d ◊ | **none** ¶ | 2028 | Potential development |
+| `Otway_Nestor` | Otway | 10 TJ/d ◊ | **none** ¶ | 2033 | Potential development |
+| `Otway_Elanora` | Otway | 9 TJ/d ◊ | **none** ¶ | 2035 | Potential development |
+| `Otway_Wobbegong` | Otway | 9 TJ/d ◊ | **none** ¶ | 2037 | Potential development |
+| `Beetaloo_Dev` | Beetaloo | 450 TJ/d | **none** ¶ ¤ | — | Appraisal |
+| `Beetaloo_Pilot` | Beetaloo | 40 TJ/d | **none** ¶ ¤ | 2026 | Appraisal (pilot figure, not full field) |
+| `Carpentaria_Pilot` | Beetaloo | 25 TJ/d | **none** ¶ ¤ | 2025 | Committed |
 
 ◊ AEMO publishes no deliverability for this development. See
 [`model.md`](model.md#sizing-a-2c-tranches-deliverability) for the sizing rule — AEMO's own
 production forecast where one covers the basin, else the 2C/2P resource ratio.
 
-¶ **CapEx is derived, not published.** AEMO publishes no development capital anywhere in
-the GSOO supply data. It is `(AEMOFullCost − Cost) × Reserves_PJ` for the basin, shared
-pro rata — see [`model.md`](model.md#costing-a-development-what-is-published-and-what-is-not).
-These are basin-scale numbers, not project build costs: `Golden_Beach`'s announced cost is
-near $600m, and its $15.8bn here is its share of developing Gippsland's whole 2C pool.
+¶ **A field development carries no CapEx, deliberately.** Its capital is already inside
+AEMO's blended $/GJ and is left there: the basin's 2C supply row carries the published full
+cost, recovered **per GJ as gas is produced**. `build[e]` on one of these rows buys
+permission for the tranche to flow, not a physical asset — see
+[`model.md`](model.md#a-field-development-is-a-capacity-gate-not-a-capital-decision).
 
-¤ AEMO publishes no 2P cost for the Beetaloo, so its cost cannot be split. Its supply row
-carries the full $9.15/GJ and these rows carry no derived capital.
+> The capital used to be split out as a lump — `(AEMOFullCost − Cost) × Reserves_PJ` for the
+> basin, shared pro rata on deliverability. The numbers were right; the structure was wrong.
+> A per-GJ cost recovers capital as gas is produced, but a binary build charges **100% of a
+> basin's development capital to reach any of it**. For Surat that was $69.8bn as one
+> indivisible decision, and the MIP never took it: Surat 2C sat at 0% used in every scenario.
+> `build_field_developments.py --capex` still prints what those lumps would have been, as a
+> check that they are no longer being charged.
+
+¤ AEMO publishes no 2P cost for the Beetaloo, so there is nothing to split even for that
+report. Its supply row has always carried the full $9.15/GJ, and these three rows have
+always carried zero CapEx — they are simply no longer the exception.
 
 > **The Beetaloo rows are useless without `NEAP`.** `Beetaloo_Pipe` is the real Sturt
 > Plateau Pipeline (37 km, 40 TJ/d) and the corridor beyond it is capped at 65 TJ/d by the
