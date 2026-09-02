@@ -505,49 +505,51 @@ landed import parity, or the tranche's own cost.
    > the terminal condition as much as about the gas.
 
 
-## 15. The salvage credit cancels the field cost at the horizon — REAL, deferred
+## 15. ~~The salvage credit cancels the field cost at the horizon~~ — FIXED 3 Sep 2026
 
-**At `horizon_end` every molecule is worth the backstop regardless of what it costs
-to lift.** `get_scarcity_rents` de-discounts the salvage credit, so the rent it
-implies reaches the full salvage rate exactly at the last solved year. Put that into
-the production test and the field cost drops out:
+**At `horizon_end` every molecule was worth the backstop regardless of what it cost to
+lift.** `get_scarcity_rents` de-discounts the salvage credit, so the rent reached the
+full salvage rate at the last solved year. Put that into the production test and `Cost`
+dropped out:
 
 ```
 produce iff   Cost + rent(y) + transport <= price(y)
-at y = HORIZON_END:   Cost + (backstop - Cost) + transport <= price
-                      backstop + transport <= price          <- Cost has cancelled
+at horizon:   Cost + (backstop - Cost) + transport <= price
+              backstop + transport <= price          <- Cost has cancelled
 ```
 
-Measured 2 Sep 2026 on the 2051-horizon run, Step Change central, 2050 wellhead value
-as `Cost + rent`:
+Measured 2 Sep 2026, Step Change central, 2050 wellhead value as `Cost + rent`: Surat 2P
+$11.72, Surat 2C $11.92, Moomba 2P $12.04 — three tranches spanning $3.65-8.45/GJ in
+lifting cost, all landing on the backstop. Since the backstop is an IMPORT price and the
+netback an EXPORT price, exports at the horizon were excluded by construction, at any
+cost, including free gas. LNG exports went 901 PJ -> 0 between 2037 and 2038 and never
+resumed, against a demand frame planning 1,000-1,134 PJ/yr to 2050.
 
-| tranche | Cost | rent | wellhead |
-|---|---|---|---|
-| Surat 2P | 3.65 | 8.07 | **11.72** |
-| Surat 2C | 6.65 | 5.27 | **11.92** |
-| Moomba 2P | 8.45 | 3.59 | **12.04** |
+**The fix, in three nettings.** The credit is now
+`(backstop_at_node - Cost) / (1 + r*tau)`:
 
-Three tranches spanning $3.65-8.45/GJ converge on the backstop. Since the backstop is
-an IMPORT price and the netback is an EXPORT price, and import parity exceeds export
-parity by the shipping-plus-regas wedge in any net-exporting basin, **exports at the
-horizon are excluded by construction — for every basin, at any cost, including free
-gas.** The observed consequence was LNG exports going 901 PJ -> 0 between 2037 and
-2038 and never resuming, against a demand frame planning 1,000-1,134 PJ/yr to 2050.
+| netting | what it takes off | Surat 2P |
+|---|---|---|
+| haul | the run to a regasification terminal — the backstop is a price there, not at a wellhead | $12.29 -> $9.79 |
+| extraction | the row's own lifting cost | -> $6.14 |
+| **the wait** | **`1/(1+r.tau)`, tau = Reserves/deliverability** | **-> $2.57** |
 
-**Partly addressed 2 Sep 2026, not fixed.** Two changes went in:
+The third is the one that breaks the cancellation. A stock is not sold at the horizon
+instant: it is produced on a decline over `tau` years, and `V = m.S0/(1+r.tau)` is the
+closed form of that. Horizon value becomes `Cost*(1-L) + backstop*L`, so a `Cost` term
+survives and the tranches separate again -- Surat 2P $6.22, Surat 2C $7.97, Gippsland 2P
+$9.36, Iona 2P $10.03, Moomba 2P $10.49. `tau` is what tells a nearly-empty basin from an
+abundant one: Iona holds 2.4 years and keeps 86% of its margin, Surat holds 19.8 and
+keeps 42%.
 
-* `_backstop_at_wellhead` nets the haul to a regasification terminal off the credit,
-  because the backstop is a price AT a terminal and a reserve tranche is not. Surat's
-  salvage falls $8.64 -> $6.14/GJ, Beetaloo's to zero (it costs $9.15 to lift against
-  a $7.46 delivered backstop). This is a straight bug fix and stands on its own.
-* `horizon_end` 2051 -> 2065, so the contaminated decade sits outside the reported
-  window. See item 14 dead end 2 for what that costs.
+**Still approximate, in a known direction.** `tau` is struck on NAMEPLATE reserves and
+BASE capacity, so it ignores decline (Surat 2P's real 2051 tau is 25.7 years, not 19.8)
+and ignores how much has already been produced. Both understate `tau`, which overstates
+the credit -- erring toward the behaviour that was wrong. Tightening it means recomputing
+`tau` from the solved remainder and re-solving, which is a second pass nobody has costed.
 
-**Neither touches the cancellation.** It is structural in the form of the credit, not
-its level: a constant terminal value, de-discounted, will always overtake a
-flat-to-declining netback somewhere, and the crossing is a cliff rather than a taper
-because the export block is homogeneous. The real fix is to close the model on its
-OWN final-year marginal value — salvage = that year's node shadow price less Cost —
-so holding and selling are indifferent at the horizon by construction and the price
-adjusts instead of the quantity going to zero. That needs a two-pass solve and was
-not attempted here.
+**Not attempted: closing on the model's own final-year price.** The theoretically right
+terminal value is the model's own marginal value at the horizon, not an exogenous
+backstop, so that holding and selling are indifferent by construction. That needs a
+fixed point and was not tried.
+

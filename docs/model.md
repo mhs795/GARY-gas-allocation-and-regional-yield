@@ -293,7 +293,8 @@ before, and each is load-bearing:
 |---|---|---|
 | `salvage_price` | ACIL Allen's landed **import injection** cost in the final solved year — the backstop, i.e. what the substitute costs. Published, not chosen. | **$12.29**/GJ |
 | `_backstop_at_wellhead` | less the cheapest run from this node **to a regasification terminal**. The backstop is a price at Port Kembla, Geelong or Adelaide, not at a wellhead; a basin only earns it by delivering there. Surat's cheapest is Adelaide, $1.53 up the SWQP reversal plus $0.97 on MAPS. | −$2.50 → **$9.79** |
-| `_salvage_rate` | less the row's own **extraction cost**, floored at zero. The gas is un-extracted, so the delivered price overstates what it is worth in the ground. | −$3.65 → **$6.14** |
+| `_salvage_rate`, step 1 | less the row's own **extraction cost**, floored at zero. The gas is un-extracted, so the delivered price overstates what it is worth in the ground. | −$3.65 → **$6.14** |
+| `_salvage_rate`, step 2 | scaled by **`Λ = 1/(1 + r·τ)`**, the closed-form value of a stock produced on a decline over `τ = Reserves/deliverability` years. A stock is not sold at the horizon instant; Surat holds 19.8 years of production. | ×0.419 → **$2.57** |
 
 Both nettings are what make the credit basin-specific, which is the whole point — a
 uniform credit collapses every rent onto the same floor and stops distinguishing a
@@ -301,11 +302,14 @@ nearly-exhausted basin from an abundant one. The 2 Sep 2026 values:
 
 | | Surat | Moomba | Gippsland | Iona | Amadeus | Beetaloo |
 |---|---|---|---|---|---|---|
-| **2P** | 6.14 | 2.87 | 5.37 | 3.22 | 1.42 | — |
-| **2C** | 3.14 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| **τ, years** | 19.8 | 5.8 | 4.0 | 2.4 | 11.5 | 27.2 |
+| **2P salvage** | 2.57 | 2.04 | 4.20 | 2.76 | 0.79 | — |
+| **2C salvage** | 1.32 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
 
 Beetaloo at zero is the netting working: $9.15/GJ to lift against a $7.46 delivered
-backstop is not worth holding.
+backstop is not worth holding. And τ is what separates Iona — 2.4 years of production
+left, so its stock is nearly cash and keeps 86% of its margin — from Surat, which is
+holding twenty years of inventory and keeps 42%.
 
 **Where it enters.** Twice, and they must agree:
 
@@ -315,149 +319,30 @@ backstop is not worth holding.
   de-discounting, because passing the dual alone under-prices gas relative to the
   plan dispatch is executing, and it over-produces.
 
-> **KNOWN BUG — the credit cancels the field cost at the horizon.** Because the
-> credit is de-discounted, the rent it implies **grows at the discount rate** and
-> reaches the full salvage rate exactly at `horizon_end`. Put that into the
-> production test and `Cost` drops out:
+> **FIXED 3 Sep 2026 — the credit used to cancel the field cost.** Without the `Λ`
+> step the rate is exactly `backstop_at_node − Cost`, so `Cost + rate == backstop`
+> for every row: the lifting cost **cancelled**, and every tranche was worth the same
+> at the horizon regardless of what it cost to lift, including free gas.
 >
 > ```
 > produce iff  Cost + rent(y) + transport <= price(y)
-> at horizon:  Cost + (backstop_at_node - Cost) + transport <= price
->              backstop_at_node + transport <= price     <- Cost has cancelled
+> at horizon:  Cost + (backstop - Cost) + transport <= price
+>              backstop + transport <= price     <- Cost has cancelled
 > ```
 >
-> Every tranche is then worth the backstop regardless of what it costs to lift, and
-> since the backstop is an import price and the netback an export price, **exports
-> at the horizon are excluded by construction, at any cost.** Measured before the
-> netting: Surat 2P, Surat 2C and Moomba 2P — spanning $3.65–8.45/GJ — all converged
-> on $11.7–12.0 in 2050, and LNG exports went 901 PJ to 0 between 2037 and 2038.
+> Measured before the fix: Surat 2P, Surat 2C and Moomba 2P — spanning $3.65–8.45/GJ
+> — all closed 2050 at $11.72–12.04, and LNG exports went 901 PJ to 0 between 2037
+> and 2038 and never resumed. Since the backstop is an import price and the netback an
+> export price, exports at the horizon were excluded by construction, at any cost.
 >
-> This is structural in the FORM of the credit, not its level: a constant terminal
-> value, de-discounted, overtakes a flat-to-declining netback somewhere, and the
-> crossing is a cliff rather than a taper because the export block is homogeneous.
-> The netting lowers it; `horizon_end` = 2065 moves the contaminated decade outside
-> the reported window. **Neither fixes it.** See [`TODO.md`](../TODO.md) item 15 —
-> the real close is the model's own final-year marginal value, which needs a two-pass
-> solve. Until then, treat any late-horizon export result as a statement about the
-> terminal condition as much as about the gas.
-
-### Why the stock limit works now and did not before
-
-It was tried on 28 Aug 2026 and reverted the same day: Iona went to zero by 2036,
-Moomba by 2048, and the model produced 6,419 TJ of shortage at $104–115/GJ. The
-limit was not the problem. GARY had no **backfill** — the undeveloped Surat row
-could not produce at all, and Gippsland's only unlocked through a single project.
-So the limit reproduced AEMO's southern collapse without AEMO's replacement.
-
-AEMO's Figure 27 has southern *existing* production falling 304 → 5 PJ/yr by 2044
-while developments backfill it to a 230–280 PJ/yr plateau. Read against the reserve
-table that plateau is simply the 2C tranche being produced: southern 2C totals
-3,889 PJ, and ~250 PJ/yr for ~16 years is the same number. The envelope and the
-reserves are one story.
-
-So the 2C rows now sit behind **AEMO's own named field developments** in
-`expansion_options.csv` — Judith, the five Otway projects, Bowen Gas Project,
-Mahalo, Mt St Martin, the Beetaloo pilots — and the south has something to build.
-
-### Costing a development: what is published and what is not
-
-**AEMO publishes no development capital anywhere in the GSOO supply data.** What it
-publishes is a single blended $/GJ per tranche, and its own note on the *Production
-Costs* sheet says what is inside it:
-
-> "Costs include **operating cost, capital costs, royalty, tax and a return on
-> capital**... For developed reserves production costs include largely marginal
-> operating costs, royalties and tax. For undeveloped reserves, marginal costs also
-> include the cost of **drilling and completion and marginal gas processing plant
-> costs**."
-
-So the 2P cost is an operating basis and the 2C cost is a full cost, and **GARY
-carries the 2C capital in the gas price rather than as a build cost**:
-
-* the **2C supply row** carries AEMO's published full cost directly in `Cost`
-  (Surat $6.65/GJ, Gippsland $15.76, Otway $15.62, Cooper $11.63, Amadeus $16.94),
-  with the same figure kept in `AEMOFullCost` as the provenance;
-* the **field development** in `expansion_options.csv` carries **zero CapEx**. It
-  still exists and still gates the tranche -- a potential supply row produces only
-  if its development is built -- but it charges no capital of its own.
-
-### A field development is a capacity gate, not a capital decision
-
-**This is deliberate, and it is the one place where a `build` decision does not mean
-what it means everywhere else.** Read the two kinds of row differently:
-
-| | what `build[e]` buys | where its capital sits |
-|---|---|---|
-| **Field development** (Bowen, Judith, Otway, Cooper 2C, Amadeus 2C, Beetaloo) | permission for a 2C tranche to flow | in the tranche's `Cost`, recovered per GJ produced |
-| **Pipeline / import terminal** (ECGG, FSRUs, Port Kembla) | physical capacity that did not exist | in `CapEx`, annualised at 8%/yr in `exp_capex` |
-
-An import terminal or a pipeline is a genuine lumpy capital commitment and there is
-no per-GJ channel to put it in; choosing between two Geelong FSRUs on build cost is
-exactly what that `CapEx` is for. A field development is not that. Its capital is
-already inside AEMO's blended $/GJ, so charging it again as a lump would bill it
-twice -- the same double-count `_import_injection_cost` removes on the other side.
-
-> **Why it is done this way -- a real failure, not a preference.** The capital used
-> to be split out as a lump: the 2C row took the basin's operating basis and the
-> development carried `(AEMOFullCost - Cost) x Reserves_PJ`, shared pro rata on
-> deliverability. The numbers were right; the STRUCTURE was wrong. A per-GJ cost
-> recovers capital as gas is produced, but a binary build charges **100% of a
-> basin's development capital to reach any of it**. For Surat that was
-> `$3.00/GJ x 23,270 PJ = $69.8bn` as one indivisible decision, $5.5bn/yr
-> annualised. The MIP never took it. Across every scenario in the standard set,
-> **Surat 2C sat at 0% used** while 2P ran down to 71%, the scarcity rent on what
-> remained compounded to $8/GJ, and LNG exports stopped in 2038 against a GSOO that
-> has them at 1000 PJ/yr to 2045. GARY was not disagreeing with AEMO about the
-> resource -- the reserves are AEMO's -- it was pricing half of it as unreachable.
-> If exports or southern prices ever look structurally wrong again, check whether a
-> tranche is stranded behind a lump before believing the depletion story.
-
-**Beetaloo already worked this way** and now simply stops being the exception. It has
-no published 2P to split against, so its supply row always carried AEMO's full
-$9.15/GJ and its pilots always carried zero CapEx. Scaling a full cost on other
-basins' 2P/2C ratios would put a GARY number where AEMO has published none, so it is
-still not done.
-
-**Import terminals are the other side of the same rule.** They carry their `CapEx`
-explicitly, so ACIL Allen's **$1.50/GJ regasification** allowance comes back off the
-injection price -- a tolling fee is how a terminal recovers exactly that capital, and
-charging both bills it twice. See `_import_injection_cost`.
-
-### Sizing a 2C tranche's deliverability
-
-AEMO publishes a deliverability for only some developments. Where it does, GARY uses
-it. Where it does not, one of two fallbacks applies, in this order:
-
-1. **AEMO's own production forecast, where one covers the basin.** Figure 27 forecasts
-   annual production from southern gas fields and its *Uncertain* category is the 2C
-   tranche being produced -- a 250 PJ/yr mean over 2030-45, or 685 TJ/d. That is
-   allocated across the southern basins by 2C resource share: Gippsland 51.3%,
-   Cooper/Eromanga 41.2% (282 TJ/d), Otway 7.5% (52 TJ/d).
-2. **The resource ratio, where no forecast covers the basin.** The 2C row is scaled off
-   the developed row by the ratio of the two tranches' resources -- Surat/Bowen
-   4,000 x 23,270/28,911 = 3,220 TJ/d, Amadeus 55 x 195.4/230.0 = 47 TJ/d.
-
-Gippsland is the case where AEMO publishes project capacities (Golden Beach 375 TJ/d,
-Judith 125 TJ/d), so those are used in preference to its 351 TJ/d envelope share.
-
-## Reading a dual
-
-**A GARY price is a marginal cost, not a price anyone pays.** It is what it would cost
-the system to push one more TJ into that node that day — the cost of the cheapest thing
-not yet being done: run a dearer field, pay a tariff, pull from storage, outbid an export
-cargo, or shed a tier at its strike.
-
-For the full treatment of when that is and is not comparable to a wholesale price, see
-[`pricing.md`](pricing.md#what-a-gary-price-is-and-when-it-is-not-a-wholesale-price).
-
-### Nodes without a meaningful price
-
-A node that never has demand and never carries gas has a **degenerate dual**: its balance
-constraint reads `0 == 0`, so the solver may report anything within a range — and it
-reports the shortage penalty. Beetaloo (undeveloped supply, no demand assigned) sat at a
-flat **$300/GJ for the whole horizon** that way, which is not a price: it pulled a naive
-cross-node mean from $5.81 to $22.15.
-
-Price rows are now emitted **only for nodes that have demand or carry gas**, so such
-nodes simply do not appear in price outputs. The headline `Avg_Price` KPI was always
-production-weighted and so was never affected; per-node price charts were.
+> With `Λ` the horizon value is `Cost×(1−Λ) + backstop×Λ`, a weighted average, so a
+> `Cost` term survives: Surat 2P closes at **$6.22** against nearly-exhausted Moomba's
+> **$10.49**. The supply curve survives the horizon, and Surat's delivered export cost
+> of $7.00 sits just under the $7.12 netback — so whether exports happen is an
+> economic outcome again rather than a foregone one.
+>
+> **What is still approximate.** `τ` is struck on nameplate reserves and base capacity,
+> so it ignores decline and ignores how much has already been produced. Both push `τ`
+> down and the credit up, i.e. toward the old behaviour. Tightening it means
+> recomputing `τ` from the solved remainder and re-solving. See [`TODO.md`](../TODO.md)
+> item 15.

@@ -103,17 +103,72 @@ def _backstop_at_wellhead(nodes_df, arcs_df, backstop, import_nodes=IMPORT_NODES
     return out
 
 
-def _salvage_rate(row, backstop):
+def _reserve_to_production_years(row):
+    """``tau``: how many years of production this tranche is holding, or None.
+
+    Reserves over annual deliverability. It is the ratio a reserves engineer would
+    quote, and here it is the answer to "if I leave a GJ in the ground, HOW LONG
+    until I actually get to sell it?" -- 2.4 years for Iona, 19.8 for Surat, 27.2
+    for the Beetaloo.
+
+    Struck on the row's NAMEPLATE reserves and base capacity, so it characterises
+    the tranche rather than the solution and the salvage rate stays a constant --
+    which it must, or the objective stops being linear. Two consequences worth
+    knowing: it ignores decline, so a 2P row's real horizon-era tau is longer than
+    this (Surat 2P is 25.7 years on its 2051 declined rate, not 19.8); and it uses
+    the whole tranche, not the part still unproduced. Both push tau DOWN, hence the
+    salvage credit UP, so this errs toward the behaviour that was wrong before.
+    Tightening it means recomputing tau from the solved remainder and re-solving.
+    """
+    reserves = _reserves_pj(row)
+    if reserves is None or reserves <= 0:
+        return None
+    annual_pj = float(row['Capacity']) * 365.0 / 1000.0
+    if annual_pj <= 0:
+        return None
+    return reserves / annual_pj
+
+
+def _salvage_rate(row, backstop, discount_rate):
     """What one GJ still in the ground is worth at the horizon, $/GJ.
 
-    The backstop price AT THIS ROW'S OWN NODE (see ``_backstop_at_wellhead``) less
-    the row's extraction cost, floored at zero: a tranche that costs more to lift
-    than the substitute costs to buy is worth nothing in the ground. Netting both
-    the transport and the extraction cost is what makes the credit differ by basin.
+    THREE things are netted off, and the third is the one that was missing.
+
+    1. TRANSPORT. ``backstop`` is already the price at this row's own node (see
+       ``_backstop_at_wellhead``), not the gross price at a regasification terminal.
+    2. EXTRACTION. Less the row's own lifting cost, floored at zero: a tranche that
+       costs more to lift than the substitute costs to buy is worth nothing in the
+       ground.
+    3. THE WAIT. A stock is not sold at the horizon instant. It is produced over the
+       years its deliverability allows, and a field empties on a decline -- produce
+       a fixed fraction of what is left each year -- so with q(t) = S(t)/tau:
+
+           S(t) = S0.exp(-t/tau)                  q(t) = (S0/tau).exp(-t/tau)
+           V    = m.integral[q(t).exp(-rt)dt]     =  m.S0 / (1 + r.tau)
+
+       so the margin is scaled by ``1 / (1 + r*tau)``. Nothing numerical, no tail to
+       truncate: it is the closed-form value of a declining reserve.
+
+    WHY IT MATTERS MORE THAN ITS SIZE SUGGESTS. Without it the rate is exactly
+    (backstop - Cost), so Cost + rate == backstop for every row: the lifting cost
+    CANCELS and every tranche is worth the same at the horizon regardless of what it
+    costs to lift, including free gas. Measured 2 Sep 2026, three tranches spanning
+    $3.65-8.45/GJ all closed 2050 at $11.72-12.04. That flattens the supply curve
+    the depletion story runs on, and since the backstop is an import price and the
+    netback an export price, it also excludes exports at the horizon by construction.
+    With tau in, the horizon value is Cost*(1-L) + backstop*L, a weighted average, so
+    a Cost term survives and the tranches separate again: $6.22 for Surat 2P against
+    $10.49 for nearly-exhausted Moomba.
     """
     if not backstop:
         return 0.0
-    return max(0.0, float(backstop) - float(row['Cost']))
+    margin = float(backstop) - float(row['Cost'])
+    if margin <= 0.0:
+        return 0.0
+    tau = _reserve_to_production_years(row)
+    if tau is None:
+        return margin
+    return margin / (1.0 + float(discount_rate) * tau)
 
 
 # Days represented by the annual peak day (adequacy).
@@ -312,7 +367,8 @@ class CapacityExpansionModel:
     def _salvage(self, s):
         """Terminal $/GJ credit on one supply row ``(node, is_potential)``."""
         row = self._supply_row(s)
-        return _salvage_rate(row, self.backstop_at_node.get(s[0], self.salvage_price))
+        return _salvage_rate(row, self.backstop_at_node.get(s[0], self.salvage_price),
+                             self.r)
 
     def _supply_row(self, s):
         if not hasattr(self, '_supply_ix'):
@@ -562,8 +618,13 @@ class CapacityExpansionModel:
             # collapsed to the same $2.26 floor and stopped distinguishing a
             # nearly-exhausted basin from an abundant one. Do not drop the netting.
             #
-            # This is the Hotelling terminal condition: the rent rises until the
-            # price reaches the backstop exactly as the resource runs out.
+            # NOT "the rent rises until the price reaches the backstop exactly as the
+            # resource runs out" -- that was the claim here until 3 Sep 2026 and it
+            # described the bug. Reaching the backstop is precisely what made Cost
+            # cancel and flattened every tranche onto one horizon price. The third
+            # netting, 1/(1+r.tau), is what stops it: the horizon value is now
+            # Cost*(1-L) + backstop*L, so a cheap tranche closes cheaper than a dear
+            # one and the supply curve survives the horizon.
             if self.salvage_price:
                 salvage = pyo.quicksum(
                     df[Y[-1]] * self._salvage(s) * 1e6
