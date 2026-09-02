@@ -553,3 +553,58 @@ terminal value is the model's own marginal value at the horizon, not an exogenou
 backstop, so that holding and selling are indifferent by construction. That needs a
 fixed point and was not tried.
 
+
+
+## 16. The reserve limit is a budget, not a stock — the rent has no time structure
+
+**Measured 3 Sep 2026 by the three-horizon acceptance test** (`tmp/horizon_test.py`),
+Step Change central, after the tau fix landed. Solve the same scenario stopping at 2051,
+2055 and 2060; read only what each says about the window to 2050:
+
+| | 2051 | 2055 | 2060 |
+|---|---|---|---|
+| Surat rent 2050, $/GJ | 4.17 | 4.93 | **6.18** |
+| — salvage part | 2.40 | 1.83 | 1.31 |
+| — reserve dual part | 1.77 | 3.10 | **4.87** |
+| Last year with exports | 2044 | 2042 | **2040** |
+| Total LNG exported to 2050, PJ | 23,101 | 21,245 | **19,358** |
+| Surat 2P produced to 2050, PJ | 28,139 | 24,894 | 21,691 |
+| Surat 2C produced to 2050, PJ | 2,154 | 3,529 | 4,828 |
+| Shortage, TJ | 0 | 0 | 0 |
+
+**The test fails, monotonically, and does not converge.** The salvage half decays with
+distance exactly as a terminal effect should — the tau and transport fixes work. The
+DUAL half nearly triples, and its increments grow rather than shrink.
+
+**The cause, and the smoking gun.** `reserve_limit` is one constraint per tranche
+summing production across the whole horizon: `sum_y q(y) <= Reserves`. One constraint,
+one dual, and that single number prices every year alike. `get_scarcity_rents` divides
+by each year's discount factor, so the cash rent *must* grow at exactly the discount
+rate. Measured: **7.000%/yr in all three runs, to three decimals**, identical to
+`discount_rate_default`. The rent path's shape is fixed before any data is read.
+
+So the rent carries no information about WHEN the stock runs down, only about how tight
+the budget is over the window solved. Add years of demand against the same fixed
+reserves and the budget tightens, so the whole path lifts. There is no mechanism for a
+terminal condition's influence to decay with distance, which is precisely what
+truncation relies on.
+
+**The fix is to give the capacity MIP a per-year stock, the way dispatch already has
+one.** `_declined_capacity` carries `cumulative_pj` forward and hard-stops an exhausted
+row; the MIP is the only layer without that. With
+
+```
+S(t+1) = S(t) - q(t)          q(t) <= S(t) / tau
+```
+
+scarcity binds locally, where the stock has actually run down, and the terminal value's
+influence decays as `(1+r)^-(T-t)` — geometric, which is what makes a longer horizon
+converge instead of merely moving. It also removes the reason the scarcity rent was
+invented: the rent exists to reconcile a budget-holding MIP with a stock-holding
+dispatch, and giving both a stock makes them agree structurally.
+
+Cost: ~300 extra variables and constraints (trivial to solve), but it changes every year
+of every result. Not attempted. The same three-horizon test decides whether it works.
+
+**Do not read a late-horizon result as an economic finding until this is closed.** The
+2050 export path is a statement about where the horizon was placed.

@@ -262,8 +262,20 @@ Reals and re-solving as a pure LP (neither backend returns duals while an intege
 variable is present, even a fixed one — the same trick `model.py` uses for nodal
 prices). The MIP objective discounts each year, so the dual is on an NPV basis;
 dividing by the year's discount factor puts it back on a cash basis, which makes the
-rent **grow at the discount rate**. That is the Hotelling result for an exhaustible
-resource, arrived at rather than imposed.
+rent **grow at the discount rate**.
+
+> **That is NOT "the Hotelling result, arrived at rather than imposed" — which is what
+> this paragraph claimed until 3 Sep 2026.** It is imposed, by the shape of the
+> constraint. `reserve_limit` is ONE constraint per tranche summing production over
+> the whole horizon, so it has ONE dual, and that single number applies to every year
+> alike. De-discounting it therefore *must* produce a path growing at exactly the
+> discount rate, whatever the data says. Measured across three horizons: **7.000%/yr
+> in every run, to three decimal places.** A real Hotelling path is a result; this one
+> is arithmetic, and it is the same shape before any gas is modelled.
+>
+> The consequence is that the rent has **no time structure**, so a terminal condition's
+> influence never decays with distance. That is why lengthening the horizon shifts the
+> whole rent path up rather than converging — see [`TODO.md`](../TODO.md) item 16.
 
 It also puts the late-horizon price rise where it economically belongs. Capital is no
 longer in the marginal cost, so the thing that lifts prices as the cheap tranches
