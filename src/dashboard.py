@@ -3234,6 +3234,14 @@ def build_supply_figure(key, end_year, residual, dark):
     ink   = '#ECEFF3' if dark else MD_TEXT
     muted = '#9AA5B1' if dark else MD_TEXT_MED
     hatch = 'rgba(255,255,255,0.60)' if dark else 'rgba(0,0,0,0.42)'
+    # Texture, not more hues, carries what a block IS: solid gas out of a
+    # producing field, hatched gas behind a project that has to be built, dotted
+    # gas carved out of the export stream and offered at nothing.
+    # Dots need to be bigger and denser than diagonals to read at all at the
+    # size a panel in a thirty-panel grid gives them.
+    HATCH = {'developed': dict(shape=''),
+             'potential': dict(shape='/', size=6, solidity=0.28),
+             'reserved':  dict(shape='.', size=9, solidity=0.42)}
     # The two lines sit on top of the bars, so their labels need the surface
     # behind them to stay readable over a dark step.
     label_bg = 'rgba(29,33,38,0.72)' if dark else 'rgba(255,255,255,0.78)'
@@ -3258,15 +3266,13 @@ def build_supply_figure(key, end_year, residual, dark):
                     x=[b['StartPJ'] + b['PJ'] / 2], y=[b['cost']], width=[b['PJ']],
                     marker=dict(
                         color=supply_color(fam, dark),
-                        # Hatching, not a ninth hue, for the undeveloped tranche:
-                        # a 2C row is the same basin's gas behind a project that
-                        # has to be built, and it reads as such.
-                        # fillmode='overlay' or the hatch REPLACES the fill --
-                        # marker.color is ignored under the default 'replace' and
-                        # the bar comes out white.
-                        pattern=dict(shape='/' if b['is_pot'] else '',
-                                     fillmode='overlay', size=6, solidity=0.28,
-                                     fgcolor=hatch),
+                        # Texture, not a ninth and tenth hue, for what the block
+                        # IS -- see HATCH above. fillmode='overlay' or the
+                        # pattern REPLACES the fill: marker.color is ignored
+                        # under the default 'replace' and the bar comes out
+                        # white.
+                        pattern=dict(fillmode='overlay', fgcolor=hatch,
+                                     **HATCH.get(b['kind'], HATCH['developed'])),
                         line=dict(width=0)),
                     name=fam, legendgroup=fam, showlegend=first,
                     # Ranked by the palette's own slot order, not by the order a
@@ -3313,16 +3319,20 @@ def build_supply_figure(key, end_year, residual, dark):
 
     # Two grey swatches naming what the hatching means, so the tranche encoding is
     # in the legend rather than only in a caption.
-    for i, (label, shape) in enumerate((('Developed (2P)', ''),
-                                        ('Undeveloped (2C) / import', '/'))):
+    swatches = [('Developed (2P)', 'developed'), ('Undeveloped (2C) / import', 'potential')]
+    if any(panel[0]['kind'].eq('reserved').any()
+           for panel in panels.values() if not panel[0].empty):
+        swatches.append(('Reserved — offered at $0 at the field', 'reserved'))
+    for i, (label, kind) in enumerate(swatches):
         fig.add_trace(go.Bar(
             x=[None], y=[None], name=label, legendgroup='tranche',
             legendrank=200 + i, legendgrouptitle_text='Tranche' if i == 0 else None,
             marker=dict(color=muted, line=dict(width=0),
                         # Denser than on the bars: a 12px legend swatch shows
                         # nothing at the density that reads well across a panel.
-                        pattern=dict(shape=shape, fillmode='overlay', size=4,
-                                     solidity=0.5, fgcolor=hatch)),
+                        pattern=dict(fillmode='overlay', fgcolor=hatch, size=4,
+                                     solidity=0.55,
+                                     shape=HATCH[kind].get('shape', ''))),
             showlegend=True, hoverinfo='skip'), row=1, col=1)
 
     for a in fig.layout.annotations:          # the year headings
@@ -3354,7 +3364,9 @@ def supply_curve_table(key, end_year, residual):
         for _, b in df.iterrows():
             rows.append({
                 'Node': node, 'Year': year, 'Source': b['label'],
-                'Basin': b['family'], 'Tranche': '2C/import' if b['is_pot'] else '2P',
+                'Basin': b['family'],
+                'Tranche': {'developed': '2P', 'potential': '2C/import',
+                            'reserved': 'Reserved'}.get(b['kind'], ''),
                 'Delivered $/GJ': round(float(b['cost']), 3),
                 'Field $/GJ': round(float(b['field_cost']), 3),
                 'Transport $/GJ': round(float(b['tariff']), 3),

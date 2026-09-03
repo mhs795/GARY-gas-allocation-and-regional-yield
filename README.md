@@ -225,9 +225,18 @@ reappears further up its own curve once its cheap corridor fills, which is what
 makes a pipeline limit visible as a step rather than as a missing source.
 
 * **Colour is the basin**, in a fixed order, so a hue means the same gas in every
-  panel. **Hatching is the tranche**: solid for developed (2P) gas, hatched for
-  the undeveloped (2C) tranche or an import terminal, both of which need a
-  project built in front of them before they deliver anything.
+  panel. **Texture is the tranche**: solid for developed (2P) gas, hatched for
+  the undeveloped (2C) tranche or an import terminal (both need a project built
+  in front of them before they deliver anything), dotted for a **domestic
+  reservation's carve-out**. The carve-out is not a supply row at all — the
+  model states it as its own $0/GJ variable withheld from the export stream — so
+  it is folded in separately and deducted from the commercial rows at the same
+  field, because it is the same gas rather than extra gas. Note it still lands
+  on a demand node's curve at the **tariff of the route it took** (~$0.70/GJ at
+  Brisbane, ~$1.65 at Sydney) and not at $0: free gas still costs what the pipe
+  charges. In the residual view it often does not appear at all, because it is
+  the cheapest gas in the system and the other demand centres take it first —
+  switch to Gross to see the whole carve-out on every panel.
 * The **dotted vertical line** is the node's demand that year (mass market + GPG
   + industrial, as posted rather than as served). The **dashed horizontal line**
   is the price GARY reported at the node. Where the two lines meet the curve is

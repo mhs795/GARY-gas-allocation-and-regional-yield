@@ -157,14 +157,16 @@ def export_offtake_tjd(res):
 # ---------------------------------------------------------------------------
 # The stack of gas that existed in one year
 # ---------------------------------------------------------------------------
-def available_sources(res, supply_df, expansion_df, cum_pj, netback_scenario=None,
-                      data_dir=None):
+def available_sources(res, supply_df, expansion_df, cum_pj, arcs_df=None,
+                      netback_scenario=None, data_dir=None):
     """Every supply tranche that could produce in this year: cost and TJ/day.
 
     Mirrors model.supply_cap_rule -- a potential row is capped by the terminals
     built in front of it and nothing else, a developed row by its decline curve
     and what is left of its reserves -- and prices each row the way the objective
-    does, at its cost plus the year's scarcity rent on that row.
+    does, at its cost plus the year's scarcity rent on that row. With ``arcs_df``
+    it also carries the reservation carve-out, which is not a supply row at all
+    (see add_reserved_tranche).
     """
     year = int(res['Year'])
     builds = set(res.get('builds') or [])
@@ -199,13 +201,70 @@ def available_sources(res, supply_df, expansion_df, cum_pj, netback_scenario=Non
         if import_cost is not None and node in IMPORT_NODES and is_pot:
             cost = import_cost
         cost += float(rents.get((node, is_pot), 0.0))
-        out.append({'node': node, 'is_pot': is_pot, 'label': source_label(row),
-                    'family': source_family(node), 'cost': cost, 'cap': cap})
+        out.append({'node': node, 'is_pot': is_pot,
+                    'kind': 'potential' if is_pot else 'developed',
+                    'label': source_label(row), 'family': source_family(node),
+                    'cost': cost, 'cap': cap})
+    if arcs_df is not None:
+        out = add_reserved_tranche(out, res, arcs_df)
     return out
 
 
+def lng_source_nodes(arcs_df):
+    """The nodes that feed the LNG trains -- Surat, on the published network."""
+    a = arcs_df.astype({'From': str, 'To': str})
+    return sorted(set(a.loc[a['To'].isin(LNG_NODES), 'From']))
+
+
+def add_reserved_tranche(sources, res, arcs_df):
+    """Fold a domestic reservation into the stack as free gas at the field.
+
+    A reservation is NOT a supply row: model.py carves it out of the export
+    stream as its own variable, `reserved_prod`, priced at $0/GJ and capped at
+    the share of planned exports withheld that day. Reading supply.csv alone
+    therefore misses it entirely, and a reserved scenario's curve would open at
+    the commercial tranche as though the lever did nothing.
+
+    Two things about how the model states it carry straight over here:
+
+    * IT IS THE SAME GAS, NOT EXTRA. `production + reserved_prod <= capacity`
+      means a slice of Surat's deliverability is simply free rather than added
+      on top of it, so the carve-out is taken OFF the commercial rows there. The
+      model applies that cap ROW BY ROW -- the 2P row and the 2C row behind it
+      each lose the reserved volume from their own headroom -- so this deducts it
+      from each of them too rather than from the cheapest one only. Mirroring it
+      matters: the two differ by one carve-out's worth of gas on the stack, and
+      the point of this module is to reproduce what the LP saw, quirks included.
+    * $0 IS A WELLHEAD PRICE, NOT A DELIVERED ONE. The block still has to be
+      shipped, so it lands on a demand node's curve at the tariff of the route
+      it took: ~$0.70/GJ at Brisbane, ~$1.40 at Sydney via the MSP. Free gas
+      still costs what the pipe charges.
+    """
+    offered = float(res.get('reserved_offered_tj') or 0.0) / 365.0
+    if offered <= _TOL:
+        return sources
+    node = next(iter(lng_source_nodes(arcs_df)), None)
+    if node is None:
+        return sources
+
+    for s in sources:
+        if s['node'] == node:
+            s['cap'] = max(0.0, s['cap'] - offered)
+    sources = [s for s in sources if s['cap'] > _TOL]
+    sources.append({'node': node, 'is_pot': False, 'kind': 'reserved',
+                    'label': 'Reserved (LNG carve-out)',
+                    'family': source_family(node), 'cost': 0.0, 'cap': offered})
+    return sources
+
+
 def prior_claims_tjd(res, node, demand_nodes):
-    """TJ/day of the year's gas already spoken for by everyone except `node`.
+    """(export, domestic) TJ/day already spoken for by everyone except `node`.
+
+    Split in two because the two claims are not eligible for the same gas: the
+    trains may draw only on COMMERCIAL gas (model.py constrains the LNG feed
+    pipes to `production`, not to `reserved_prod`, or the free gas would simply
+    flow to the trains and the reservation would do nothing), while a domestic
+    buyer takes whatever is cheapest, the carve-out first.
 
     A supply curve drawn for one node has to answer "what could have reached ME",
     and the honest answer subtracts the other claims on the same molecules: the
@@ -217,13 +276,16 @@ def prior_claims_tjd(res, node, demand_nodes):
     the trains and to the southern states and the marginal molecule was the
     dearer 2C tranche behind it.
     """
-    claims = sum(export_offtake_tjd(res).values())
-    claims += sum(node_demand_tjd(res, n) for n in demand_nodes if n != node)
-    return claims
+    exports = sum(export_offtake_tjd(res).values())
+    domestic = sum(node_demand_tjd(res, n) for n in demand_nodes if n != node)
+    return exports, domestic
 
 
-def strip_claims(sources, claims):
+def strip_claims(sources, claims, kinds=None):
     """Take `claims` TJ/day off the stack cheapest-first, and return what is left.
+
+    ``kinds`` restricts which rows a claim may eat into -- the trains are held to
+    commercial gas, so the reservation carve-out is not on offer to them.
 
     Cheapest-first because the claims being removed are buyers, and a buyer takes
     the cheapest gas on offer. Removing volume pro rata across tranches instead
@@ -240,6 +302,8 @@ def strip_claims(sources, claims):
     for s in sorted(sources, key=lambda s: s['cost']):
         if remaining <= _TOL:
             break
+        if kinds is not None and s['kind'] not in kinds:
+            continue
         used = min(s['cap'], remaining)
         s['cap'] -= used
         remaining -= used
@@ -320,7 +384,7 @@ def delivered_curve(target, sources, arcs_df, caps):
         for a in path:
             resid[a] -= qty
         blocks.append({'label': s['label'], 'family': s['family'],
-                       'is_pot': s['is_pot'], 'node': s['node'],
+                       'kind': s['kind'], 'is_pot': s['is_pot'], 'node': s['node'],
                        'cost': delivered, 'field_cost': s['cost'],
                        'tariff': delivered - s['cost'], 'qty': qty,
                        'route': ' → '.join(path) if path else 'at node'})
@@ -387,17 +451,22 @@ def curves_for_year(res, nodes, supply_df, arcs_df, expansion_df, demand_nodes,
     """
     if cum is None:
         cum = cumulative_pj(scenario_years or [], int(res['Year']))
-    stack = available_sources(res, supply_df, expansion_df, cum, data_dir=data_dir)
+    stack = available_sources(res, supply_df, expansion_df, cum, arcs_df=arcs_df,
+                              data_dir=data_dir)
     caps = arc_capacity(arcs_df, expansion_df, set(res.get('builds') or []))
 
     out = {}
     for node in nodes:
         sources = [dict(s) for s in stack]
         if residual:
-            sources = strip_claims(sources, prior_claims_tjd(res, node, demand_nodes))
+            exports, domestic = prior_claims_tjd(res, node, demand_nodes)
+            sources = strip_claims(sources, exports,
+                                   kinds={'developed', 'potential'})
+            sources = strip_claims(sources, domestic)
         blocks = delivered_curve(node, sources, arcs_df, dict(caps))
-        df = pd.DataFrame(blocks, columns=['label', 'family', 'is_pot', 'node', 'cost',
-                                           'field_cost', 'tariff', 'qty', 'route'])
+        df = pd.DataFrame(blocks, columns=['label', 'family', 'kind', 'is_pot', 'node',
+                                           'cost', 'field_cost', 'tariff', 'qty',
+                                           'route'])
         if not df.empty:
             df['PJ'] = df['qty'] * TJD_TO_PJ
             df['CumPJ'] = df['PJ'].cumsum()
