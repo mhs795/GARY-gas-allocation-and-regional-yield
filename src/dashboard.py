@@ -3205,7 +3205,9 @@ def _panel_ranges(panels, nodes, years):
             df, dem, price = panels.get((node, year), (pd.DataFrame(), 0.0, None))
             x_node = max(x_node, dem * 1.9)
             if price:
-                y_top = max(y_top, price)
+                # p90, not the median: the band has to fit in the panel or the
+                # winter days it exists to show are cropped out of it.
+                y_top = max(y_top, price['p90'])
             if df.empty:
                 continue
             cut = df[df['CumPJ'] >= dem]
@@ -3245,6 +3247,7 @@ def build_supply_figure(key, end_year, residual, dark):
     # The two lines sit on top of the bars, so their labels need the surface
     # behind them to stay readable over a dark step.
     label_bg = 'rgba(29,33,38,0.72)' if dark else 'rgba(255,255,255,0.78)'
+    band = 'rgba(154,165,177,0.22)' if dark else 'rgba(107,114,128,0.15)'
     seen = set()
     # Built as plain dicts and attached in one pass at the end. add_vline/add_hline
     # re-validate every shape already on the figure each time they are called, so
@@ -3296,13 +3299,24 @@ def build_supply_figure(key, end_year, residual, dark):
                                   bgcolor=label_bg, borderpad=1,
                                   font=dict(size=9, color=muted)))
             if price:
+                # The band is where this node's daily prices actually sat; the
+                # line is the typical day, which is the like-for-like comparison
+                # with an annual-average curve. A band riding well above the
+                # curve is the year's dear days -- winter, or a congestion rent
+                # no supply block carries -- and saying so beats hiding it
+                # inside a mean.
+                shapes.append(dict(type='rect', xref=f'{xref} domain', yref=yref,
+                                   x0=0, x1=1, y0=price['p10'], y1=price['p90'],
+                                   layer='below', line=dict(width=0),
+                                   fillcolor=band))
                 shapes.append(dict(type='line', xref=f'{xref} domain', yref=yref,
-                                   x0=0, x1=1, y0=price, y1=price, layer='above',
+                                   x0=0, x1=1, y0=price['median'], y1=price['median'],
+                                   layer='above',
                                    line=dict(color=ink, width=1.4, dash='dash')))
-                notes.append(dict(xref=f'{xref} domain', yref=yref, x=0.0, y=price,
-                                  text=f'${price:.2f}', showarrow=False,
-                                  xanchor='left', yanchor='bottom', xshift=3,
-                                  bgcolor=label_bg, borderpad=1,
+                notes.append(dict(xref=f'{xref} domain', yref=yref, x=0.0,
+                                  y=price['median'], text=f"${price['median']:.2f}",
+                                  showarrow=False, xanchor='left', yanchor='bottom',
+                                  xshift=3, bgcolor=label_bg, borderpad=1,
                                   font=dict(size=9, color=muted)))
 
             fig.layout[f'xaxis{sfx}'].update(
@@ -3345,9 +3359,11 @@ def build_supply_figure(key, end_year, residual, dark):
         shapes=shapes, annotations=list(fig.layout.annotations) + notes,
         title=(f'Delivered supply curves by demand node  ·  {mode}'
                '<br><sup>Each step is a tranche of gas at its delivered cost '
-               '($/GJ, y) against the volume it can supply (PJ/yr, x). '
-               'Dotted vertical line = that year’s demand; dashed horizontal '
-               'line = the price GARY reported at the node.</sup>'),
+               '($/GJ, y) against the volume it can supply (PJ/yr, x). Dotted '
+               'vertical line = that year’s demand. Dashed horizontal line = '
+               'the price GARY reported on a typical (median) day at the node, '
+               'inside a band spanning its 10th–90th percentile daily price.'
+               '</sup>'),
         legend=dict(orientation='h', yanchor='top', y=-0.045, x=0,
                     groupclick='toggleitem', font=dict(size=11)),
         margin=dict(l=76, r=24, t=104, b=120),
@@ -3374,7 +3390,10 @@ def supply_curve_table(key, end_year, residual):
                 'Cumulative PJ/yr': round(float(b['CumPJ']), 2),
                 'Route': b['route'],
                 'Node demand PJ/yr': round(float(dem), 2),
-                'Modelled price $/GJ': None if price is None else round(float(price), 2),
+                'Price, typical day $/GJ': None if not price else round(price['median'], 2),
+                'Price, annual mean $/GJ': None if not price else round(price['mean'], 2),
+                'Price, p10 $/GJ': None if not price else round(price['p10'], 2),
+                'Price, p90 $/GJ': None if not price else round(price['p90'], 2),
             })
     return pd.DataFrame(rows)
 
@@ -3403,9 +3422,14 @@ def update_supply_curves(key, end_year, active_tab, mode, theme):
         'so a basin reappears further up the curve once its cheap corridor '
         'fills. The residual view strips the gas the LNG trains and the other '
         'demand centres took, cheapest first, which is what brings the curve '
-        'onto GARY’s own nodal price; the gross view leaves it in. Both are '
-        'annual averages, so neither shows a winter peak, and each panel treats '
-        'its node as the only buyer of what is left.', 'info')
+        'onto GARY’s own nodal price; the gross view leaves it in. A panel is '
+        'a typical-day construction — capacity and demand are both annual '
+        'average flat rates — so the price line is the median day’s, which the '
+        'curve meets to the cent in about half the grid; the band around it is '
+        'the 10th–90th percentile of the year’s daily prices, and where it '
+        'rides above the curve those are days an annual average cannot hold, '
+        'a winter peak or a congestion rent no supply block carries. Each '
+        'panel also treats its node as the only buyer of what is left.', 'info')
     return fig, note
 
 

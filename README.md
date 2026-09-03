@@ -239,14 +239,32 @@ makes a pipeline limit visible as a step rather than as a missing source.
   switch to Gross to see the whole carve-out on every panel.
 * The **dotted vertical line** is the node's demand that year (mass market + GPG
   + industrial, as posted rather than as served). The **dashed horizontal line**
-  is the price GARY reported at the node. Where the two lines meet the curve is
-  the check that the reconstruction is reading the same model.
+  is the price GARY reported on a **typical (median) day** at the node, sitting
+  in a band spanning its 10th–90th percentile daily price. Where the line meets
+  the curve is the check that the reconstruction is reading the same model — it
+  does so to the cent in 14 of the 30 panels, and a median $0.19/GJ from it.
+  The median rather than the annual mean because a panel is a typical-day
+  construction (capacity and demand are both annual-average flat rates) and a
+  mean of 365 daily duals is pulled up by the winter days; comparing it to the
+  mean mismatches the time dimension, not the supply, and costs about $0.08/GJ
+  of fit. Where the **band rides above the curve**, those are days an annual
+  average cannot hold: a winter peak, or a congestion rent on a full corridor
+  that no supply block carries.
 * **Residual** (the default) strips the gas the LNG trains and the other demand
   centres took, cheapest-first, so the curve is the one this node's demand
   actually faced. **Gross** leaves it in and answers the different question of
   what gas existed and what it would have cost to bring here — its price line
   sits above its curve, and the gap is the export opportunity cost that netback
   pricing puts on Queensland gas.
+
+Two other structures were built, measured and rejected — a **dispatch stack**
+off realised production (median gap $0.57/GJ, because a stack sized exactly to
+demand leaves the node the dearest gas once other buyers are stripped) and
+**network-aware stripping** that spends pipeline capacity serving the other
+buyers (better in the tail, no better in the middle, unstable at day
+resolution). Both are written up in `src/supply_curve.py` so they are not tried
+again. The lesson: the remaining gap is not in how the supply side is stacked —
+matching a dual exactly would mean re-solving the system.
 
 Both views are annual averages, so neither shows a winter peak, and each panel
 treats its node as the only buyer of what is left — in the LP, Sydney and

@@ -37,6 +37,30 @@ the order they bind in:
      curve steps up where the MSP fills rather than running flat to Surat's
      nameplate.
 
+WHAT WAS TRIED AND REJECTED, so it is not tried again. Two other structures were
+built and measured against GARY's own nodal prices over a 2025-50 grid, both
+looking for a closer fit than the capacity stack above (median $0.27/GJ):
+
+  * A DISPATCH STACK, built from what each tranche actually produced on average
+    over the year rather than from what it could produce. Worse -- median
+    $0.57/GJ. Realised production is sized exactly to demand plus exports, so
+    once the other buyers' claims are stripped cheapest-first there is no slack
+    left and the node is handed the dearest gas in the system: Brisbane 2030
+    came out at $13.93 against a $7.67 dual.
+  * NETWORK-AWARE STRIPPING, serving the other demand centres and the trains
+    through the same routing engine so their claims consume pipeline capacity
+    too. Better in the tail (max $2.97 against $4.20) but no better in the middle
+    (median $0.35), and at day resolution it diverges badly -- a greedy
+    allocation across buyers is not the LP's optimum, and once it has spent the
+    corridors greedily what is left is arbitrary.
+
+The lesson from both: the remaining gap is not in how the supply side is stacked.
+Matching a dual exactly would mean re-solving the system, because a nodal price
+is a property of the whole LP -- including the congestion rent on a full corridor
+and the competition between nodes -- and no arrangement of one node's blocks
+carries it. What DOES close most of the gap is comparing like with like on the
+time dimension, which is why the price line is the median day's (see node_price).
+
 WHAT IT IS NOT. Each node's curve treats that node as the only buyer of the gas
 left after exports: Sydney and Melbourne are not competing for the same MSP space
 here, though in the LP they are. It is an annual average -- capacities and demand
@@ -425,12 +449,34 @@ def node_demand_tjd(res, node):
 
 
 def node_price(res, node):
-    """The year's mean nodal price at a node, $/GJ, or None if it was never priced."""
+    """The spread of the year's daily nodal prices at a node, $/GJ.
+
+    Returns {'median', 'mean', 'p10', 'p90'}, or None if the node was never
+    priced. THE MEDIAN IS THE ONE THAT BELONGS ON AN ANNUAL SUPPLY CURVE, and
+    the reason is worth stating because it is the whole business of comparing a
+    curve with a dual.
+
+    A panel here is a TYPICAL-DAY construction: capacities and demand are both
+    annual-average flat rates. GARY's reported price for a year is the mean of
+    365 daily duals, and on a winter day the marginal source is a dearer one, so
+    that mean sits above what a typical day actually cleared at. Comparing the
+    two mismatches the time dimension, not the supply: across a 2025-50 grid the
+    curve lands on the MEDIAN day's price to the cent in 14 of 30 panels against
+    8 for the mean, and a median $0.19/GJ from it against $0.27.
+
+    The p10-p90 spread is carried so the chart can SHOW that rather than hide
+    it. Where the band runs well above the curve, the year's dear days are being
+    set by something an annual average cannot hold -- a winter peak, or a
+    congestion rent on a corridor that no supply block carries.
+    """
     prices = res.get('prices')
     if prices is None or prices.empty:
         return None
-    sub = prices[prices['Node'].astype(str) == node]
-    return float(sub['Price'].mean()) if not sub.empty else None
+    sub = prices[prices['Node'].astype(str) == node]['Price']
+    if sub.empty:
+        return None
+    return {'median': float(sub.median()), 'mean': float(sub.mean()),
+            'p10': float(sub.quantile(0.10)), 'p90': float(sub.quantile(0.90))}
 
 
 # ---------------------------------------------------------------------------
