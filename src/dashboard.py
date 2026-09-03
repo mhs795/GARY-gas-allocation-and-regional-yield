@@ -9,6 +9,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
+from plotly.subplots import make_subplots
 import diskcache
 import dash
 from dash import dcc, html, Input, Output, State, DiskcacheManager, no_update, ctx
@@ -19,6 +20,7 @@ import datacentre_series
 import acil_segment_prices
 import params as P
 import results_io
+import supply_curve as sc
 from model import RESERVATION_LEVELS, VOLL_PER_GJ, lng_foundation_share
 from solve import solve_scenario
 from regenerate_data import regenerate_all
@@ -308,6 +310,29 @@ pio.templates['material_dark'] = go.layout.Template(
 )
 
 CHART_TEMPLATE = 'material_dark'
+
+# Supply-curve palette: one hue per BASIN, in fixed order, so a colour means the
+# same gas in every one of the thirty panels whether or not that basin appears in
+# a given one. Eight slots, validated for CVD separation and lightness against
+# both chart surfaces (worst adjacent pair dE 9.1 light / 8.4 dark, normal-vision
+# 19.6 / 19.3) -- checked with a validator rather than by eye, because the eye is
+# not a colourimeter. The 2P/2C tranche split rides on hatching instead of a
+# ninth and tenth hue, so identity never rests on colour alone.
+SUPPLY_COLORS = {
+    'light': ['#2a78d6', '#eb6834', '#1baf7a', '#eda100',
+              '#e87ba4', '#008300', '#4a3aa7', '#e34948'],
+    'dark':  ['#3987e5', '#d95926', '#199e70', '#c98500',
+              '#d55181', '#008300', '#9085e9', '#e66767'],
+}
+
+
+def supply_color(family, dark=False):
+    """The fixed hue for a source basin, by slot rather than by appearance order."""
+    slots = SUPPLY_COLORS['dark' if dark else 'light']
+    try:
+        return slots[sc.FAMILY_ORDER.index(family) % len(slots)]
+    except ValueError:
+        return MD_TEXT_MED
 
 # Dark version of the template — NELLY's dark palette
 pio.templates['gary_dark'] = go.layout.Template(
@@ -1399,6 +1424,7 @@ main = html.Div(className='md-main', children=[
                 dbc.Tab(label='Production & Dispatch', tab_id='tab-prod'),
                 dbc.Tab(label='Storage Dynamics',      tab_id='tab-storage'),
                 dbc.Tab(label='Price Outcomes',        tab_id='tab-price'),
+                dbc.Tab(label='Supply Curves',         tab_id='tab-supply'),
                 dbc.Tab(label='Expansions',            tab_id='tab-exp'),
                 dbc.Tab(label='GPG & Large Users',     tab_id='tab-ind'),
             ]),
@@ -1473,6 +1499,28 @@ main = html.Div(className='md-main', children=[
                 _dl_btn('dl-price-a-low'),
                 html.Hr(style={'margin': '26px 0 14px'}),
                 html.Div(id='segment-price-content'),
+            ]),
+
+            # Supply curves
+            html.Div(id='tab-supply-content', style={'display': 'none'}, children=[
+                html.Div(className='md-map-controls', children=[
+                    html.Div([
+                        html.Span('Curve', className='md-input-label'),
+                        dbc.RadioItems(
+                            id='supply-mode',
+                            options=[
+                                {'label': ' Residual (net of exports & other nodes)',
+                                 'value': 'residual'},
+                                {'label': ' Gross (all gas available that year)',
+                                 'value': 'gross'},
+                            ],
+                            value='residual', inline=True),
+                    ]),
+                ]),
+                dcc.Loading(type='circle', color='#1976D2', children=
+                    dcc.Graph(id='supply-curve-graph', style={'marginBottom': '4px'})),
+                _dl_btn('dl-supply'),
+                html.Div(id='supply-curve-note'),
             ]),
 
             # Expansions
@@ -1766,12 +1814,13 @@ def blank_fig(tmpl=CHART_TEMPLATE):
      Output('tab-prod-content',    'style'),
      Output('tab-storage-content', 'style'),
      Output('tab-price-content',   'style'),
+     Output('tab-supply-content',  'style'),
      Output('tab-exp-content',     'style'),
      Output('tab-ind-content',     'style')],
     Input('main-tabs', 'active_tab'),
 )
 def show_tab(active):
-    order = ['tab-map','tab-prod','tab-storage','tab-price','tab-exp','tab-ind']
+    order = ['tab-map','tab-prod','tab-storage','tab-price','tab-supply','tab-exp','tab-ind']
     return [{'display': 'block'} if t == active else {'display': 'none'} for t in order]
 
 # ---------------------------------------------------------------------------
@@ -3084,6 +3133,293 @@ def update_segment_prices(key, end_year, active_tab, theme):
         md_alert(caveat, 'warning'),
     ])
 
+
+# ---------------------------------------------------------------------------
+# Supply curves
+# ---------------------------------------------------------------------------
+SUPPLY_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+SUPPLY_YEAR_STEP = 5
+
+# (key, end_year, residual) -> panels. Rebuilding a grid walks every solved year
+# to re-accumulate depletion, which is worth doing once per scenario rather than
+# once per theme toggle.
+_supply_cache: dict = {}
+
+
+def supply_demand_nodes():
+    """The demand centres the grid has a row for, in nodes.csv order."""
+    n = static_data['nodes']
+    return [str(x) for x in n.loc[n['Type'] == 'Demand', 'Name']]
+
+
+def supply_curve_panels(key, end_year, residual):
+    """{(node, year): (blocks, demand PJ/yr, price $/GJ)} plus the years drawn.
+
+    Every solved year is walked, not just the ones with a column, because
+    depletion is cumulative: what the 2040 panel has left to produce depends on
+    what 2025-39 took out of the ground.
+    """
+    cache_key = (key, end_year, residual)
+    if cache_key in _supply_cache:
+        return _supply_cache[cache_key]
+
+    years_all = sorted(get_filtered(key, end_year), key=lambda r: r['Year'])
+    if not years_all:
+        return {}, []
+    nodes = supply_demand_nodes()
+    drawn = [r for r in years_all
+             if (r['Year'] - years_all[0]['Year']) % SUPPLY_YEAR_STEP == 0]
+
+    supply_df = pd.read_csv(os.path.join(SUPPLY_DATA_DIR, 'supply.csv'))
+    arcs_df, exp_df = static_data['arcs'], static_data['expansion']
+
+    panels, cum, wanted = {}, {}, {r['Year'] for r in drawn}
+    for res in years_all:
+        if res['Year'] in wanted:
+            year_panels = sc.curves_for_year(
+                res, nodes, supply_df, arcs_df, exp_df, nodes, cum=cum,
+                data_dir=SUPPLY_DATA_DIR, residual=residual)
+            for node, panel in year_panels.items():
+                panels[(node, res['Year'])] = panel
+        cum = sc.accumulate(cum, res)
+
+    out = (panels, [r['Year'] for r in drawn])
+    _supply_cache[cache_key] = out
+    if len(_supply_cache) > 8:
+        _supply_cache.pop(next(iter(_supply_cache)))
+    return out
+
+
+def _panel_ranges(panels, nodes, years):
+    """(y max for the whole grid, {node: x max}) -- the window worth looking at.
+
+    Both axes are cut back to the part of the curve the year's demand actually
+    reaches. A stack whose dear tail runs to $40/GJ on a route nobody would use
+    is real, but drawn in full it squashes the $6-12 band where every price in
+    this model lives into the bottom fifth of the panel.
+    """
+    y_top, x_max = 0.0, {}
+    for node in nodes:
+        x_node = 0.0
+        for year in years:
+            df, dem, price = panels.get((node, year), (pd.DataFrame(), 0.0, None))
+            x_node = max(x_node, dem * 1.9)
+            if price:
+                y_top = max(y_top, price)
+            if df.empty:
+                continue
+            cut = df[df['CumPJ'] >= dem]
+            row = cut.iloc[0] if not cut.empty else df.iloc[-1]
+            y_top = max(y_top, float(row['cost']))
+            x_node = max(x_node, float(row['CumPJ']) * 1.25)
+        x_max[node] = max(x_node, 1.0)
+    return y_top * 1.3, x_max
+
+
+def build_supply_figure(key, end_year, residual, dark):
+    """The grid: a row per demand node, a column every five years."""
+    tmpl = 'gary_dark' if dark else CHART_TEMPLATE
+    panels, years = supply_curve_panels(key, end_year, residual)
+    nodes = supply_demand_nodes()
+    if not panels or not years:
+        return blank_fig(tmpl)
+
+    ncol = len(years)
+    titles = [f'<b>{y}</b>' if i == 0 else ''
+              for i in range(len(nodes)) for y in years]
+    fig = make_subplots(rows=len(nodes), cols=ncol, subplot_titles=titles,
+                        horizontal_spacing=0.012, vertical_spacing=0.055)
+
+    y_top, x_max = _panel_ranges(panels, nodes, years)
+    ink   = '#ECEFF3' if dark else MD_TEXT
+    muted = '#9AA5B1' if dark else MD_TEXT_MED
+    hatch = 'rgba(255,255,255,0.60)' if dark else 'rgba(0,0,0,0.42)'
+    # The two lines sit on top of the bars, so their labels need the surface
+    # behind them to stay readable over a dark step.
+    label_bg = 'rgba(29,33,38,0.72)' if dark else 'rgba(255,255,255,0.78)'
+    seen = set()
+    # Built as plain dicts and attached in one pass at the end. add_vline/add_hline
+    # re-validate every shape already on the figure each time they are called, so
+    # sixty of them on a thirty-panel grid cost twenty seconds on their own.
+    shapes, notes = [], []
+
+    for r, node in enumerate(nodes, start=1):
+        for c, year in enumerate(years, start=1):
+            # Plotly numbers the first subplot's axes 'x'/'y', not 'x1'/'y1',
+            # and its layout keys 'xaxis'/'yaxis'.
+            n = (r - 1) * ncol + c
+            sfx = '' if n == 1 else str(n)
+            xref, yref = f'x{sfx}', f'y{sfx}'
+            df, dem, price = panels.get((node, year), (pd.DataFrame(), 0.0, None))
+            for _, b in df.iterrows():
+                fam, first = b['family'], b['family'] not in seen
+                seen.add(fam)
+                fig.add_trace(go.Bar(
+                    x=[b['StartPJ'] + b['PJ'] / 2], y=[b['cost']], width=[b['PJ']],
+                    marker=dict(
+                        color=supply_color(fam, dark),
+                        # Hatching, not a ninth hue, for the undeveloped tranche:
+                        # a 2C row is the same basin's gas behind a project that
+                        # has to be built, and it reads as such.
+                        # fillmode='overlay' or the hatch REPLACES the fill --
+                        # marker.color is ignored under the default 'replace' and
+                        # the bar comes out white.
+                        pattern=dict(shape='/' if b['is_pot'] else '',
+                                     fillmode='overlay', size=6, solidity=0.28,
+                                     fgcolor=hatch),
+                        line=dict(width=0)),
+                    name=fam, legendgroup=fam, showlegend=first,
+                    # Ranked by the palette's own slot order, not by the order a
+                    # basin happens to first appear in the grid.
+                    legendrank=sc.FAMILY_ORDER.index(fam) if fam in sc.FAMILY_ORDER else 99,
+                    hovertemplate=(f"<b>{b['label']}</b><br>"
+                                   f"${b['cost']:.2f}/GJ delivered to {node}<br>"
+                                   f"{b['PJ']:.1f} PJ  (cumulative {b['CumPJ']:.1f} PJ)<br>"
+                                   f"field ${b['field_cost']:.2f} + transport "
+                                   f"${b['tariff']:.2f}<br>via {b['route']}"
+                                   "<extra></extra>"),
+                ), row=r, col=c)
+
+            if dem > 0:
+                shapes.append(dict(type='line', xref=xref, yref=f'{yref} domain',
+                                   x0=dem, x1=dem, y0=0, y1=1, layer='above',
+                                   line=dict(color=ink, width=1.4, dash='dot')))
+                notes.append(dict(xref=xref, yref=f'{yref} domain', x=dem, y=1.0,
+                                  text=f'{dem:.0f} PJ', showarrow=False,
+                                  xanchor='left', yanchor='top', xshift=3,
+                                  bgcolor=label_bg, borderpad=1,
+                                  font=dict(size=9, color=muted)))
+            if price:
+                shapes.append(dict(type='line', xref=f'{xref} domain', yref=yref,
+                                   x0=0, x1=1, y0=price, y1=price, layer='above',
+                                   line=dict(color=ink, width=1.4, dash='dash')))
+                notes.append(dict(xref=f'{xref} domain', yref=yref, x=0.0, y=price,
+                                  text=f'${price:.2f}', showarrow=False,
+                                  xanchor='left', yanchor='bottom', xshift=3,
+                                  bgcolor=label_bg, borderpad=1,
+                                  font=dict(size=9, color=muted)))
+
+            fig.layout[f'xaxis{sfx}'].update(
+                range=[0, x_max[node]], showgrid=False, tickfont=dict(size=9),
+                title=dict(text='PJ/yr' if r == len(nodes) else None,
+                           font=dict(size=10, color=muted)))
+            # One y scale for the whole grid, with ticks only down the first
+            # column: the point of the grid is comparing where the price lands
+            # between nodes and across years, which a per-panel scale would break.
+            fig.layout[f'yaxis{sfx}'].update(
+                range=[0, y_top], tickfont=dict(size=9), showticklabels=(c == 1),
+                title=dict(text=f'<b>{node}</b><br>$/GJ' if c == 1 else None,
+                           font=dict(size=11, color=ink)))
+
+    # Two grey swatches naming what the hatching means, so the tranche encoding is
+    # in the legend rather than only in a caption.
+    for i, (label, shape) in enumerate((('Developed (2P)', ''),
+                                        ('Undeveloped (2C) / import', '/'))):
+        fig.add_trace(go.Bar(
+            x=[None], y=[None], name=label, legendgroup='tranche',
+            legendrank=200 + i, legendgrouptitle_text='Tranche' if i == 0 else None,
+            marker=dict(color=muted, line=dict(width=0),
+                        # Denser than on the bars: a 12px legend swatch shows
+                        # nothing at the density that reads well across a panel.
+                        pattern=dict(shape=shape, fillmode='overlay', size=4,
+                                     solidity=0.5, fgcolor=hatch)),
+            showlegend=True, hoverinfo='skip'), row=1, col=1)
+
+    for a in fig.layout.annotations:          # the year headings
+        a.font.size = 12
+    mode = ('Residual — net of LNG exports and the other demand centres'
+            if residual else 'Gross — every tranche available that year')
+    fig.update_layout(
+        template=tmpl, barmode='overlay', bargap=0,
+        height=230 * len(nodes) + 160,
+        shapes=shapes, annotations=list(fig.layout.annotations) + notes,
+        title=(f'Delivered supply curves by demand node  ·  {mode}'
+               '<br><sup>Each step is a tranche of gas at its delivered cost '
+               '($/GJ, y) against the volume it can supply (PJ/yr, x). '
+               'Dotted vertical line = that year’s demand; dashed horizontal '
+               'line = the price GARY reported at the node.</sup>'),
+        legend=dict(orientation='h', yanchor='top', y=-0.045, x=0,
+                    groupclick='toggleitem', font=dict(size=11)),
+        margin=dict(l=76, r=24, t=104, b=120),
+        hovermode='closest',
+    )
+    return fig
+
+
+def supply_curve_table(key, end_year, residual):
+    """The grid as one tidy table -- the view that reads without the colours."""
+    panels, years = supply_curve_panels(key, end_year, residual)
+    rows = []
+    for (node, year), (df, dem, price) in sorted(panels.items(), key=lambda kv: kv[0][::-1]):
+        for _, b in df.iterrows():
+            rows.append({
+                'Node': node, 'Year': year, 'Source': b['label'],
+                'Basin': b['family'], 'Tranche': '2C/import' if b['is_pot'] else '2P',
+                'Delivered $/GJ': round(float(b['cost']), 3),
+                'Field $/GJ': round(float(b['field_cost']), 3),
+                'Transport $/GJ': round(float(b['tariff']), 3),
+                'PJ/yr': round(float(b['PJ']), 2),
+                'Cumulative PJ/yr': round(float(b['CumPJ']), 2),
+                'Route': b['route'],
+                'Node demand PJ/yr': round(float(dem), 2),
+                'Modelled price $/GJ': None if price is None else round(float(price), 2),
+            })
+    return pd.DataFrame(rows)
+
+
+@app.callback(
+    Output('supply-curve-graph', 'figure'),
+    Output('supply-curve-note',  'children'),
+    Input('result-selector', 'value'),
+    Input('horizon-slider',  'value'),
+    Input('main-tabs',       'active_tab'),
+    Input('supply-mode',     'value'),
+    Input('theme-store',     'data'),
+)
+def update_supply_curves(key, end_year, active_tab, mode, theme):
+    if active_tab != 'tab-supply':
+        return no_update, no_update
+    tmpl = 'gary_dark' if theme == 'dark' else CHART_TEMPLATE
+    if not key:
+        return blank_fig(tmpl), html.Div()
+    residual = mode != 'gross'
+    fig = build_supply_figure(key, end_year, residual, theme == 'dark')
+    note = md_alert(
+        'Reconstructed from the solved year, not re-solved. Each tranche is '
+        'stacked at its delivered cost — field cost plus the year’s scarcity '
+        'rent, plus the tariff on the cheapest route that still had capacity — '
+        'so a basin reappears further up the curve once its cheap corridor '
+        'fills. The residual view strips the gas the LNG trains and the other '
+        'demand centres took, cheapest first, which is what brings the curve '
+        'onto GARY’s own nodal price; the gross view leaves it in. Both are '
+        'annual averages, so neither shows a winter peak, and each panel treats '
+        'its node as the only buyer of what is left.', 'info')
+    return fig, note
+
+
+@app.callback(
+    Output('chart-dl', 'data', allow_duplicate=True),
+    Input('dl-supply', 'n_clicks'),
+    State('result-selector', 'value'),
+    State('horizon-slider',  'value'),
+    State('supply-mode',     'value'),
+    prevent_initial_call=True,
+)
+def download_supply_curves(n, key, end_year, mode):
+    """The supply-curve grid as a table, block by block.
+
+    Its own download rather than the shared figure-scraping one: the grid is
+    hundreds of one-bar traces, which that route would turn into hundreds of
+    columns, and the numbers worth having (route, field cost, tariff) are in the
+    hover rather than in the geometry.
+    """
+    if not key:
+        return no_update
+    df = supply_curve_table(key, end_year, mode != 'gross')
+    if df.empty:
+        return no_update
+    return dcc.send_data_frame(df.to_excel, 'supply_curves.xlsx',
+                               sheet_name='supply_curves', index=False)
 
 # ---------------------------------------------------------------------------
 # Expansions

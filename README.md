@@ -207,11 +207,42 @@ taken up), **LNG Exported**, **LNG Netback** and **Data Centre Load**.
 | **Production & Dispatch** | Annual production by source, daily dispatch, arc flows, and any shortage. |
 | **Storage Dynamics** | Inventory trajectories at Iona, Silver Springs and Moomba, plus injection/withdrawal activity. |
 | **Price Outcomes** | Daily and annual nodal prices, highest and lowest nodes, quarterly aggregations, and the ACIL Allen **customer-segment prices** at the bottom. |
+| **Supply Curves** | A grid — a row per demand node, a column every five years — of the delivered supply curve each node faced, with that year's demand and GARY's own nodal price drawn on it. See below. |
 | **Expansions** | The build schedule the capacity layer chose: which candidate, which year, what it cost. |
 | **GPG & Large Users** | Gas-powered generation and large-industrial consumption and curtailment. |
 
 Every chart has a **⬇ Data (Excel)** button beneath it that exports exactly what is
 plotted.
+
+#### Supply Curves
+
+GARY never builds a supply curve — it solves an LP and reports the dual — so this
+tab **reconstructs** one from each solved year (`src/supply_curve.py`). Every
+tranche of gas that was available that year is stacked cheapest-first at its
+**delivered** cost: field cost, plus the year's scarcity rent, plus the tariff on
+the cheapest route to the node that still had capacity on it. A basin therefore
+reappears further up its own curve once its cheap corridor fills, which is what
+makes a pipeline limit visible as a step rather than as a missing source.
+
+* **Colour is the basin**, in a fixed order, so a hue means the same gas in every
+  panel. **Hatching is the tranche**: solid for developed (2P) gas, hatched for
+  the undeveloped (2C) tranche or an import terminal, both of which need a
+  project built in front of them before they deliver anything.
+* The **dotted vertical line** is the node's demand that year (mass market + GPG
+  + industrial, as posted rather than as served). The **dashed horizontal line**
+  is the price GARY reported at the node. Where the two lines meet the curve is
+  the check that the reconstruction is reading the same model.
+* **Residual** (the default) strips the gas the LNG trains and the other demand
+  centres took, cheapest-first, so the curve is the one this node's demand
+  actually faced. **Gross** leaves it in and answers the different question of
+  what gas existed and what it would have cost to bring here — its price line
+  sits above its curve, and the gap is the export opportunity cost that netback
+  pricing puts on Queensland gas.
+
+Both views are annual averages, so neither shows a winter peak, and each panel
+treats its node as the only buyer of what is left — in the LP, Sydney and
+Melbourne compete for the same corridor. The Excel export gives the whole grid
+block by block, with the route, the field cost and the tariff split out.
 
 ## Key inputs
 
