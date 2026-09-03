@@ -117,6 +117,16 @@ PARAMETERS = [
      "NPV discount rate for the perfect-foresight capacity MIP"),
     ("Capacity model", "peak_day_weight", 5.0, "days",
      "Days represented by the annual peak representative day (adequacy)"),
+    ("Capacity model", "asset_salvage", "TRUE", "TRUE/FALSE",
+     "Credit a built asset with the service life the horizon cuts off, as the present "
+     "value at the horizon of its remaining capital charges: (1-(1+r)^-(life-used)) / "
+     "(1-(1+r)^-life) of CapEx, where life is the row's AssetLife in "
+     "expansion_options.csv and a blank life earns nothing. ON because the objective "
+     "already credits leftover GAS at the horizon, and writing off the steel that moves "
+     "it while valuing the gas is an asymmetry rather than a conservatism -- it biases "
+     "the model against long-lived and late-built infrastructure, which is the class of "
+     "candidate a 2050 horizon most needs to judge fairly. Set FALSE to reproduce runs "
+     "from before the credit existed."),
     ("Capacity model", "salvage_max_passes", 0, "passes",
      "Extra capacity solves spent chasing the terminal-value fixed point. The salvage "
      "credit scales leftover margin by 1/(1+r.tau) and tau must be measured on the stock "

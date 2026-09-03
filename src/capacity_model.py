@@ -129,6 +129,51 @@ def _reserve_to_production_years(row):
     return reserves / annual_pj
 
 
+def _asset_residual(life, used, r):
+    """Share of a build's CapEx still unrecovered at the horizon, 0-1.
+
+    THE ASSET MIRROR OF THE GAS SALVAGE BELOW, and it exists for the same reason.
+    The objective charges a project's WHOLE CapEx, discounted, in the year it is
+    built. A pipeline commissioned in 2029 and a horizon ending in 2050 therefore
+    pays fifty years of steel for twenty-two years of service, and is worth
+    nothing at the end of them -- while the gas it was built to move IS credited
+    at the horizon. That asymmetry biases the model against late infrastructure
+    and against long-lived assets generally, which is exactly the class of
+    candidate a 2050 horizon most needs to judge fairly.
+
+    The credit is the PART OF THE CAPITAL THE HORIZON CUTS OFF, valued as the
+    remaining stream of capital charges. With a capital recovery factor
+    ``CRF = r / (1 - (1+r)^-life)``, an asset used for ``used`` of its ``life``
+    years still owes ``life - used`` payments, whose present value at the horizon
+    is ``CRF.CapEx.(1 - (1+r)^-(life-used)) / r``. The CRF and the r cancel:
+
+        fraction = (1 - (1+r)^-(life-used)) / (1 - (1+r)^-life)
+
+    which is 1 for an asset built at the horizon, 0 for one that has lived out its
+    life, and needs no separate CRF constant. NOT straight-line book value: this
+    model discounts, and straight line would credit a 50-year pipe used 22 years
+    with 56% of its CapEx against this formula's 88% -- the difference being that
+    the remaining service is worth what it earns, not what it cost.
+
+    A row with no ``AssetLife`` gets NOTHING, which is deliberate rather than an
+    oversight: the field developments' capital is subsurface, and the gas salvage
+    already values what is left in the ground. Crediting them here would pay for
+    the same barrel twice.
+    """
+    try:
+        life = float(life)
+    except (TypeError, ValueError):
+        return 0.0
+    if life != life or life <= 0:                     # NaN or blank
+        return 0.0
+    left = max(0.0, life - float(used))
+    if left <= 0:
+        return 0.0
+    if r <= 0:
+        return left / life
+    return (1.0 - (1.0 + r) ** -left) / (1.0 - (1.0 + r) ** -life)
+
+
 def _salvage_rate(row, backstop, discount_rate, tau=None):
     """What one GJ still in the ground is worth at the horizon, $/GJ.
 
@@ -176,6 +221,13 @@ def _salvage_rate(row, backstop, discount_rate, tau=None):
 
 # Days represented by the annual peak day (adequacy).
 PEAK_DAY_WEIGHT = P.get('peak_day_weight', 5.0)
+
+# Whether a built asset keeps a terminal value for the service life the horizon
+# cuts off -- see _asset_residual. On by default: without it the objective
+# credits leftover GAS at 2050 but writes off the STEEL that moves it, and the
+# asymmetry is a bias, not a conservatism. Switchable so a run can be read
+# against one without it.
+ASSET_SALVAGE = str(P.get_str('asset_salvage', 'TRUE')).strip().upper() in ('TRUE', '1', 'YES')
 
 
 def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
@@ -604,6 +656,14 @@ class CapacityExpansionModel:
                                    for n in m.LNGNodes))
                 for (y, i) in YR)
             capex = pyo.quicksum(m.build[e, y] * exp_data[e]['CapEx'] * df[y] for e in m.Expansion for y in Y)
+            # What the horizon cuts off the end of a built asset -- see
+            # _asset_residual. Subtracted like the gas salvage, and switchable
+            # from the workbook so a run can be compared against one without it.
+            if ASSET_SALVAGE:
+                capex = capex - pyo.quicksum(
+                    m.build[e, y] * exp_data[e]['CapEx'] * df[Y[-1]]
+                    * _asset_residual(exp_data[e].get('AssetLife'), Y[-1] - y + 1, self.r)
+                    for e in m.Expansion for y in Y)
             # TERMINAL SALVAGE VALUE, net of BOTH the haul and the extraction cost.
             #
             # Gas left in a tranche at the horizon is worth what the substitute costs

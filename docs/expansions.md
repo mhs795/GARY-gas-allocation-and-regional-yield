@@ -41,12 +41,16 @@ and the foundation share follow.
 | `MSEP_Conversion` | `MSP` | +25 TJ/d | $25m | Winter 2026 | Moomba–Sydney Ethane Pipeline converted to gas; NSW approval Oct 2025. APA: total southbound 565 → 590 TJ/d |
 | `EGP_Reversal` | `EGP_Rev` **(new arc)** | +200 TJ/d **south** | $220m ‡ | Winter 2026 | Jemena EGP reversal stage 1 |
 | `SWP_Compression` | `SWP` | +45 TJ/d | $213m | Winter 2029 | APA rule 80; Irrewillipe + Stonehaven + Winchelsea; Iona injection 570→615 TJ/d; AER approved 2026 |
+| `SEA_Gas_Reversal` | `SEA_Gas_Rev` **(new arc)** | 250 TJ/d | $150m ‡ | With Outer Harbor | *Port Campbell to Adelaide pipeline reversal* in AEMO's options report, which publishes **250 TJ/d** and attributes it to the GSOO. **Reclassified from `Market` to `GSOO`** on that finding |
 
 † The three Stage 3A legs share one published $260m. GARY splits it pro-rata by capacity —
 the split is GARY's own, the total is APA's.
 ‡ Not public. GARY's own, at the MSEP conversion unit rate ($1.11m per TJ/d).
 
-> **A boundary case worth knowing about.** `SWP_Compression` was *not* committed in the
+> **Two boundary cases worth knowing about.** `SEA_Gas_Reversal` sat under `Market` on
+> GARY's own reasoning until AEMO's options report turned up with the same 250 TJ/d and
+> its Source column reading GSOO — so the capacity was AEMO's all along and the row moved.
+> And `SWP_Compression` was *not* committed in the
 > March 2026 GSOO/VGPR — AEMO's text says so explicitly — but the AER approved the $213m
 > spend afterwards. It is tagged `GSOO` because AEMO names the project. **The GSOO is a
 > snapshot with a cut-off, not a standing fact**, which is why `Source` tracks provenance
@@ -119,25 +123,113 @@ whether they may be built at all.
 
 ## Outside the GSOO (GARY's market scan)
 
-Seven candidates AEMO does not name — five pipelines GARY researched from public
-announcements, and two field developments GARY built itself for basins AEMO gives no
-discrete project for.
+Seven candidates the GSOO does not carry — five pipelines and two field developments
+GARY built itself for basins AEMO gives no discrete project for. Four of the pipelines
+GARY researched from public announcements; the fifth, `MAPS_Compression`, AEMO *does*
+name, but in its options-report consultation rather than in the GSOO, which is what keeps
+it on this side of the line.
 
 | Project | GARY target | Capacity | CapEx | Date | Source |
 |---|---|---|---|---|---|
 | `Bulloo_Interlink` | `Bulloo` **(new arc)** | 800 TJ/d N→S | $220m | End 2028, pre-FID | APA ECGG Stage 3B; new SWQP→MSP link, ~240 km shorter corridor; line pipe purchased |
 | `ECGG_VTS_Expansion` | `VNI_Rev` | +93 TJ/d § | $226m ‡ | Winter 2029 | APA ECGG Stage 5; MSP+VTS to 350 TJ/d Young→Wollert |
 | `SWP_Looping` | `SWP` | +45 TJ/d | $340m ‡ | 2029 | APA's alternative to `SWP_Compression`: 88 km of looping; more linepack. **Mutually exclusive** with it |
-| `SEA_Gas_Reversal` | `SEA_Gas_Rev` **(new arc)** | 300 TJ/d | $150m ‡ | With Outer Harbor | SEA Gas compression + reverse flow on the Port Campbell–Adelaide pipeline, to move Outer Harbor gas east |
+| `MAPS_Compression` | `MAPS` | +52 TJ/d ◊ | $246m ‡ | 2029 ◊ | AEMO's *2025 Gas Infrastructure Options Report* option **MAPS to PCA connection**, compression half only — see below |
 | `Cooper_2C` | `Moomba` | 282 TJ/d ◊ | $5.1bn ¶ | 2030 | **GARY's own.** AEMO names no discrete Cooper/Eromanga development, but the basin holds 1,603 PJ of 2C that Figure 27's Uncertain category plainly produces |
 | `Amadeus_2C` | `Amadeus` | 47 TJ/d ◊ | $2.0bn ¶ | 2030 | **GARY's own.** The Amadeus fields are "Commercial in confidence" in AEMO's sheet |
 | `NEAP` | `NEAP` **(new arc)** | 200 TJ/d ‡ | $2.0bn ‡ | 2030s, investigation | APA's North to East Australia Pipeline; 1561 km Beetaloo→SWQP, 100% APA. **The only candidate that relieves the Beetaloo corridor** — it bypasses the NGP and the 65 TJ/d Carpentaria southbound leg. APA publishes no capacity; the 50 TJ/d figure in circulation is survey-permit material and implies $40m per TJ/d, so GARY sizes it itself. CapEx at Jemena's NGP unit rate ($800m / 622 km) |
 
 ‡ Not public — GARY's own, derived as stated in the row's `Note`.
+◊ Sized by GARY where AEMO publishes no figure — see the row's `Note` for the basis.
 § Sized to land GARY's corridor on APA's stated **350 TJ/d** endpoint: 350 less the 218
 TJ/d `VNI_Rev` base less `ECGG_3A_Culcairn`'s 39. APA calls the project an ~84% increase,
 which implies a current corridor near 190 TJ/d — so the endpoint is the sourced number and
 the increment follows from GARY's own base, not the reverse.
+
+## The Moomba–Adelaide corridor
+
+GARY's supply-curve tab put a persistent congestion rent on the **MAPS** — Adelaide's
+price sitting $1.32–1.43/GJ above Moomba's plus the $0.97 tariff, on a pipe running at
+its 249 TJ/d cap 365 days a year from 2030 to 2039 and still 234 days in 2050. That is
+$84–173m a year of scarcity value, and until now the model had **no candidate on the arc
+at all**: the rent had nowhere to go, so it simply accumulated.
+
+AEMO does have one. Appendix A2 of the [2025 Gas Infrastructure Options
+Report](https://www.aemo.com.au/-/media/files/stakeholder_consultation/consultations/nem-consultations/2025/2025-gas-infrastructure-options-report/final/2025-gas-infrastructure-options-report.pdf)
+lists *"Moomba Adelaide Pipeline System to Port Campbell to Adelaide pipeline
+connection"* — a dedicated MAPS-to-PCA connection plus compression — sourced to the
+options-report consultation rather than to the GSOO, with capacity **not published**.
+
+`MAPS_Compression` is the **compression half only**. The dedicated connection is already
+implicit in GARY's topology, where the Adelaide node is exactly where the MAPS meets
+`SEA_Gas_Rev`, so a candidate for it would model nothing.
+
+**The capacity is a published endpoint, not a GARY guess.** The SA Department for Energy
+and Mining gives the mainline's fully compressed capacity, all seven compressor stations
+online, as **~110 PJ/yr**, against **~91 PJ/yr** in its current four-station
+configuration. 91 PJ/yr is 249 TJ/d — exactly the [AEMC pipeline
+register's](https://www.aemc.gov.au/energy-system/gas/gas-pipeline-register/sa-moomba-adelaide-pipeline-system)
+rating and GARY's own arc — so the two figures sit on one basis and the increment
+follows: 110 PJ/yr = 301 TJ/d, less the 249 base, is **+52 TJ/d**. It is conservative
+against the pipe's own history: Epic Energy's NCC coverage-revocation application put the
+system's firm capacity at 348 TJ/d as configured in December 2004, and its maximum at
+418 TJ/d.
+
+**The CapEx is GARY's, at the dear end deliberately.** $4.73m per TJ/d, the AER-approved
+SWP compression rate ($213m for 45 TJ/d) and the closest analogue in the model — new
+compression on an existing southern transmission line. The seven MAPS stations already
+exist and four of them run, so recommissioning should cost *less* than greenfield units;
+a candidate that relieves the largest congestion rent in the model should not also be
+flattered on price. Its earliest year is likewise GARY's convention, not a published
+date: AEMO gives none, and 2029 keeps a consultation-stage option from being built next
+year.
+
+It is `Market`, not `GSOO` — AEMO names it, but in the options report rather than in the
+GSOO material — so a GSOO-only run still has no way to relieve the corridor, which is
+itself worth seeing.
+
+## Terminal value on the assets
+
+The capacity MILP charges a project's **whole CapEx, discounted, in the year it is
+built** — there is no capital recovery factor in that layer, and the 8%
+`capex_annualisation_rate` the dispatch layer charges is a separate proxy that plays no
+part in the build decision. Against a 2050 horizon that meant a pipeline commissioned in
+2029 paid fifty years of steel for twenty-two years of service and was worth nothing at
+the end of them — while the **gas** it was built to move *was* credited at the horizon by
+the salvage term. That asymmetry is a bias, not a conservatism: it pushed the model away
+from long-lived and late-built infrastructure, the class of candidate a 2050 horizon most
+needs to judge fairly.
+
+`AssetLife` in `expansion_options.csv` closes it. A built asset now keeps the part of its
+capital the horizon cuts off, valued as the present value at the horizon of its remaining
+capital charges:
+
+```
+fraction of CapEx credited = (1 − (1+r)^−(life − used)) / (1 − (1+r)^−life)
+```
+
+which is the capital recovery factor times the annuity of the remaining years, with the
+CRF and the `r` cancelling. It is 1 for an asset built at the horizon, 0 for one that has
+lived out its life, and it is **not** straight-line book value — in a model that
+discounts, remaining service is worth what it earns, not what it cost. (A 50-year pipe
+used 22 years: 88% here, 56% straight-line.) The switch is `asset_salvage` on the
+Parameters sheet; `FALSE` reproduces runs from before the credit existed.
+
+| Class | `AssetLife` | Basis |
+|---|---|---|
+| Pipe in the ground — new pipelines, looping, the MSEP conversion | **50 yr** | The AER's standard asset-life class for transmission pipelines |
+| Compression and reversal plant | **25 yr** | ‖ General industry practice for compressor/pumping stations (22–25 yr). **Not an AER figure** — the weakest number here, and the one to change first |
+| FSRU import terminals | **20 yr** | ‖ A chartered vessel, not a fixed asset with a pipeline's life |
+| Field developments | *(blank)* | **Deliberately none.** Their capital is subsurface, and the gas salvage already values what is left in the ground — crediting them here would pay for the same barrel twice |
+
+‖ GARY's own, disclosed as such.
+
+What it is worth in practice, discounted back to 2025: for a 2029 build, 87.9% of CapEx
+remains on a 50-year asset but only 15.5% on a 25-year one and nothing on a 20-year FSRU
+— so ~$299m of `NEAP`'s $2.0bn, ~$33m of `Bulloo_Interlink`'s $220m, ~$7m of
+`MAPS_Compression`'s $246m. For a **2040** build the ordering changes completely, which
+is the whole point: an FSRU built in 2040 now recovers 56% rather than being written off,
+and `MAPS_Compression` recovers 72% instead of 16%.
 
 ## Turning import terminals off
 
