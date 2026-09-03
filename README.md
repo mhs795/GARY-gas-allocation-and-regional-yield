@@ -86,6 +86,13 @@ Minimising cost net of export value is equivalent to maximising producer plus co
 surplus, which is the objective ACIL Allen's GasMark solves — GARY is deliberately the
 same class of model. See [`docs/model.md`](docs/model.md) for the full formulation.
 
+> **Before quoting anything GARY says about the 2040s, read
+> [`docs/depletion.md`](docs/depletion.md).** How the model values gas left in the ground
+> is the single assumption every price and export volume rests on, and the late-horizon
+> years are partly an artefact of where the model stops. The 2030s are sound; the 2040s
+> need the caveat. That page is the plain-language version — what GARY does now, the three
+> things still wrong with it, what you can trust anyway, and what fixing it would cost.
+
 ### The two-stage solve
 
 ```

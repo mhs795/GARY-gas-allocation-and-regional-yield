@@ -1,0 +1,204 @@
+# Running out of gas: what GARY does, and what is still wrong with it
+
+**Read this before quoting anything GARY says about the 2040s.**
+
+GARY has to answer one question over and over: *should this gas be produced now, or left
+in the ground for later?* Every price and every export volume in the model follows from
+how that question is answered. This page explains the answer GARY currently gives, the
+three things still wrong with it, what you can safely conclude anyway, and what fixing it
+would take.
+
+Plain language throughout. The technical detail and the measurements behind every number
+here are in [`TODO.md`](../TODO.md) items 15, 16 and 17.
+
+---
+
+## 1. How GARY decides, today
+
+**Gas in the ground has a price.** Producing a gigajoule of Surat gas costs $3.65 to lift
+— but it also uses up a gigajoule you can never sell again. That second cost is the
+**scarcity rent**, and the real cost of producing today is:
+
+```
+lifting cost  +  what you give up by not saving it for later
+```
+
+Without it the model burns the cheapest gas first and hits a wall. (It did: 758 PJ/yr of
+shortage over 2047–50 before the rent existed.)
+
+**The rent has two parts.**
+
+| part | what it is | where it comes from |
+|---|---|---|
+| **Reserve dual** | how much the model wishes it had more gas | the constraint saying a field can't produce more than it holds |
+| **Terminal value** | what leftover gas is worth after the model stops | assumed, from the import price |
+
+**The terminal value exists because the model stops before the gas does.** GARY runs to
+2050; fields don't. Told nothing, the model decides leftover gas is worthless and empties
+every field into the final year. So leftover gas is credited at what replacement gas would
+cost — landed imported LNG, $12.29/GJ in 2050 — with two deductions:
+
+| step | why | Surat 2P |
+|---|---|---|
+| start: imported LNG, landed | what the substitute costs | $12.29 |
+| **less the pipeline south** | that price is at an import terminal in the south. Queensland gas has to get there. | −$2.50 → **$9.79** |
+| **less the lifting cost** | the gas is still in the ground; you'd still have to pay to get it out | −$3.65 → **$6.14** |
+| **divided by the wait** | you can't sell it all at once. Surat holds ~20 years of production. | ÷2.39 → **$2.57** |
+
+That last step matters more than its size suggests — see issue 2 below for what happens
+without it.
+
+**The horizon.** GARY solves to 2051 and reports to 2050. The extra year absorbs
+end-of-model artefacts so nobody reads them.
+
+---
+
+## 2. What is still wrong
+
+### Issue 1 — the answer depends on where you stop the model
+
+This is the big one. Run the same scenario three times, changing only the year the model
+stops, and look at what each says about the years everyone reads:
+
+| | stop at 2051 | stop at 2055 | stop at 2060 |
+|---|---|---|---|
+| Last year with LNG exports | **2044** | **2042** | **2040** |
+| Surat scarcity rent in 2050 | $4.17 | $4.93 | $6.18 |
+| Total exports to 2050 | 23,101 PJ | 21,245 PJ | 19,358 PJ |
+
+Same gas, same demand, same everything — different answers, because of an arbitrary
+choice about where to stop. And it does not settle down as the horizon lengthens; the gap
+keeps growing.
+
+**Why.** The reserve constraint is a *budget over the years solved*: total production
+across the horizon ≤ reserves. Solve more years, the same gas has to cover more demand, so
+it gets scarcer. The tightness of the budget is partly a fact about gas and partly a fact
+about how many years you asked for.
+
+### Issue 2 — the rent grows at exactly 7%/yr because of arithmetic, not gas
+
+Measured across all three horizons: **7.000%/yr, to three decimal places**, identical to
+the discount rate. That is not a result about Australian gas. The budget is a single
+constraint, so it has a single shadow price, and that one number gets applied to every
+year alike; converting it back to cash terms then *forces* a 7% path before any data is
+read.
+
+The consequence: the rent carries no information about *when* a field runs down.
+
+### Issue 3 — AEMO's reserves and its decline rates contradict each other
+
+Follow each field along AEMO's own decline rate, from its own stated capacity, and total
+what it produces by 2050. Compare with the reserves AEMO states for the same field:
+
+| field | would produce | AEMO says it holds | over by |
+|---|---|---|---|
+| Surat 2P | 33,574 PJ | 28,911 PJ | 1.2× |
+| Gippsland 2P | 2,246 PJ | 1,108 PJ | 2.0× |
+| Moomba 2P | 2,662 PJ | 850 PJ | 3.1× |
+| Iona 2P | 3,322 PJ | 304 PJ | **10.9×** |
+
+Both numbers are AEMO's, from the same workbook. GARY survives this — production is capped
+at whatever the field has left — but it means **the reserve limit is what binds, and the
+decline rates are close to decorative** for the southern fields.
+
+> **Practical consequence: never read a GARY result as following from a decline rate.**
+> Depletion in GARY is reserve-driven.
+
+---
+
+## 3. What you can trust anyway
+
+| period | verdict |
+|---|---|
+| **2025–2039** | **Solid.** Well clear of the horizon, and the export path is set by real economics — the netback against the cost of getting gas to a train. |
+| **2040s** | **Conditional.** Directionally informative, but the exact year exports stop is partly an artefact of stopping the model at 2051. Quote it with the caveat. |
+| **Any single year's lump sums** | Volatile. Use the whole projection. |
+| **Anything attributed to a decline rate** | Don't. See issue 3. |
+
+The model is internally consistent and shorts zero gas in all 17 standard scenarios. The
+problem is not that it is broken — it is that the late years answer a question that
+includes "when did you stop asking?"
+
+---
+
+## 4. Options for fixing
+
+### Option A — leave it, use the caveats
+
+**Cost:** nothing. **Buys:** nothing.
+
+Defensible. The 2030s carry most of the policy interest, and they are sound. This is the
+current position.
+
+### Option B — per-year stock, with a plateau-then-decline rule
+
+**Cost:** large. Changes every year of every result. **Buys:** depletion becomes physical
+and the rent finally carries timing information.
+
+Give the model a running balance — `stock(y+1) = stock(y) − production(y)` — and tie how
+fast a field can flow to how much is left in it, so a field declines because gas is
+leaving rather than because the calendar advanced.
+
+**Two-thirds of this was built and measured on 3 Sep 2026** (then deleted to keep the model
+simple). What was learned:
+
+* The architecture works — it builds and solves in about the same time.
+* The rent has to be split, and the split is known: pass only the "this is the last gas"
+  part, not the part that reflects how fast the field can flow, or the dispatch layer pays
+  twice and prices $3.65 gas at $21.36.
+* **What killed it:** tying the rate to remaining stock, using the field's starting
+  reserves-to-production ratio, forces decline from year one at up to 5× AEMO's own rates
+  — so no field can hold a plateau. Southern supply collapsed and LNG contracts went
+  134,496 TJ short.
+
+Real fields hold a plateau, *then* decline. Implementing that needs one number — the point
+at which plateau ends — and **neither AEMO input supplies it.** See section 5.
+
+### Option C — rolling horizon
+
+**Cost:** roughly 26× the solve time. **Buys:** removes issue 1 completely.
+
+Solve 2025–2050, keep only 2025, then solve 2026–2051 and keep only 2026, and so on. No
+reported year is ever near the horizon. Textbook, entirely correct, and expensive.
+
+### Option D — just extend the horizon ❌
+
+**Tried 2 Sep 2026. Rejected, with measurements.**
+
+Solving to 2065 bought exactly one year of exports. Fourteen extra years of held-flat
+demand against the same fixed reserves manufactured scarcity faster than the longer horizon
+relieved it — the reserve dual went from $0.00 to $14.42/GJ. It also makes the 2050 answer
+depend on demand data AEMO never published.
+
+### Option E — retune the terminal value ❌
+
+**Tried 3 Sep 2026. Cannot work, and this was measured rather than argued.**
+
+The terminal value and the reserve dual are **perfectly substitutable** — lower one and the
+other rises to match:
+
+| terminal value | reserve dual | total rent |
+|---|---|---|
+| 8.64 | 0.00 | 8.07 |
+| 2.57 | 1.77 | 4.17 |
+| 0.00 | 4.17 | 4.17 |
+
+Below a floor, changing the terminal value changes nothing at all. There is no setting of
+it that fixes issue 1.
+
+---
+
+## 5. The question that has to be answered first
+
+Option B is the only one that addresses the underlying problem at reasonable cost, and it
+cannot start until someone decides:
+
+> **When AEMO's reserves and AEMO's decline rates disagree, which does GARY believe?**
+
+Today GARY takes the *total* from reserves and the *shape* from decline rates, which is why
+fields run flat and then stop dead rather than tapering. Any plateau-then-decline rule needs
+one of those two inputs to give way.
+
+This is a judgement about the source data, not a modelling problem, and picking the answer
+that makes the export path look reasonable would be fitting the model to a conclusion. It
+needs a person.
