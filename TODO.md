@@ -683,7 +683,7 @@ neither input settles, and the two available shapes are both wrong at the ends:
 
 * **Plateau-then-cliff** (what GARY does now). Produce flat at capacity, hit the reserve
   wall, stop. Trusts the decline rate for the early path and the reserves for the total.
-* **Decline-from-day-one** (`prod <= stock/tau`, tried on `experiment/per-year-stock`).
+* **Decline-from-day-one** (`prod <= stock/tau`, built and measured 3 Sep 2026, then deleted).
   Smooth, physical, and far too aggressive: 1/tau is 5x AEMO's decline for Surat and
   infinitely faster for Iona, which AEMO holds flat. Southern supply collapses early and
   QCLNG foundation contracts go 134,496 TJ short over 2029 and 2033-35.
@@ -697,3 +697,32 @@ export path look right is fitting the model to a conclusion.
 
 **Open question for the modeller, not for the code:** when the two conflict, which does
 GARY trust? Everything about the shape of late-horizon supply follows from that answer.
+
+
+### Item 17, addendum — what the deleted experiment established
+
+The per-year-stock branch was removed on 3 Sep 2026 to keep the model simple. Two
+things it proved are worth keeping, because they would otherwise be rediscovered the
+hard way:
+
+1. **The architecture works.** Replacing the horizon-wide budget with
+   `stock_open` / `stock_balance` / `stock_close` plus a deliverability rule tied to
+   remaining stock builds and solves cleanly in about the same time. Nothing about the
+   MIP resists it.
+2. **The rent must be split, and the split is knowable.** Once deliverability depends on
+   the stock, stationarity gives `mu(y-1) = mu(y) + nu(y)/tau`, so the stock dual
+   ACCUMULATES every future deliverability dual. Handing that whole number to the myopic
+   dispatch layer double-counts: measured at $17.71/GJ of rent on $3.65 gas, pricing
+   Surat at $21.36 in 2025 against $7.35. The fix is to give dispatch the same
+   deliverability rule and pass only `kappa + salvage` -- the dual on "cannot overdraw
+   the tranche" plus the terminal credit, which is the part with no deliverability in it.
+   That restored Surat 2025 to $6.88.
+
+What killed it was the parameterisation, not either of those: `tau` from the INITIAL
+reserves-to-production ratio forces exponential decline from year one at up to 5x AEMO's
+own rates (infinitely faster for Iona, which AEMO holds flat), no field can hold a
+plateau, southern supply collapses and QCLNG foundation contracts go 134,496 TJ short
+over 2029 and 2033-35.
+
+**So anyone picking this up again does not start from scratch — they start from the
+plateau threshold question above, which is the only thing still unanswered.**
