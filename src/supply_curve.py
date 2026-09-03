@@ -337,6 +337,72 @@ def strip_claims(sources, claims, kinds=None):
 # ---------------------------------------------------------------------------
 # Getting it to the node
 # ---------------------------------------------------------------------------
+def transit_tjd(res, node):
+    """{arc: TJ/day} of each inbound arc that was only passing through `node`.
+
+    A demand node on a corridor is not only a buyer. In a scenario with the SEA
+    Gas reversal built, Adelaide takes the MAPS at its full 249 TJ/d and sends
+    130-180 of it straight back out to Melbourne: over half of what arrives is
+    Victoria's gas, and the pipe is full 365 days a year carrying it. Charging
+    the whole arc to Adelaide's own curve says it had twice the cheap gas it did.
+
+    The same net-inflow logic the delivered-price KPI uses (see
+    dashboard.served_volume): what leaves again was never available here. The
+    transit is shared over the inbound arcs in proportion to what each brought
+    in, there being nothing in the results that says which molecule went on.
+    """
+    flow = res.get('flow')
+    if flow is None or flow.empty:
+        return {}
+    f = flow.astype({'Arc': str, 'From': str, 'To': str})
+    inflow = f[f['To'] == node].groupby('Arc')['Value'].sum() / 365.0
+    outflow = float(f[f['From'] == node]['Value'].sum()) / 365.0
+    total = float(inflow.sum())
+    if total <= _TOL or outflow <= _TOL:
+        return {}
+    transit = min(outflow, total)
+    return {arc: transit * (v / total) for arc, v in inflow.items()}
+
+
+# TRANSIT IS REPORTED, NOT NETTED OFF THE PIPE, and the difference was measured
+# rather than assumed. Deducting it from the inbound arcs was built and tried: it
+# leaves Adelaide's residual MAPS headroom (118 TJ/d) sitting within a rounding
+# error of its own consumption (122 TJ/d), so the demand line falls on a block
+# BOUNDARY and tips into the next one -- a $11.14 back-route through Melbourne
+# that the LP never used, against its $9.75 dual. The curve went from reading
+# $1.43 below the price (the congestion rent, explainable) to $1.40 above it
+# (an artefact, not). Across the grid the fit was unchanged either way, so the
+# choice is which error to make, and a curve that lands on the true delivered
+# cost with the rent visible above it beats one that lands on a route nobody
+# took. The transit volume is put in the panel's footnote instead.
+
+
+def binding_corridors(res, node, caps, min_days=180):
+    """Inbound arcs that ran AT their limit, and on how many days: [(arc, days)].
+
+    This is what a supply curve cannot say on its own. A block carries a field
+    cost and a tariff; it cannot carry the CONGESTION RENT on a full pipe, and
+    the LP's dual can. Adelaide is the clean case: its price is Moomba's plus the
+    $0.97 MAPS tariff plus $1.32-1.43 of rent, every year, and the rent is the
+    whole of the gap between its price line and its curve. Naming the corridor
+    and the days it was full explains that gap out of the model's own flow data,
+    rather than closing it with a step that has no cost behind it.
+    """
+    flow = res.get('flow')
+    if flow is None or flow.empty:
+        return []
+    f = flow.astype({'Arc': str, 'To': str})
+    hits = []
+    for arc, grp in f[f['To'] == node].groupby('Arc'):
+        cap = caps.get(arc)
+        if not cap:
+            continue
+        days = int((grp['Value'] >= cap - 0.5).sum())
+        if days >= min_days:
+            hits.append((arc, days))
+    return sorted(hits, key=lambda h: -h[1])
+
+
 def arc_capacity(arcs_df, expansion_df, builds):
     """{arc: TJ/day} with every built pipeline expansion added to its target arc."""
     caps = arcs_df.set_index('Name')['Capacity'].astype(float).to_dict()
@@ -517,7 +583,10 @@ def curves_for_year(res, nodes, supply_df, arcs_df, expansion_df, demand_nodes,
             df['PJ'] = df['qty'] * TJD_TO_PJ
             df['CumPJ'] = df['PJ'].cumsum()
             df['StartPJ'] = df['CumPJ'] - df['PJ']
-        out[node] = (df, node_demand_tjd(res, node) * TJD_TO_PJ, node_price(res, node))
+        out[node] = (df, node_demand_tjd(res, node) * TJD_TO_PJ,
+                     node_price(res, node),
+                     {'binding': binding_corridors(res, node, caps),
+                      'transit': sum(transit_tjd(res, node).values())})
     return out
 
 

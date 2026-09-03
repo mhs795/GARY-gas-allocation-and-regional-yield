@@ -243,6 +243,14 @@ makes a pipeline limit visible as a step rather than as a missing source.
   in a band spanning its 10th–90th percentile daily price. Where the line meets
   the curve is the check that the reconstruction is reading the same model — it
   does so to the cent in 14 of the 30 panels, and a median $0.19/GJ from it.
+  Where an inbound corridor ran at its limit, the panel says so in its bottom
+  corner (`MAPS full 365 d · 131 TJ/d transit`), which is usually the whole
+  explanation for a price line floating above the steps: **Adelaide** is the
+  clean case, its price being Moomba's plus the $0.97 MAPS tariff plus a
+  $1.32–1.43/GJ congestion rent, every year from 2030 on, while over half of
+  what the MAPS delivers there leaves again down the reversed SEA Gas for
+  Melbourne. A supply block carries a field cost and a tariff; it cannot carry a
+  rent, and no rearrangement of the stack makes it.
   The median rather than the annual mean because a panel is a typical-day
   construction (capacity and demand are both annual-average flat rates) and a
   mean of 365 daily duals is pulled up by the winter days; comparing it to the

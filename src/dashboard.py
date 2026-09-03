@@ -3202,7 +3202,8 @@ def _panel_ranges(panels, nodes, years):
     for node in nodes:
         x_node = 0.0
         for year in years:
-            df, dem, price = panels.get((node, year), (pd.DataFrame(), 0.0, None))
+            df, dem, price, _ = panels.get((node, year),
+                                           (pd.DataFrame(), 0.0, None, {}))
             x_node = max(x_node, dem * 1.9)
             if price:
                 # p90, not the median: the band has to fit in the panel or the
@@ -3261,7 +3262,8 @@ def build_supply_figure(key, end_year, residual, dark):
             n = (r - 1) * ncol + c
             sfx = '' if n == 1 else str(n)
             xref, yref = f'x{sfx}', f'y{sfx}'
-            df, dem, price = panels.get((node, year), (pd.DataFrame(), 0.0, None))
+            df, dem, price, meta = panels.get((node, year),
+                                              (pd.DataFrame(), 0.0, None, {}))
             for _, b in df.iterrows():
                 fam, first = b['family'], b['family'] not in seen
                 seen.add(fam)
@@ -3318,6 +3320,28 @@ def build_supply_figure(key, end_year, residual, dark):
                                   showarrow=False, xanchor='left', yanchor='bottom',
                                   xshift=3, bgcolor=label_bg, borderpad=1,
                                   font=dict(size=9, color=muted)))
+
+            # Where the price line rides above the steps and an inbound
+            # corridor ran at its limit all year, say so: that difference is a
+            # congestion rent, which the LP's dual carries and a stack of field
+            # costs and tariffs cannot.
+            if price and not df.empty and meta.get('binding'):
+                cut = df[df['CumPJ'] >= dem]
+                top = float((cut.iloc[0] if not cut.empty else df.iloc[-1])['cost'])
+                if price['median'] - top > 0.25:
+                    arc, days = meta['binding'][0]
+                    tr = meta.get('transit') or 0.0
+                    text = f'{arc} full {days} d'
+                    if tr > 1:
+                        # Say how much of that full pipe was only passing
+                        # through: the cheap block is not all this node's.
+                        text += f' · {tr:.0f} TJ/d transit'
+                    notes.append(dict(
+                        xref=f'{xref} domain', yref=f'{yref} domain',
+                        x=0.0, y=0.0, text=text, showarrow=False,
+                        xanchor='left', yanchor='bottom', xshift=3, yshift=3,
+                        bgcolor=label_bg, borderpad=1,
+                        font=dict(size=8, color=muted)))
 
             fig.layout[f'xaxis{sfx}'].update(
                 range=[0, x_max[node]], showgrid=False, tickfont=dict(size=9),
@@ -3376,7 +3400,8 @@ def supply_curve_table(key, end_year, residual):
     """The grid as one tidy table -- the view that reads without the colours."""
     panels, years = supply_curve_panels(key, end_year, residual)
     rows = []
-    for (node, year), (df, dem, price) in sorted(panels.items(), key=lambda kv: kv[0][::-1]):
+    for (node, year), (df, dem, price, meta) in sorted(panels.items(),
+                                                       key=lambda kv: kv[0][::-1]):
         for _, b in df.iterrows():
             rows.append({
                 'Node': node, 'Year': year, 'Source': b['label'],
