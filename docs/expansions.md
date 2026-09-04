@@ -123,7 +123,7 @@ whether they may be built at all.
 
 ## Outside the GSOO (GARY's market scan)
 
-Seven candidates the GSOO does not carry — five pipelines and two field developments
+Eight candidates the GSOO does not carry — five pipelines and two field developments
 GARY built itself for basins AEMO gives no discrete project for. Four of the pipelines
 GARY researched from public announcements; the fifth, `MAPS_Compression`, AEMO *does*
 name, but in its options-report consultation rather than in the GSOO, which is what keeps
@@ -137,6 +137,7 @@ it on this side of the line.
 | `MAPS_Compression` | `MAPS` | +52 TJ/d ◊ | $246m ‡ | 2029 ◊ | AEMO's *2025 Gas Infrastructure Options Report* option **MAPS to PCA connection**, compression half only — see below |
 | `Cooper_2C` | `Moomba` | 282 TJ/d ◊ | $5.1bn ¶ | 2030 | **GARY's own.** AEMO names no discrete Cooper/Eromanga development, but the basin holds 1,603 PJ of 2C that Figure 27's Uncertain category plainly produces |
 | `Amadeus_2C` | `Amadeus` | 47 TJ/d ◊ | $2.0bn ¶ | 2030 | **GARY's own.** The Amadeus fields are "Commercial in confidence" in AEMO's sheet |
+| `NGP_Reversal` | `NGP_Rev` | 60 TJ/d | $67m ‡ | 2029 ◊ | Reverse flow on Jemena's NGP. **Was an existing free arc at 106 TJ/d** — see below |
 | `NEAP` | `NEAP` **(new arc)** | 200 TJ/d ‡ | $2.0bn ‡ | 2030s, investigation | APA's North to East Australia Pipeline; 1561 km Beetaloo→SWQP, 100% APA. **The only candidate that relieves the Beetaloo corridor** — it bypasses the NGP and the 65 TJ/d Carpentaria southbound leg. APA publishes no capacity; the 50 TJ/d figure in circulation is survey-permit material and implies $40m per TJ/d, so GARY sizes it itself. CapEx at Jemena's NGP unit rate ($800m / 622 km) |
 
 ‡ Not public — GARY's own, derived as stated in the row's `Note`.
@@ -230,6 +231,38 @@ remains on a 50-year asset but only 15.5% on a 25-year one and nothing on a 20-y
 `MAPS_Compression`'s $246m. For a **2040** build the ordering changes completely, which
 is the whole point: an FSRU built in 2040 now recovers 56% rather than being written off,
 and `MAPS_Compression` recovers 72% instead of 16%.
+
+## The Northern Territory
+
+Three corrections on 4 Sep 2026, after an audit against the GBB extracts in `src/data/`.
+
+**`NGP_Rev` was an existing arc at 106 TJ/d and is now a gated project at 60.** The 106 is
+the GSOO's figure for the NGP, which describes gas leaving the NT, and it had been applied
+to the arc bringing gas *in*. The GBB rates Mt Isa → Tennant Creek at **60 TJ/d nameplate**
+and publishes **0.000** for that direction across the whole medium-term outlook, every day
+of the short-term outlook, and every month of uncontracted capacity — while the forward
+direction runs at 80–90. The AER says the same thing in words: reverse flow into the NT is
+*"not a normal operational case… expected to only be utilised in emergencies"* (AAR
+2026-31). It was carrying 16,107 TJ north over the horizon in the central case and 157,000
+in LNG Low. It is now a candidate like any other reversal. Closes [`TODO`](../TODO.md)
+item 5.
+
+**Beetaloo now joins the AGP at Daly Waters, not at Tennant Creek.** The Sturt Plateau
+Pipeline ties into the AGP near Daly Waters, ~380 km *north* of Tennant Creek. GARY hung it
+straight off Tennant Creek, and its $0.6234 tariff was exactly 382 km at the short-lateral
+rate — so the arc was not the SPP at all, it was **a phantom 40 TJ/d copy of the AGP's own
+Daly Waters → Tennant Creek section**, running in parallel with it and letting Beetaloo gas
+reach the NGP without touching the AGP. `nodes.csv` gains a `Daly_Waters` junction, `AGP_N`
+now ends there, a new `AGP_DW` carries on to Darwin, and `Beetaloo_Pipe` is the short tie-in
+it always claimed to be. The AGP's posted 0.40 is still split by route length, three ways
+now instead of two — which inherits [`TODO`](../TODO.md) item 8's unverified assumption
+that 0.40 is a full-haul figure.
+
+**What it changes.** Beetaloo can no longer reach the NGP, because that would need
+southbound flow on the AGP and the AGP runs north. AEMO's options report does catalogue a
+*Northern Gas Pipeline Beetaloo lateral* — "new pipeline from Beetaloo to NGP" — so the
+route east exists as a **candidate**, not as existing infrastructure. It is not in GARY
+yet: AEMO publishes no capacity for it, and GARY should not invent one without a basis.
 
 ## Turning import terminals off
 

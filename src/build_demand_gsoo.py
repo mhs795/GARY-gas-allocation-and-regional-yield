@@ -100,9 +100,38 @@ def _regional_winter_peaks(scenario):
     return {(r.Region, int(r.Year)): float(r.RCI_TJd) for r in rp.itertuples()}
 
 
+def to_365(trace):
+    """Fold a 366-day empirical trace onto the 365-day year the model solves.
+
+    THE MODEL DISPATCHES ``RangeSet(1, 365)``. The empirical shape in
+    demand_profiles.csv comes off a GBB sample that spans a leap year, so it
+    carries a day 366 -- and every node except Darwin, which is built with an
+    explicit ``range(1, 366)``, inherited it. The extra day was written into
+    demand_<scenario>.csv, never dispatched, and silently discarded: 114.4 PJ
+    across the horizon, 0.31% of all demand, of which 103 PJ was LNG.
+
+    Dropping the day outright would lose that energy. Instead each node's days
+    1-365 are scaled by ``annual / sum(days 1-365)``, so the ANNUAL TOTAL is
+    preserved and only the daily level moves, by about a quarter of a percent.
+    That is the right way round: every sector here is calibrated to a GSOO annual
+    level, and the shape is empirical, so the total is the thing to hold fixed.
+    """
+    if int(trace["Day"].max()) <= 365:
+        return trace
+    out = []
+    for node, grp in trace.groupby("Node", sort=False):
+        total = float(grp["Demand"].sum())
+        keep = grp[grp["Day"] <= 365].copy()
+        kept = float(keep["Demand"].sum())
+        if kept > 0:
+            keep["Demand"] = keep["Demand"] * (total / kept)
+        out.append(keep)
+    return pd.concat(out, ignore_index=True)
+
+
 def build(scenario="StepChange"):
     annual = pd.read_csv(os.path.join(GSOO, "annual_sector.csv"))
-    base_trace = pd.read_csv(os.path.join(DATA, "demand_profiles.csv"))
+    base_trace = to_365(pd.read_csv(os.path.join(DATA, "demand_profiles.csv")))
     daily_trace = base_trace.groupby(["Day", "Node"])["Demand"].mean().reset_index()
 
     # One source for the train split: the Parameters sheet, which the model also

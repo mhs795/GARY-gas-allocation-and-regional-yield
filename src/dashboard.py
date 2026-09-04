@@ -206,9 +206,9 @@ COORDS = {
     'Iona':           [-38.55, 142.9],  'Silver_Springs':[-27.4,  149.2],
     'Geelong':        [-38.10, 144.42],
     # Northern Territory
-    'Amadeus':        [-23.85, 132.30], 'Beetaloo':      [-16.30, 133.40],
+    'Amadeus':        [-23.85, 132.30], 'Beetaloo':      [-16.55, 133.85],
     'Darwin':         [-12.46, 130.84], 'Tennant_Creek': [-19.65, 134.19],
-    'Blacktip':       [-14.23, 129.52],
+    'Blacktip':       [-14.23, 129.52], 'Daly_Waters':   [-16.30, 133.37],
 }
 
 ARC_WAYPOINTS = {
@@ -246,11 +246,12 @@ ARC_WAYPOINTS = {
     # AGP: Mereenie (Amadeus Basin) -> Alice Springs -> N along the Stuart Hwy corridor
     # -> Tennant Creek -> Katherine -> Darwin.
     'AGP_S':  [[-23.85,132.30],[-23.70,133.88],[-22.30,134.05],[-20.80,134.15],[-19.65,134.19]],
-    'AGP_N':  [[-19.65,134.19],[-18.00,133.55],[-16.30,133.37],[-14.47,132.26],[-13.20,131.10],[-12.46,130.84]],
+    'AGP_N':  [[-19.65,134.19],[-18.00,133.55],[-16.30,133.37]],
+    'AGP_DW': [[-16.30,133.37],[-14.47,132.26],[-13.20,131.10],[-12.46,130.84]],
     # Bonaparte Gas Pipeline: Blacktip/Yelcherr near Wadeye -> the AGP at Ban Ban
     # Springs, then north on the AGP to Darwin. GARY collapses both legs into one arc.
     'BGP': [[-14.23,129.52],[-14.30,130.40],[-14.20,131.30],[-14.05,131.85],[-13.20,131.10],[-12.46,130.84]],
-    'Beetaloo_Pipe': [[-16.30,133.40],[-17.10,133.60],[-18.00,133.90],[-19.65,134.19]],
+    'Beetaloo_Pipe': [[-16.55,133.85],[-16.30,133.37]],
     # NGP (Tennant Creek -> Mt Isa) then, as on the AEMO map, gas reaches Moomba via the
     # Carpentaria Pipeline (Mt Isa -> Ballera) and the Ballera -> Moomba line — not a
     # straight run south. Single model arc, traced along the real corridor.

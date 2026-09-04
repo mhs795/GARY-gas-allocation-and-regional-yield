@@ -142,7 +142,7 @@ New arcs (`Bulloo`, `EGP_Rev`, `SEA_Gas_Rev`, `NEAP`) carry variable cost and ar
 blended post-expansion tariff instead of the pre-expansion one plus separate capex.
 Touches `flow_cap_rule` and the objective in both `model.py` and `capacity_model.py`.
 
-## 2. Committed projects are not committed
+## 2. ~~Committed projects are not committed~~ — FIXED, verified 4 Sep 2026
 
 `expansion_options.csv` has a `Status` column carrying `Committed` / `Pre-FID` / `Proposed`
 / `Built`. **No code reads it.** `already_built` is only the accumulator of what the model
@@ -152,10 +152,13 @@ So a project with FID taken and steel in the ground is optimised on exactly the 
 as a speculative one, and can simply not be built. `ECGG_3A_MSP` and `EGP_Reversal` are
 both committed and both dropped sharply when the tariffs changed (item 1).
 
-**To close it:** force `Status == 'Committed'` rows to build by their commissioning year.
-That needs the per-row year column item 3 also wants. It would fix reality *and* neutralise
-the brownfield bias for exactly the projects where it is worst, since a forced build does
-not care that its economics are understated.
+**Closed.** `capacity_model.build_committed` now forces every `Status == 'Committed'` row
+with an `EarliestYear` to be built by that year, exactly as this item asked. Verified in a
+2025-51 central solve: all seven committed rows appear on their stated year —
+`Carpentaria_Pilot` 2025, `MSEP_Conversion` and `EGP_Reversal` 2026, the three ECGG 3A legs
+2028, `SWP_Compression` 2029. As predicted, this also neutralises the item-1 brownfield bias
+for the projects where it bites hardest, because a forced build does not care that its
+economics are understated.
 
 ## 3. ~~`Surat_Potential` is permanently zero~~ — FIXED 30 Aug 2026
 
@@ -181,19 +184,37 @@ with capacity "Not Currently Available" — sized to draw the 23,270 PJ of Surat
 > the tranche, they do not buy it. The sizing half stands, at the current 3,148 TJ/d.
 > See [`docs/model.md`](docs/model.md#a-field-development-is-a-capacity-gate-not-a-capital-decision).
 
-## 4. No earliest-build year for pipeline candidates
+## 4. ~~No earliest-build year for pipeline candidates~~ — FIXED 4 Sep 2026
 
-`terminal_earliest` (2028) gates Type=Terminal only. `NEAP` is a 2030s project per APA
-and nothing stops the model building it in 2026. Needs a per-row year column in
-`expansion_options.csv` honoured by both models.
+`terminal_earliest` (2028) gated Type=Terminal only, so `NEAP` — a 2030s project per APA —
+could be and was built in 2026.
 
-## 5. NGP reversal is modelled as normal supply
+**Closed.** `expansion_options.csv` carries a per-row `EarliestYear`, and **both** layers
+honour it for every `Type`: `capacity_model._earliest` fixes `build[e, y]` to zero for
+`y < EarliestYear`, and `model.build_model` does the same on the myopic path, with
+`terminal_earliest` left as the fallback floor for terminals that state no year of their
+own. The last gap was `NEAP` itself, whose own row still had the column blank — it now
+carries **2030**, APA's stated opening. Audited 4 Sep 2026: no pipeline candidate is left
+without a year.
+
+## 5. ~~NGP reversal is modelled as normal supply~~ — FIXED 4 Sep 2026
 
 The AER is explicit that reverse flow into the NT is "not a normal operational case…
 expected to only be utilised in emergencies when gas producers are unable to supply gas
-into the AGP" (AAR 2026-31). GARY runs `NGP_Rev` as ordinary least-cost supply every year.
-Real in 2025 — PWC is doing exactly this because Blacktip has collapsed — but the model
-treats an emergency arrangement as the steady state.
+into the AGP" (AAR 2026-31). GARY ran `NGP_Rev` as ordinary least-cost supply every year —
+16,107 TJ north over the horizon in the central case, 157,000 in LNG Low.
+
+**Closed, and it was worse than this item said.** The arc was also *oversized*: it carried
+106 TJ/d, which is the GSOO's figure for the NGP — a number describing gas leaving the NT —
+applied to the arc bringing gas in. The GBB extracts already in the repo rate
+Mt Isa → Tennant Creek at **60 TJ/d nameplate** and publish **0.000** for it across the
+whole medium-term outlook (2026-06-04 to 2028-06-03), 0.000 every day of the short-term
+outlook and 0.000 uncontracted every month, while the forward direction runs at 80–90.
+
+`NGP_Rev` is now an ordinary gated reversal like `EGP_Rev`, `SEA_Gas_Rev`, `Bulloo` and
+`NEAP`: base capacity **0**, variable-basis tariff, and a new `NGP_Reversal` candidate at
+the GBB's 60 TJ/d. An emergency arrangement is now a project the model has to choose, not
+the steady state.
 
 ## 6. Wickham Point / Weddell is outside the network
 
@@ -378,7 +399,7 @@ See item 11 — the $12 Code price cap is implemented as a ceiling, and ACIL's c
 is that it behaves as a floor.
 
 
-## 10. `industrial_facilities.csv` is dead
+## 10. ~~`industrial_facilities.csv` is dead~~ — CLOSED 4 Sep 2026
 
 An 8-row hand-built file (QAL, Yarwun, Tomago, Whyalla, Orica Kooragang, Incitec Pivot
 Brisbane, Iona Industrial, Port Kembla Steel) that **no code reads**. It was superseded by
@@ -387,6 +408,10 @@ Brisbane, Iona Industrial, Port Kembla Steel) that **no code reads**. It was sup
 The switch silently dropped load the old file carried and the GBB does not: Incitec Pivot
 Brisbane at 35 TJ/d, Iona Industrial at 15, Port Kembla Steel at 2.7. Brisbane and Surat
 still have no metered industrial demand.
+
+**Closed:** the dead file is gone from `src/data/` and an audit on 4 Sep 2026 found no
+reference to it in any module or doc. The warning below stands for anyone tempted to
+restore its contents.
 
 **Do NOT simply fold these back in.** Two reasons. The city-gate calibration added under
 item 9 now absorbs *all* non-metered industrial load implicitly, so adding a facility to
@@ -726,3 +751,51 @@ over 2029 and 2033-35.
 
 **So anyone picking this up again does not start from scratch — they start from the
 plateau threshold question above, which is the only thing still unanswered.**
+
+## 18. Parallel arcs priced on different bases strand the existing pipe — NEW 4 Sep 2026
+
+`SWQP_Rev` and `Bulloo` both run Surat → Moomba. Both are real pipes, so the parallel
+topology is right: `Bulloo` is APA's ECGG Stage 3B interlink, a genuinely separate and
+~240 km shorter route. What is wrong is that the dispatch compares their tariffs directly
+when the two are struck on **different bases** — `SWQP_Rev` carries the posted $1.5265,
+which recovers the existing pipe's capital, and `Bulloo` carries variable-only $0.2500,
+because its capital is charged separately through `exp_capex`. Six times cheaper, and only
+partly because it is shorter.
+
+The consequence is visible in every run. Measured on the central case, 4 Sep 2026:
+
+| Year | `SWQP_Rev` | `Bulloo` |
+|---|---|---|
+| 2028 (before Bulloo) | 99.7 TJ/d | — |
+| 2030 | **0.0** | 755.9 TJ/d |
+| 2035 | **0.0** | 787.2 TJ/d |
+| 2050 | **0.0** | 583.7 TJ/d |
+
+A 512 TJ/d existing pipeline is abandoned for twenty-one straight years by an artefact of
+pricing convention rather than by economics.
+
+This is a **sibling of item 1, not the same thing.** Item 1 is about *expanding* an
+existing arc and over-recovering its capital. This is about *dispatching* between two
+parallel arcs where one price includes capital and the other excludes it.
+
+**Not fixed, deliberately.** The clean answer is that dispatch should see variable cost on
+every arc, with capital charged only through `exp_capex` — existing capital is sunk and a
+dispatch model should not re-decide it. But GARY uses posted tariffs for existing arcs
+because ACIL Allen does, and it is calibrated against them; moving every arc to a variable
+basis would change every price in the model and break that calibration. That is a
+methodology decision, not a bug fix. `tests/audit_inputs.py` fails on it so it cannot be
+forgotten.
+
+## 19. ~~Day 366 was built and never dispatched~~ — FIXED 4 Sep 2026
+
+`demand_profiles.csv`, the empirical GBB shape, spans a leap year and carries a **day
+366**. The builder passed it through, so `demand_<scenario>.csv` held 366 days for every
+node except Darwin — which is built with an explicit `range(1, 366)` and so escaped it.
+The dispatch model solves `RangeSet(1, 365)`. The extra day was therefore written, never
+solved, and silently discarded: **114.4 PJ across the horizon, 0.31% of all demand**, of
+which 103 PJ was LNG.
+
+Fixed in `build_demand_gsoo.to_365`, which folds the trace onto 365 days by scaling each
+node's days 1-365 so its **annual total is preserved** — the right way round, because every
+sector is calibrated to a GSOO annual level while the shape is empirical. What the model
+actually dispatches moved +0.034%; no series is defined off the solved horizon any more.

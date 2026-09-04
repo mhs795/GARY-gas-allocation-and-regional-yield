@@ -21,10 +21,11 @@ SYD2PK,Sydney,Port_Kembla,100,0.1775
 SS2Surat,Silver_Springs,Surat,150,0.0506
 Surat2SS,Surat,Silver_Springs,150,0.0506
 AGP_S,Amadeus,Tennant_Creek,166,0.1624
-AGP_N,Tennant_Creek,Darwin,166,0.2376
-Beetaloo_Pipe,Beetaloo,Tennant_Creek,40,0.6234
+AGP_N,Tennant_Creek,Daly_Waters,166,0.1022
+AGP_DW,Daly_Waters,Darwin,166,0.1354
+Beetaloo_Pipe,Beetaloo,Daly_Waters,40,0.095
 NGP,Tennant_Creek,Moomba,65,3.23
-NGP_Rev,Moomba,Tennant_Creek,106,3.3548
+NGP_Rev,Moomba,Tennant_Creek,0,0.8722
 EGP_Rev,Sydney,Gippsland,0,0.6
 SEA_Gas_Rev,Adelaide,Melbourne,0,0.4
 Bulloo,Surat,Moomba,0,0.25

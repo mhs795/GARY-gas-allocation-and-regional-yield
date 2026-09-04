@@ -17,5 +17,6 @@ Amadeus,Supply,0,NT,NT Amadeus Basin (Mereenie/Palm Valley/Dingo),0,0,0
 Beetaloo,Supply,0,NT,NT Beetaloo shale gas (potential),0,0,0
 Darwin,Demand,0,NT,NT demand centre (Darwin power & industry),0,0,0
 Tennant_Creek,Hub,0,NT,NT pipeline junction (Amadeus GP / NGP),0,0,0
+Daly_Waters,Hub,0,NT,NT pipeline junction (AGP / Sturt Plateau Pipeline tie-in),0,0,0
 Geelong,Import,0,VIC,Potential LNG import terminal (Viva / Vopak FSRU),0,0,0
 Blacktip,Supply,0,NT,NT Blacktip / Bonaparte Basin via the Yelcherr plant (declining; GSA ends mid-2030s),0,0,0
