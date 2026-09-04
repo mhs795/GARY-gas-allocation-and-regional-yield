@@ -333,6 +333,21 @@ def write_cost_tables(xl, scenarios):
              'NOT comparable across reservation levels: the reserved tranche is priced at '
              '$0 in dispatch, so reserving more always lowers the figure -- totals '
              'included. See docs/scenarios.md.')
+    ws.write(foot + 2, 0,
+             'lng_revenue IS SPOT ONLY. Foundation cargoes -- the contracted, must-serve '
+             'volume, around 93% of exports -- are served as demand and earn nothing in '
+             'the objective, while the system still pays to produce and ship them. So the '
+             'Net is the net of the MODEL\'S OBJECTIVE, not the net cash position: it '
+             'overstates net system cost by the unpriced foundation revenue. That is '
+             'harmless for the build and dispatch decisions, which a constant cannot '
+             'move, but it is NOT constant across scenarios -- planned export volume '
+             'differs between them -- so read the Net dots against each other with care.')
+    ws.write(foot + 3, 0,
+             'Worked example, 2035 central: 1,180 PJ foundation and 109 PJ spot were '
+             'exported; lng_revenue books 109 PJ x $8.02/GJ = $0.88bn and nothing for the '
+             'other 1,180 PJ. At LNG Low the $5.92 netback clears no spot cargo at all, so '
+             'the term is $0.00bn and the bar sits on the axis -- which is why LNG Low '
+             'looks like the scenario with the least export revenue.')
     ws.set_column(0, 0, 34)
     # The row offsets go back with the frames. They used to be recomputed in
     # write_summary to point the charts at the right block, which is two places
