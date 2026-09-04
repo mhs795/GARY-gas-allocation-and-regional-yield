@@ -214,12 +214,21 @@ def _line_chart(book, sheet, df, cols, title, y_title, size, span_zero=False,
     return chart
 
 
-def _stacked_chart(book, sheet, df, first_row, title, size, x_title='Year'):
+def _stacked_chart(book, sheet, df, first_row, title, size, x_title='Year',
+                   net_col=None):
     """Stacked column over every column of `df`, sourced from `sheet`.
 
     `first_row` is the 0-indexed sheet row holding the headers. lng_revenue is
     negative and stacks below the axis, which is the honest picture: it is the one
     term the system is PAID rather than pays.
+
+    `net_col` overlays a marker on the NET of the stack, read from that 0-indexed
+    sheet column. Worth having precisely because lng_revenue sits below the axis:
+    the visible column height is the gross cost, and the net -- what the run
+    actually cost once the export revenue is counted -- is not a bar the eye can
+    read off a stack that crosses zero. A line chart with the line switched off
+    is used rather than a scatter, because xlsxwriter cannot combine a scatter
+    with a column chart.
     """
     chart = book.add_chart({'type': 'column', 'subtype': 'stacked'})
     n = len(df)
@@ -229,6 +238,18 @@ def _stacked_chart(book, sheet, df, first_row, title, size, x_title='Year'):
             'categories': [sheet, first_row + 1, 0, first_row + n, 0],
             'values':     [sheet, first_row + 1, i + 1, first_row + n, i + 1],
         })
+    if net_col is not None:
+        dots = book.add_chart({'type': 'line'})
+        dots.add_series({
+            'name':       [sheet, first_row, net_col],
+            'categories': [sheet, first_row + 1, 0, first_row + n, 0],
+            'values':     [sheet, first_row + 1, net_col, first_row + n, net_col],
+            'line':       {'none': True},
+            'marker':     {'type': 'circle', 'size': 8,
+                           'fill': {'color': '#1A1D21'},
+                           'border': {'color': '#FFFFFF'}},
+        })
+        chart.combine(dots)
     chart.set_title({'name': title})
     chart.set_x_axis({'name': x_title})
     chart.set_y_axis({'name': '$bn', 'num_format': '0.0',
@@ -300,7 +321,7 @@ def write_cost_tables(xl, scenarios):
     _write_total_row(ws, total, r_total, f'Total {span}', bold)
     _write_total_row(ws, br, r_break, f'Total {span}', bold)
     _write_total_col(ws, mean, r_mean, 'Total', bold)
-    _write_total_col(ws, agg, r_agg, 'Total', bold)
+    c_agg_net = _write_total_col(ws, agg, r_agg, 'Net', bold)
 
     foot = r_agg + len(agg) + 2
     ws.write(foot, 0,
@@ -318,7 +339,7 @@ def write_cost_tables(xl, scenarios):
     # holding one layout -- move a table and the charts silently plot the table
     # above it.
     return {'total': (total, r_total), 'break': (br, r_break),
-            'mean': (mean, r_mean), 'agg': (agg, r_agg)}
+            'mean': (mean, r_mean), 'agg': (agg, r_agg), 'agg_net': c_agg_net}
 
 
 def write_summary(cache=CACHE, out=OUT, log=True):
@@ -365,7 +386,8 @@ def write_summary(cache=CACHE, out=OUT, log=True):
                                 _stacked_chart(book, COST_SHEET, agg, r_agg,
                                                'Aggregate system cost by component, '
                                                'whole horizon', wide,
-                                               x_title='Scenario'))
+                                               x_title='Scenario',
+                                               net_col=cost['agg_net']))
             row += 24
 
         # Then the price comparison: every scenario against central on one grid,
