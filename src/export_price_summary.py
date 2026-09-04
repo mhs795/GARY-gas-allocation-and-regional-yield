@@ -4,8 +4,8 @@ Three tabs, the shape the price comparisons have always been read in:
 
   levels          $/GJ, one row per year, one column per scenario
   percent change  the same grid as % against the central case
-  charts          EVERY chart in the workbook: the two price grids, the three
-                  system-cost charts, then one percent-change panel per scenario
+  charts          every chart: aggregate system cost by component across all
+                  options, then the percent-change grid and one panel per scenario
   system cost     total system cost, the central case's breakdown, and mean
                   composition by scenario -- written only when the cache carries
                   the model's recorded cost components
@@ -353,38 +353,28 @@ def write_summary(cache=CACHE, out=OUT, log=True):
         panels = book.add_worksheet(PANEL_SHEET)
         all_cols = range(len(levels_out.columns))
         row = 1
-        panels.insert_chart(row, 0,
-                            _line_chart(book, LEVELS_SHEET, levels_out, all_cols,
-                                        'Domestic volume-weighted delivered price',
-                                        '$/GJ', wide))
-        row += 24
-        panels.insert_chart(row, 0,
-                            _line_chart(book, PCT_SHEET, pct_out, all_cols,
-                                        f'Change against {central_label}',
-                                        '% vs central', wide, span_zero=True))
-        row += 24
+
+        # The cost side is ONE chart: every option's whole horizon split by where
+        # the money went. The total-cost line chart and the central case's
+        # year-by-year breakdown were both dropped -- the line chart is the
+        # aggregate chart's own column heights read a harder way, and a breakdown
+        # of one scenario answers a question nobody asks of a comparison tab.
         if cost:
-            (total, r_total), (br, r_break) = cost['total'], cost['break']
             agg, r_agg = cost['agg']
-            panels.insert_chart(row, 0,
-                                _line_chart(book, COST_SHEET, total,
-                                            range(len(total.columns)),
-                                            'Total system cost', '$bn', wide,
-                                            first_row=r_total))
-            row += 24
-            panels.insert_chart(row, 0,
-                                _stacked_chart(book, COST_SHEET, br, r_break,
-                                               f'Cost breakdown, {central_label}',
-                                               wide))
-            row += 24
-            # The one the scenarios are actually compared on: every option's whole
-            # horizon, split by where the money went.
             panels.insert_chart(row, 0,
                                 _stacked_chart(book, COST_SHEET, agg, r_agg,
                                                'Aggregate system cost by component, '
                                                'whole horizon', wide,
                                                x_title='Scenario'))
             row += 24
+
+        # Then the price comparison: every scenario against central on one grid,
+        # and a panel each below it.
+        panels.insert_chart(row, 0,
+                            _line_chart(book, PCT_SHEET, pct_out, all_cols,
+                                        f'Change against {central_label}',
+                                        '% vs central', wide, span_zero=True))
+        row += 24
 
         # One panel per scenario, off the percent-change grid rather than a copy
         # of it. The combined chart above answers "which scenarios move together";
