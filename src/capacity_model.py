@@ -867,7 +867,15 @@ class CapacityExpansionModel:
         try:
             for e in m.Expansion:
                 for y in self.years:
-                    m.build[e, y].fix(pyo.value(m.build[e, y]))
+                    # Round before fixing. A MILP hands back binaries at floating
+                    # point noise -- build[NGP_Reversal, 2036] came out of HiGHS at
+                    # -4.5e-15 -- and writing that into a Binary domain raises
+                    # Pyomo W1001 for every such variable. Harmless to the answer,
+                    # since every reader of a build decision tests `> 0.5`, but it
+                    # buries the solve log and it is a negative build quantity
+                    # sitting in the objective. Round to the decision the MIP
+                    # actually made, then relax the domain.
+                    m.build[e, y].fix(1.0 if pyo.value(m.build[e, y]) > 0.5 else 0.0)
                     m.build[e, y].domain = pyo.Reals
             m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
             solvers.make_solver(time_limit=solvers.env_time_limit()).solve(m, tee=False)
