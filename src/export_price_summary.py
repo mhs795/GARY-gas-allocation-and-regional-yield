@@ -4,7 +4,8 @@ Three tabs, the shape the price comparisons have always been read in:
 
   levels          $/GJ, one row per year, one column per scenario
   percent change  the same grid as % against the central case
-  charts          one percent-change panel per scenario, read off that grid
+  charts          EVERY chart in the workbook: the two price grids, the three
+                  system-cost charts, then one percent-change panel per scenario
   system cost     total system cost, the central case's breakdown, and mean
                   composition by scenario -- written only when the cache carries
                   the model's recorded cost components
@@ -122,7 +123,7 @@ def half_grid(lo, hi):
 
 
 def cost_frames(scenarios, central=CENTRAL):
-    """(total by scenario, component breakdown for `central`, mean $bn/yr by scenario).
+    """(total by scenario, breakdown for `central`, mean $bn/yr, horizon total $bn).
 
     All in $bn. Returns ``None`` if the cache predates cost-component recording --
     the components are written by the model at solve time (see
@@ -157,7 +158,17 @@ def cost_frames(scenarios, central=CENTRAL):
             for k in keys}
         for t in COST_ALL})
     mean.index.name = 'Scenario'
-    return total, br, mean
+    # Aggregate over the whole horizon rather than per year. A single year is the
+    # wrong unit to compare an investment decision on -- a build lands in one year
+    # and pays back over the rest -- so the aggregate is what the by-component
+    # comparison across scenarios is drawn from.
+    agg = pd.DataFrame({
+        t: {short_key(k): sum(r['cost_components'].get(t, 0.0)
+                              for r in scenarios[k]) / 1e9
+            for k in keys}
+        for t in COST_ALL})
+    agg.index.name = 'Scenario'
+    return total, br, mean, agg
 
 
 def _line_chart(book, sheet, df, cols, title, y_title, size, span_zero=False,
@@ -203,7 +214,7 @@ def _line_chart(book, sheet, df, cols, title, y_title, size, span_zero=False,
     return chart
 
 
-def _stacked_chart(book, sheet, df, first_row, title, size):
+def _stacked_chart(book, sheet, df, first_row, title, size, x_title='Year'):
     """Stacked column over every column of `df`, sourced from `sheet`.
 
     `first_row` is the 0-indexed sheet row holding the headers. lng_revenue is
@@ -219,54 +230,95 @@ def _stacked_chart(book, sheet, df, first_row, title, size):
             'values':     [sheet, first_row + 1, i + 1, first_row + n, i + 1],
         })
     chart.set_title({'name': title})
-    chart.set_x_axis({'name': 'Year'})
+    chart.set_x_axis({'name': x_title})
     chart.set_y_axis({'name': '$bn', 'num_format': '0.0',
                       'major_gridlines': {'visible': True}})
     chart.set_size(size)
     return chart
 
 
-def write_cost_sheet(xl, scenarios):
-    """The system-cost tab: totals, the central case's breakdown, and composition.
+def _write_total_row(ws, df, first_row, label, fmt):
+    """A summed row under a year-indexed table.
 
-    Returns False when the cache carries no components, so the caller can say so
-    rather than publish an empty tab.
+    Written onto the sheet AFTER the frame rather than concatenated into it, so
+    the chart ranges above still cover data rows only -- a total folded into the
+    frame would be plotted as another year and double every stack.
+    """
+    r = first_row + len(df) + 1
+    ws.write(r, 0, label, fmt)
+    for i, col in enumerate(df.columns):
+        ws.write_number(r, i + 1, float(df[col].sum()), fmt)
+    return r
+
+
+def _write_total_col(ws, df, first_row, label, fmt):
+    """A summed column beside a scenario-indexed table, for the same reason."""
+    c = len(df.columns) + 1
+    ws.write(first_row, c, label, fmt)
+    for j in range(len(df)):
+        ws.write_number(first_row + 1 + j, c, float(df.iloc[j].sum()), fmt)
+    return c
+
+
+def write_cost_tables(xl, scenarios):
+    """Write the system-cost TABLES. Charts live on their own tab -- see write_summary.
+
+    Returns the frames for the charts to be drawn from, or None when the cache
+    carries no components, so the caller can say so rather than publish an empty
+    tab. The frames handed back are the plain ones: every total is written onto
+    the sheet beside or beneath its table rather than folded into the frame, so a
+    chart range never picks a total up and plots it as another category.
     """
     frames = cost_frames(scenarios)
     if frames is None:
-        return False
-    total, br, mean = frames
+        return None
+    total, br, mean, agg = frames
     book, sheet = xl.book, COST_SHEET
-    wide = {'width': 900, 'height': 420}
+    bold = book.add_format({'bold': True, 'top': 1, 'num_format': '0.00'})
 
-    # Rows are laid out first so the tables never collide; charts go to the right
-    # of them rather than below, so neither can land on a cell it plots.
-    r_total, r_break, r_mean = 1, 1 + len(total) + 4, 1 + len(total) + 4 + len(br) + 4
+    # Each table gets one row of clear air for its total plus a three-row gap, so
+    # the totals can never land on the next table's header.
+    r_total = 1
+    r_break = r_total + len(total) + 5
+    r_mean = r_break + len(br) + 5
+    r_agg = r_mean + len(mean) + 5
     total.to_excel(xl, sheet_name=sheet, startrow=r_total)
     br.to_excel(xl, sheet_name=sheet, startrow=r_break)
     mean.to_excel(xl, sheet_name=sheet, startrow=r_mean)
+    agg.to_excel(xl, sheet_name=sheet, startrow=r_agg)
     ws = xl.sheets[sheet]
+
     ws.write(r_total - 1, 0, 'Total system cost, $bn')
     ws.write(r_break - 1, 0, f'Cost breakdown, {short_key(CENTRAL)}, $bn')
     ws.write(r_mean - 1, 0, 'Mean $bn/yr by component')
-    ws.write(r_mean + len(mean) + 2, 0,
+    ws.write(r_agg - 1, 0, 'Total over the horizon by component, $bn')
+
+    # Year-indexed tables sum DOWN to a horizon total; scenario-indexed tables sum
+    # ACROSS to a per-scenario total. Both are the same question asked of the axis
+    # that varies.
+    span = f'{total.index.min()}-{total.index.max()}'
+    _write_total_row(ws, total, r_total, f'Total {span}', bold)
+    _write_total_row(ws, br, r_break, f'Total {span}', bold)
+    _write_total_col(ws, mean, r_mean, 'Total', bold)
+    _write_total_col(ws, agg, r_agg, 'Total', bold)
+
+    foot = r_agg + len(agg) + 2
+    ws.write(foot, 0,
              'Terms are the dispatch objective\'s own, signed as they enter it, so they '
              'sum to total_cost exactly. lng_revenue is negative: the system is PAID for '
-             'an export cargo.')
-    ws.write(r_mean + len(mean) + 3, 0,
+             'an export cargo, which is why a total across components is below the sum '
+             'of the costs.')
+    ws.write(foot + 1, 0,
              'NOT comparable across reservation levels: the reserved tranche is priced at '
-             '$0 in dispatch, so reserving more always lowers the figure. See '
-             'docs/scenarios.md.')
+             '$0 in dispatch, so reserving more always lowers the figure -- totals '
+             'included. See docs/scenarios.md.')
     ws.set_column(0, 0, 34)
-
-    ws.insert_chart(r_total, 10,
-                    _line_chart(book, sheet, total, range(len(total.columns)),
-                                'Total system cost', '$bn', wide,
-                                first_row=r_total))
-    ws.insert_chart(r_break, 10,
-                    _stacked_chart(book, sheet, br, r_break,
-                                   f'Cost breakdown, {short_key(CENTRAL)}', wide))
-    return True
+    # The row offsets go back with the frames. They used to be recomputed in
+    # write_summary to point the charts at the right block, which is two places
+    # holding one layout -- move a table and the charts silently plot the table
+    # above it.
+    return {'total': (total, r_total), 'break': (br, r_break),
+            'mean': (mean, r_mean), 'agg': (agg, r_agg)}
 
 
 def write_summary(cache=CACHE, out=OUT, log=True):
@@ -291,41 +343,69 @@ def write_summary(cache=CACHE, out=OUT, log=True):
         book = xl.book
         wide = {'width': 960, 'height': 460}
 
-        all_cols = range(len(levels_out.columns))
-        xl.sheets[LEVELS_SHEET].insert_chart(
-            f'A{n + 4}',                       # clear of the data it plots
-            _line_chart(book, LEVELS_SHEET, levels_out, all_cols,
-                        'Domestic volume-weighted delivered price', '$/GJ', wide))
-        xl.sheets[PCT_SHEET].insert_chart(
-            f'A{n + 4}',
-            _line_chart(book, PCT_SHEET, pct_out, all_cols,
-                        f'Change against {central_label}', '% vs central', wide,
-                        span_zero=True))
+        # Tables first, so the data tabs come before the charts tab in the
+        # workbook and every chart has its source already on the sheet.
+        cost = write_cost_tables(xl, scenarios)
 
-        # One panel per scenario, off the same grid rather than a copy of it. The
-        # combined chart above answers "which scenarios move together"; these
-        # answer "what does this one do", which sixteen overlaid series cannot.
-        # Central is skipped -- its column is zero by construction, so its panel
-        # would be a flat line on the axis.
+        # EVERY chart lives here. The data tabs stay pure tables: a chart sitting
+        # under a grid is in the way of the grid, and a reader comparing two
+        # charts should not have to hop between tabs to do it.
         panels = book.add_worksheet(PANEL_SHEET)
+        all_cols = range(len(levels_out.columns))
+        row = 1
+        panels.insert_chart(row, 0,
+                            _line_chart(book, LEVELS_SHEET, levels_out, all_cols,
+                                        'Domestic volume-weighted delivered price',
+                                        '$/GJ', wide))
+        row += 24
+        panels.insert_chart(row, 0,
+                            _line_chart(book, PCT_SHEET, pct_out, all_cols,
+                                        f'Change against {central_label}',
+                                        '% vs central', wide, span_zero=True))
+        row += 24
+        if cost:
+            (total, r_total), (br, r_break) = cost['total'], cost['break']
+            agg, r_agg = cost['agg']
+            panels.insert_chart(row, 0,
+                                _line_chart(book, COST_SHEET, total,
+                                            range(len(total.columns)),
+                                            'Total system cost', '$bn', wide,
+                                            first_row=r_total))
+            row += 24
+            panels.insert_chart(row, 0,
+                                _stacked_chart(book, COST_SHEET, br, r_break,
+                                               f'Cost breakdown, {central_label}',
+                                               wide))
+            row += 24
+            # The one the scenarios are actually compared on: every option's whole
+            # horizon, split by where the money went.
+            panels.insert_chart(row, 0,
+                                _stacked_chart(book, COST_SHEET, agg, r_agg,
+                                               'Aggregate system cost by component, '
+                                               'whole horizon', wide,
+                                               x_title='Scenario'))
+            row += 24
+
+        # One panel per scenario, off the percent-change grid rather than a copy
+        # of it. The combined chart above answers "which scenarios move together";
+        # these answer "what does this one do", which sixteen overlaid series
+        # cannot. Central is skipped -- its column is zero by construction, so its
+        # panel would be a flat line on the axis.
         slot = 0
         for i, name in enumerate(pct_out.columns):
             if name == central_label:
                 continue
-            # Each panel scales to its own series -- a common scale would
-            # flatten the small movers against the reservation runs -- but the
-            # axis is forced to span zero, so "above or below central" is never
-            # an artefact of where the axis happens to start.
+            # Each panel scales to its own series -- a common scale would flatten
+            # the small movers against the reservation runs -- but the axis is
+            # forced to span zero, so "above or below central" is never an
+            # artefact of where the axis happens to start.
             chart = _line_chart(book, PCT_SHEET, pct_out, [i], name,
                                 '% vs central', {'width': 560, 'height': 300},
                                 span_zero=True)
-            # Two per row, spaced to clear a 560x300 chart at default row
-            # heights and column widths with a margin either side.
-            row, side = divmod(slot, 2)
-            panels.insert_chart(row * 17 + 1, side * 10, chart)
+            panel_row, side = divmod(slot, 2)
+            panels.insert_chart(row + panel_row * 17, side * 10, chart)
             slot += 1
-
-        cost_ok = write_cost_sheet(xl, scenarios)
+        cost_ok = cost is not None
 
     if log:
         note = '' if cost_ok else '  (no system-cost tab: cache predates cost components)'
