@@ -6,7 +6,6 @@ highspy            # default solver backend
 # package, not a pip one:  sudo apt install glpk-utils
 plotly
 dash
-dash-bootstrap-components
 diskcache
 multiprocess
 zstandard        # results-cache compression (falls back to stdlib gzip)

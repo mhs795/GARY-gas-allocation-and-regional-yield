@@ -13,7 +13,6 @@ from plotly.subplots import make_subplots
 import diskcache
 import dash
 from dash import dcc, html, Input, Output, State, DiskcacheManager, no_update, ctx
-import dash_bootstrap_components as dbc
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import datacentre_series
@@ -117,8 +116,7 @@ def _fig_dict_to_df(fig):
 def _dl_btn(btn_id):
     """Small right-aligned 'download chart data as Excel' button for a chart."""
     return html.Div(
-        dbc.Button('⬇ Data (Excel)', id=btn_id, size='sm', color='secondary',
-                   outline=True, className='chart-dl-btn'),
+        html.Button('⬇ Data (Excel)', id=btn_id, className='chart-dl-btn'),
         style={'textAlign': 'right', 'margin': '2px 4px 12px'})
 
 
@@ -129,6 +127,22 @@ _cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tmp
 os.makedirs(_cache_dir, exist_ok=True)
 _disk_cache = diskcache.Cache(_cache_dir)
 background_callback_manager = DiskcacheManager(_disk_cache)
+
+
+def _progress(pct, label):
+    """(style, children) pair for the solver-progress-bar div's progress= outputs."""
+    return {'width': f'{pct}%'}, label
+
+
+def dataframe_to_table(df, style=None):
+    """Plain html.Table equivalent of dbc.Table.from_dataframe (striped/hover via CSS)."""
+    return html.Table([
+        html.Thead(html.Tr([html.Th(col) for col in df.columns])),
+        html.Tbody([
+            html.Tr([html.Td(v) for v in row])
+            for row in df.itertuples(index=False)
+        ]),
+    ], style=style)
 
 # ---------------------------------------------------------------------------
 # Persistence helpers
@@ -359,11 +373,10 @@ pio.templates['gary_dark'] = go.layout.Template(
 )
 
 # ---------------------------------------------------------------------------
-# App – Bootstrap base (we override everything with Material CSS)
+# App
 # ---------------------------------------------------------------------------
 app = dash.Dash(
     __name__,
-    external_stylesheets=[dbc.themes.BOOTSTRAP],
     background_callback_manager=background_callback_manager,
     suppress_callback_exceptions=True,
     title='GARY — Gas Allocation and Regional Yield Model',
@@ -572,6 +585,22 @@ body, html {
   border-color: var(--md-error);
 }
 
+.chart-dl-btn {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: var(--md-r-btn);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  background-color: transparent;
+  color: var(--sb-text-med);
+  border: 1px solid var(--md-divider);
+  transition: background 0.15s, border-color 0.15s;
+}
+.chart-dl-btn:hover:not(:disabled) { background-color: var(--md-hover); }
+.chart-dl-btn:active    { opacity: 0.85; }
+.chart-dl-btn:disabled  { opacity: 0.5 !important; cursor: not-allowed !important; }
+
 /* ── Status ─────────────────────────────────────────────────────────────── */
 .md-status {
   min-height: 28px;
@@ -624,6 +653,36 @@ body, html {
 .form-check-input:checked      { background-color: var(--md-primary) !important;
                                  border-color: var(--md-primary) !important; }
 .form-check-label              { color: var(--sb-text-med) !important; font-size: 13px !important; }
+
+/* ── Switch (flat toggle, replaces Bootstrap's .form-switch) ──────────────── */
+.md-switch-input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 34px;
+  height: 18px;
+  min-width: 34px;
+  background-color: var(--md-surface-3);
+  border-radius: 999px;
+  position: relative;
+  cursor: pointer;
+  vertical-align: middle;
+  margin: 0 8px 0 0;
+  transition: background-color 0.15s;
+}
+.md-switch-input::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+.md-switch-input:checked        { background-color: var(--md-primary) !important; }
+.md-switch-input:checked::before { left: 18px; }
+.md-switch-label { color: var(--sb-text-med); font-size: 13px; vertical-align: middle; }
 
 /* ── Main layout ────────────────────────────────────────────────────────── */
 .md-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -809,6 +868,7 @@ body, html {
   border-bottom: 1px solid var(--md-divider);
 }
 .md-table tbody tr             { transition: background 0.12s; }
+.md-table tbody tr:nth-child(odd) { background-color: rgba(0,0,0,0.025); }
 .md-table tbody tr:hover       { background-color: var(--md-hover) !important; }
 .md-table tbody td {
   padding: 10px 14px;
@@ -1189,9 +1249,9 @@ sidebar = html.Div(className='md-sidebar', children=[
 
         html.Div(id='run-status', className='md-status'),
         html.Div(className='md-progress-wrap', children=[
-            dbc.Progress(id='solver-progress', value=0, label='',
-                         striped=False, animated=False,
-                         style={'display': 'none'}),
+            html.Div(id='solver-progress', className='progress', style={'display': 'none'}, children=[
+                html.Div(id='solver-progress-bar', className='progress-bar', style={'width': '0%'}),
+            ]),
         ]),
 
         html.Hr(className='md-divider'),
@@ -1233,14 +1293,14 @@ sidebar = html.Div(className='md-sidebar', children=[
                  style={'marginTop': '-14px', 'marginBottom': '18px',
                         'fontSize': '10px', 'color': '#888', 'lineHeight': '1.35'}),
 
-        dbc.Checklist(id='dunkelflaute-toggle',
+        dcc.Checklist(id='dunkelflaute-toggle',
                       options=[{'label': ' SA Dunkelflaute (2027)', 'value': 'on'}],
-                      value=[], switch=True,
+                      value=[], inputClassName='md-switch-input', labelClassName='md-switch-label',
                       style={'marginBottom': '16px', 'fontSize': '12px'}),
 
-        dbc.Checklist(id='reservation-toggle',
+        dcc.Checklist(id='reservation-toggle',
                       options=[{'label': ' Gas reservation', 'value': 'on'}],
-                      value=[], switch=True,
+                      value=[], inputClassName='md-switch-input', labelClassName='md-switch-label',
                       style={'marginBottom': '8px', 'fontSize': '12px'}),
 
         html.Div(id='reservation-slider-wrap', style={'display': 'none'}, children=[
@@ -1249,10 +1309,10 @@ sidebar = html.Div(className='md-sidebar', children=[
                            step=None,
                            marks={i: f'{v}%' for i, v in enumerate(RESERVATION_PCTS)},
                            value=1)),
-            dbc.Checklist(id='contracts-toggle',
+            dcc.Checklist(id='contracts-toggle',
                           options=[{'label': ' Respect LNG foundation contracts',
                                     'value': 'on'}],
-                          value=['on'], switch=True,
+                          value=['on'], inputClassName='md-switch-input', labelClassName='md-switch-label',
                           style={'marginBottom': '2px', 'fontSize': '12px'}),
             html.Div(f'On: the reservation may only take UNCONTRACTED export gas, '
                      f'so it is capped at {UNCONTRACTED_PCT:.0f}% however high the '
@@ -1270,12 +1330,12 @@ sidebar = html.Div(className='md-sidebar', children=[
         html.Span('Data centre gas demand (PJ/yr)', className='md-input-label'),
         html.Div(style={'display': 'flex', 'gap': '8px', 'marginBottom': '6px'}, children=[
             html.Div(style={'flex': '1'}, children=[
-                dbc.Input(id='dc-nsw-input', type='number', min=0, step=1, value=0,
+                dcc.Input(id='dc-nsw-input', type='number', min=0, step=1, value=0,
                           debounce=True, style={'fontSize': '12px'}),
                 html.Div('NSW · Sydney', className='md-input-hint'),
             ]),
             html.Div(style={'flex': '1'}, children=[
-                dbc.Input(id='dc-vic-input', type='number', min=0, step=1, value=0,
+                dcc.Input(id='dc-vic-input', type='number', min=0, step=1, value=0,
                           debounce=True, style={'fontSize': '12px'}),
                 html.Div('VIC · Melbourne', className='md-input-hint'),
             ]),
@@ -1296,7 +1356,7 @@ sidebar = html.Div(className='md-sidebar', children=[
         # flat volume. The file is read at solve time and never written to; a
         # state it covers overrides the cell above, a state it does not keeps it.
         html.Span('Or link a demand series (optional)', className='md-input-label'),
-        dbc.Input(id='dc-file-input', type='text', debounce=True, value=DC_FILE_DEFAULT,
+        dcc.Input(id='dc-file-input', type='text', debounce=True, value=DC_FILE_DEFAULT,
                   placeholder='/path/to/data_centre_pipeline.xlsx',
                   style={'fontSize': '11px', 'marginBottom': '4px'}),
         html.Div(id='dc-file-status',
@@ -1310,9 +1370,9 @@ sidebar = html.Div(className='md-sidebar', children=[
                  style={'marginBottom': '16px', 'fontSize': '10px',
                         'color': '#888', 'lineHeight': '1.35'}),
 
-        dbc.Checklist(id='imports-toggle',
+        dcc.Checklist(id='imports-toggle',
                       options=[{'label': ' Allow LNG import terminals', 'value': 'on'}],
-                      value=['on'] if IMPORTS_DEFAULT else [], switch=True,
+                      value=['on'] if IMPORTS_DEFAULT else [], inputClassName='md-switch-input', labelClassName='md-switch-label',
                       style={'marginBottom': '2px', 'fontSize': '12px'}),
         html.Div('On: the capacity model may build Port Kembla, either Geelong '
                  'FSRU, or Outer Harbor. Off: they are dropped from the candidate '
@@ -1321,9 +1381,9 @@ sidebar = html.Div(className='md-sidebar', children=[
                  style={'marginBottom': '16px', 'fontSize': '10px',
                         'color': '#888', 'lineHeight': '1.35', 'paddingLeft': '38px'}),
 
-        dbc.Checklist(id='gsoo-exp-toggle',
+        dcc.Checklist(id='gsoo-exp-toggle',
                       options=[{'label': ' GSOO expansions only', 'value': 'on'}],
-                      value=[], switch=True,
+                      value=[], inputClassName='md-switch-input', labelClassName='md-switch-label',
                       style={'marginBottom': '2px', 'fontSize': '12px'}),
         html.Div('Off: the capacity model may build any candidate in '
                  'expansion_options.csv, including pre-FID projects from GARY\'s '
@@ -1333,9 +1393,9 @@ sidebar = html.Div(className='md-sidebar', children=[
                  style={'marginBottom': '16px', 'fontSize': '10px',
                         'color': '#888', 'lineHeight': '1.35', 'paddingLeft': '38px'}),
 
-        dbc.Checklist(id='netback-toggle',
+        dcc.Checklist(id='netback-toggle',
                       options=[{'label': ' LNG netback pricing (ACIL Allen)', 'value': 'on'}],
-                      value=['on'] if NETBACK_DEFAULT else [], switch=True,
+                      value=['on'] if NETBACK_DEFAULT else [], inputClassName='md-switch-input', labelClassName='md-switch-label',
                       style={'marginBottom': '2px', 'fontSize': '12px'}),
         html.Div('On (default): trains bid for gas at the export netback and '
                  'imports are priced at ACIL Allen\'s injection cost, so the '
@@ -1347,9 +1407,9 @@ sidebar = html.Div(className='md-sidebar', children=[
                         'color': '#888', 'lineHeight': '1.35', 'paddingLeft': '38px'}),
 
 
-        dbc.Checklist(id='foresight-toggle',
+        dcc.Checklist(id='foresight-toggle',
                       options=[{'label': ' Perfect-foresight capacity build', 'value': 'on'}],
-                      value=['on'], switch=True,
+                      value=['on'], inputClassName='md-switch-input', labelClassName='md-switch-label',
                       style={'marginBottom': '20px', 'fontSize': '12px'}),
 
         slider_group('Discount Rate (capacity NPV)',
@@ -1420,14 +1480,14 @@ main = html.Div(className='md-main', children=[
 
         # Tabs
         html.Div(className='md-tabs-wrap', children=[
-            dbc.Tabs(id='main-tabs', active_tab='tab-map', children=[
-                dbc.Tab(label='Network Map',          tab_id='tab-map'),
-                dbc.Tab(label='Production & Dispatch', tab_id='tab-prod'),
-                dbc.Tab(label='Storage Dynamics',      tab_id='tab-storage'),
-                dbc.Tab(label='Price Outcomes',        tab_id='tab-price'),
-                dbc.Tab(label='Supply Curves',         tab_id='tab-supply'),
-                dbc.Tab(label='Expansions',            tab_id='tab-exp'),
-                dbc.Tab(label='GPG & Large Users',     tab_id='tab-ind'),
+            dcc.Tabs(id='main-tabs', value='tab-map', className='nav-tabs', children=[
+                dcc.Tab(label='Network Map',          value='tab-map',    className='nav-link', selected_className='nav-link active'),
+                dcc.Tab(label='Production & Dispatch', value='tab-prod',   className='nav-link', selected_className='nav-link active'),
+                dcc.Tab(label='Storage Dynamics',      value='tab-storage', className='nav-link', selected_className='nav-link active'),
+                dcc.Tab(label='Price Outcomes',        value='tab-price',  className='nav-link', selected_className='nav-link active'),
+                dcc.Tab(label='Supply Curves',         value='tab-supply', className='nav-link', selected_className='nav-link active'),
+                dcc.Tab(label='Expansions',            value='tab-exp',    className='nav-link', selected_className='nav-link active'),
+                dcc.Tab(label='GPG & Large Users',     value='tab-ind',    className='nav-link', selected_className='nav-link active'),
             ]),
         ]),
 
@@ -1443,7 +1503,7 @@ main = html.Div(className='md-main', children=[
                                    marks={y: str(y) for y in range(2025, 2051, 5)}),
                                    style={'width': '380px'}),
                     ]),
-                    dbc.Checklist(id='map-options',
+                    dcc.Checklist(id='map-options',
                                   options=[
                                       {'label': ' Labels',   'value': 'labels'},
                                       {'label': ' Capacity', 'value': 'capacity'},
@@ -1507,7 +1567,7 @@ main = html.Div(className='md-main', children=[
                 html.Div(className='md-map-controls', children=[
                     html.Div([
                         html.Span('Curve', className='md-input-label'),
-                        dbc.RadioItems(
+                        dcc.RadioItems(
                             id='supply-mode',
                             options=[
                                 {'label': ' Residual (net of exports & other nodes)',
@@ -1818,7 +1878,7 @@ def blank_fig(tmpl=CHART_TEMPLATE):
      Output('tab-supply-content',  'style'),
      Output('tab-exp-content',     'style'),
      Output('tab-ind-content',     'style')],
-    Input('main-tabs', 'active_tab'),
+    Input('main-tabs', 'value'),
 )
 def show_tab(active):
     order = ['tab-map','tab-prod','tab-storage','tab-price','tab-supply','tab-exp','tab-ind']
@@ -1859,7 +1919,7 @@ def show_tab(active):
          {'display': 'block'}, {'display': 'none'}),
         (Output('run-status', 'children'), '⏳  Solving…', ''),
     ],
-    progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
+    progress=[Output('solver-progress-bar', 'style'), Output('solver-progress-bar', 'children')],
     prevent_initial_call=True,
 )
 def run_scenario(set_progress, n_clicks, wi, li, gap, rep_bins, baseline, dunkel, resv_on, resv_i,
@@ -1883,7 +1943,7 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, rep_bins, baseline, dunkel
         return no_update, f'✗  Data centre series — {exc}'
     def _cb(yr, p):
         pct = int(p * 100)
-        set_progress((pct, f'Solving {yr}… {pct}%'))
+        set_progress(_progress(pct, f'Solving {yr}… {pct}%'))
     # Built before the solve so it can also title the terminal log.
     key = scenario_key(baseline, w, l, dunkelflaute, reservation, foresight, dr,
                        datacentre, netback, respect_contracts, gsoo_exp,
@@ -1948,7 +2008,7 @@ def _run_sweep(jobs, data, set_progress):
     worker, so each is filed under the key that came back with it.
     """
     if not jobs:
-        set_progress((100, 'Nothing to solve — every scenario already cached'))
+        set_progress(_progress(100, 'Nothing to solve — every scenario already cached'))
         return
     workers = min(default_workers(), len(jobs))
     note = f' on {workers} workers' if workers > 1 else ''
@@ -1958,13 +2018,13 @@ def _run_sweep(jobs, data, set_progress):
         data['current_key'] = key
         save_results(data)
         pct = int(i / n * 100)
-        set_progress((pct, f'{i}/{n} scenarios complete{note} — {pct}%'))
+        set_progress(_progress(pct, f'{i}/{n} scenarios complete{note} — {pct}%'))
 
     def _year(i, n, yr, frac):
         pct = int((i - 1 + frac) / n * 100)
-        set_progress((pct, f'Scenario {i}/{n} · Year {yr} — {pct}%'))
+        set_progress(_progress(pct, f'Scenario {i}/{n} · Year {yr} — {pct}%'))
 
-    set_progress((0, f'Solving {len(jobs)} scenarios{note}…'))
+    set_progress(_progress(0, f'Solving {len(jobs)} scenarios{note}…'))
     run_jobs(jobs, workers=workers, on_done=_done, on_year=_year)
 
 
@@ -2000,7 +2060,7 @@ def _run_sweep(jobs, data, set_progress):
          {'display': 'block'}, {'display': 'none'}),
         (Output('run-status', 'children'), '⏳  Batch running…', ''),
     ],
-    progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
+    progress=[Output('solver-progress-bar', 'style'), Output('solver-progress-bar', 'children')],
     prevent_initial_call=True,
 )
 def run_batch(set_progress, n_clicks, gap, rep_bins, baseline, discount, foresight_v,
@@ -2085,7 +2145,7 @@ def run_batch(set_progress, n_clicks, gap, rep_bins, baseline, discount, foresig
          {'display': 'block'}, {'display': 'none'}),
         (Output('run-status', 'children'), '⏳  Reservation sweep running…', ''),
     ],
-    progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
+    progress=[Output('solver-progress-bar', 'style'), Output('solver-progress-bar', 'children')],
     prevent_initial_call=True,
 )
 def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, rep_bins, dunkel,
@@ -2178,7 +2238,7 @@ def clear_results(n, refresh):
          {'display': 'block'}, {'display': 'none'}),
         (Output('run-status', 'children'), '⏳  Regenerating data…', ''),
     ],
-    progress=[Output('solver-progress', 'value'), Output('solver-progress', 'label')],
+    progress=[Output('solver-progress-bar', 'style'), Output('solver-progress-bar', 'children')],
     prevent_initial_call=True,
 )
 def regen_demand(set_progress, n):
@@ -2186,9 +2246,9 @@ def regen_demand(set_progress, n):
         return no_update
     def _cb(label, frac):
         pct = int(frac * 100)
-        set_progress((pct, f'{label} — {pct}%'))
+        set_progress(_progress(pct, f'{label} — {pct}%'))
     regenerate_all(progress=_cb)
-    set_progress((100, 'Complete — 100%'))
+    set_progress(_progress(100, 'Complete — 100%'))
     return '✓  All data regenerated from source'
 
 # ---------------------------------------------------------------------------
@@ -2750,7 +2810,7 @@ def _update_map_inner(key, end_year, map_year, options, dark=False):
     Output('shortage-content',    'children'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
-    Input('main-tabs',       'active_tab'),
+    Input('main-tabs',       'value'),
     Input('theme-store',     'data'),
 )
 def update_prod(key, end_year, active_tab, theme):
@@ -2837,7 +2897,7 @@ def update_prod(key, end_year, active_tab, theme):
     Output('storage-activity-content', 'children'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
-    Input('main-tabs',       'active_tab'),
+    Input('main-tabs',       'value'),
     Input('theme-store',     'data'),
 )
 def update_storage(key, end_year, active_tab, theme):
@@ -2895,7 +2955,7 @@ def update_storage(key, end_year, active_tab, theme):
     Output('price-a-high-block', 'style'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
-    Input('main-tabs',       'active_tab'),
+    Input('main-tabs',       'value'),
     Input('theme-store',     'data'),
 )
 def update_prices(key, end_year, active_tab, theme):
@@ -3066,7 +3126,7 @@ def update_prices(key, end_year, active_tab, theme):
     Output('segment-price-content', 'children'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
-    Input('main-tabs',       'active_tab'),
+    Input('main-tabs',       'value'),
     Input('theme-store',     'data'),
 )
 def update_segment_prices(key, end_year, active_tab, theme):
@@ -3429,7 +3489,7 @@ def supply_curve_table(key, end_year, residual):
     Output('supply-curve-note',  'children'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
-    Input('main-tabs',       'active_tab'),
+    Input('main-tabs',       'value'),
     Input('supply-mode',     'value'),
     Input('theme-store',     'data'),
 )
@@ -3490,7 +3550,7 @@ def download_supply_curves(n, key, end_year, mode):
     Output('expansions-content', 'children'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
-    Input('main-tabs',       'active_tab'),
+    Input('main-tabs',       'value'),
     Input('theme-store',     'data'),
 )
 def update_expansions(key, end_year, active_tab, theme):
@@ -3544,12 +3604,7 @@ def update_expansions(key, end_year, active_tab, theme):
                          .rename(columns={'Label': 'Project'}))
     table_df = table_df[['Year', 'Project'] + [c for c in table_df.columns
                                                if c not in ('Year', 'Project')]]
-    table = dbc.Table.from_dataframe(
-        table_df,
-        striped=True, bordered=False, hover=True, size='sm',
-        className='table-light',
-        style={'fontSize': '0.85rem'},
-    )
+    table = dataframe_to_table(table_df, style={'fontSize': '0.85rem'})
     return html.Div([dcc.Graph(figure=fig, config={'displayModeBar': False}), table])
 
 # ---------------------------------------------------------------------------
@@ -3559,7 +3614,7 @@ def update_expansions(key, end_year, active_tab, theme):
     Output('ind-graph', 'figure'),
     Input('result-selector', 'value'),
     Input('horizon-slider',  'value'),
-    Input('main-tabs',       'active_tab'),
+    Input('main-tabs',       'value'),
     Input('theme-store',     'data'),
 )
 def update_industrial(key, end_year, active_tab, theme):
