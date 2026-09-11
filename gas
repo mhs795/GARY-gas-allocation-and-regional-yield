@@ -73,6 +73,10 @@ fi
 
 # Start the server in the background, wrapped in a suspend inhibitor by default so
 # closing the lid doesn't pause a long-running solve/batch.
+if [ ! -f venv/bin/activate ]; then
+    echo "No venv found; setting up dependencies..."
+    python3 install_requirements.py || exit 1
+fi
 source venv/bin/activate
 export PYTHONPATH=$PYTHONPATH:$(pwd)/src
 INHIBIT=""

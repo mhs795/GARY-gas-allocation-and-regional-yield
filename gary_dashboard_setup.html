@@ -1,0 +1,442 @@
+<title>GARY Dashboard Setup</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg: #f3f6f6;
+    --surface: #ffffff;
+    --surface-2: #eaf0f0;
+    --text: #16262a;
+    --text-muted: #57696d;
+    --border: #d7e0e0;
+    --accent: #c9691a;
+    --accent-ink: #7a3f0f;
+    --accent-soft: #fbe9d8;
+    --step-num-bg: #16262a;
+    --step-num-text: #f3f6f6;
+    --code-bg: #eef2f2;
+    --code-text: #1c3236;
+    --ok: #2f7d5c;
+    --ok-soft: #e2f2e9;
+    --shadow: 0 1px 2px rgba(22,38,42,0.06), 0 8px 24px rgba(22,38,42,0.05);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1b1d;
+      --surface: #16262a;
+      --surface-2: #1c2f33;
+      --text: #e9f1f1;
+      --text-muted: #9db1b4;
+      --border: #2a4045;
+      --accent: #e2984a;
+      --accent-ink: #ffd9ab;
+      --accent-soft: #3a2a17;
+      --step-num-bg: #e2984a;
+      --step-num-text: #1a1206;
+      --code-bg: #10201f;
+      --code-text: #d6efe9;
+      --ok: #7fd6ab;
+      --ok-soft: #17332a;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0f1b1d;
+    --surface: #16262a;
+    --surface-2: #1c2f33;
+    --text: #e9f1f1;
+    --text-muted: #9db1b4;
+    --border: #2a4045;
+    --accent: #e2984a;
+    --accent-ink: #ffd9ab;
+    --accent-soft: #3a2a17;
+    --step-num-bg: #e2984a;
+    --step-num-text: #1a1206;
+    --code-bg: #10201f;
+    --code-text: #d6efe9;
+    --ok: #7fd6ab;
+    --ok-soft: #17332a;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Public Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 15.5px;
+    line-height: 1.6;
+    padding-inline: 20px;
+    padding-block: 48px;
+  }
+
+  main {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 12.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+
+  .eyebrow .pipe {
+    width: 28px;
+    height: 2px;
+    background: var(--accent);
+    flex: none;
+  }
+
+  h1 {
+    font-family: "Archivo", ui-sans-serif, sans-serif;
+    font-weight: 800;
+    font-size: clamp(1.9rem, 4vw, 2.5rem);
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 8px;
+    color: var(--text);
+  }
+
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 1.02rem;
+    max-width: 58ch;
+    margin: 0 0 36px;
+  }
+
+  .solver-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--ok-soft);
+    color: var(--ok);
+    border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+    border-radius: 999px;
+    padding: 5px 14px 5px 10px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 12.5px;
+    font-weight: 500;
+    margin-bottom: 40px;
+  }
+
+  .solver-badge .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ok);
+    flex: none;
+  }
+
+  section { margin-bottom: 44px; }
+
+  h2 {
+    font-family: "Archivo", ui-sans-serif, sans-serif;
+    font-weight: 700;
+    font-size: 1.15rem;
+    color: var(--text);
+    margin: 0 0 4px;
+  }
+
+  .section-hint {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 0 0 20px;
+  }
+
+  /* Package table */
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 440px;
+  }
+
+  thead th {
+    text-align: left;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background: var(--surface-2);
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  tbody td {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+
+  td.pkg {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--accent-ink);
+    white-space: nowrap;
+  }
+
+  td.purpose {
+    color: var(--text);
+    font-size: 14px;
+  }
+
+  .table-note {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 12px;
+    padding-left: 2px;
+  }
+
+  .table-note code { font-size: 12.5px; }
+
+  /* Steps */
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .step {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 16px;
+    padding: 18px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .step:first-child { border-top: none; }
+
+  .step-num {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--step-num-bg);
+    color: var(--step-num-text);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-weight: 600;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+
+  .step-title {
+    font-family: "Archivo", ui-sans-serif, sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    margin: 2px 0 6px;
+    color: var(--text);
+  }
+
+  .step-body {
+    color: var(--text);
+    font-size: 14.5px;
+  }
+
+  .step-body p { margin: 0 0 8px; }
+  .step-body p:last-child { margin-bottom: 0; }
+
+  kbd {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 12.5px;
+    background: var(--code-bg);
+    color: var(--code-text);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1.5px 6px;
+  }
+
+  code {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 13px;
+    background: var(--code-bg);
+    color: var(--code-text);
+    border-radius: 4px;
+    padding: 1.5px 5px;
+  }
+
+  pre {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 12.8px;
+    line-height: 1.55;
+    background: var(--code-bg);
+    color: var(--code-text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 10px 0 0;
+  }
+
+  .divider-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 44px 0 18px;
+  }
+
+  .divider-label span {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    white-space: nowrap;
+  }
+
+  .divider-label .line {
+    height: 1px;
+    background: var(--border);
+    flex: 1;
+  }
+
+  footer {
+    margin-top: 56px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  footer .path {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 12px;
+  }
+
+  @media (max-width: 480px) {
+    .step { grid-template-columns: 26px 1fr; gap: 12px; }
+    .step-num { width: 24px; height: 24px; font-size: 11.5px; }
+  }
+</style>
+
+<main>
+  <div class="eyebrow"><span class="pipe"></span>GARY — Gas Allocation and Regional Yield Model</div>
+  <h1>Dashboard Setup, VS Code Only</h1>
+  <p class="subtitle">Everything needed to install, configure and launch the scenario dashboard from inside VS Code — no terminal typing required.</p>
+
+  <div class="solver-badge"><span class="dot"></span>GLPK confirmed installed at /usr/bin/glpsol — no solver install needed</div>
+
+  <section>
+    <h2>Required packages</h2>
+    <p class="section-hint">Everything below comes from <code>requirements.txt</code> in the project root.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Package</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="pkg">pandas, numpy</td><td class="purpose">data handling</td></tr>
+          <tr><td class="pkg">pyomo</td><td class="purpose">optimisation modelling</td></tr>
+          <tr><td class="pkg">highspy</td><td class="purpose">default solver backend</td></tr>
+          <tr><td class="pkg">plotly</td><td class="purpose">charts</td></tr>
+          <tr><td class="pkg">dash, dash-bootstrap-components</td><td class="purpose">the dashboard app itself</td></tr>
+          <tr><td class="pkg">diskcache</td><td class="purpose">background callback support in Dash</td></tr>
+          <tr><td class="pkg">multiprocess</td><td class="purpose">parallel scenario sweeps</td></tr>
+          <tr><td class="pkg">zstandard</td><td class="purpose">compresses the results cache (falls back to gzip if missing)</td></tr>
+          <tr><td class="pkg">psutil</td><td class="purpose">system / process info</td></tr>
+          <tr><td class="pkg">python-docx</td><td class="purpose">Word doc output</td></tr>
+          <tr><td class="pkg">openpyxl</td><td class="purpose">reads .xlsx parameter workbooks</td></tr>
+          <tr><td class="pkg">xlsxwriter</td><td class="purpose">writes .xlsx chart output (openpyxl's chart XML is broken)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-note">GLPK (<code>glpk-utils</code>) isn't in this table because it's a system package, not a pip one — and it's already on this machine, so there's nothing further to install for it.</p>
+  </section>
+
+  <div class="divider-label"><span>One-time setup</span><div class="line"></div></div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div>
+        <div class="step-title">Open the project</div>
+        <div class="step-body"><p>File → Open Folder → <code>/home/martinstevenson/models/gas_market_model</code></p></div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div>
+        <div class="step-title">Select the Python interpreter</div>
+        <div class="step-body"><p><kbd>Ctrl+Shift+P</kbd> → <strong>Python: Select Interpreter</strong> → choose the one under <code>venv/bin/python</code></p></div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div>
+        <div class="step-title">Install the required packages</div>
+        <div class="step-body"><p>Open <code>requirements.txt</code>. The Python extension shows an <strong>"Install Requirements"</strong> prompt at the top — click it. If nothing appears, the packages are likely already installed — safe to skip.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider-label"><span>Running the dashboard with GLPK</span><div class="line"></div></div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">4</div>
+      <div>
+        <div class="step-title">Open the Run and Debug panel</div>
+        <div class="step-body"><p><kbd>Ctrl+Shift+D</kbd>, or click the ▶-with-bug icon in the left sidebar.</p></div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">5</div>
+      <div>
+        <div class="step-title">Pick the config and run</div>
+        <div class="step-body">
+          <p>A dropdown at the top of the panel shows <strong>"Run GARY dashboard (GLPK)"</strong> — already set up in <code>.vscode/launch.json</code>. Select it, then click the green ▶ play button.</p>
+          <pre>{
+  "name": "Run GARY dashboard (GLPK)",
+  "program": "src/dashboard.py",
+  "env": { "GARY_SOLVER": "glpk" }
+}</pre>
+        </div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">6</div>
+      <div>
+        <div class="step-title">Open the dashboard</div>
+        <div class="step-body"><p>The Debug Console prints a local URL, typically <code>http://127.0.0.1:8050</code>. <kbd>Ctrl</kbd>+click it to open in your browser.</p></div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">7</div>
+      <div>
+        <div class="step-title">Stop it when done</div>
+        <div class="step-body"><p>Click the red ■ stop button in the Run and Debug toolbar.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span>GARY dashboard setup guide</span>
+    <span class="path">gas_market_model/gary_dashboard_setup.html</span>
+  </footer>
+</main>

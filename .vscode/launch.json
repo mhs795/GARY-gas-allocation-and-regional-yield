@@ -1,0 +1,12 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run GARY dashboard (GLPK)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/dashboard.py",
+            "env": { "GARY_SOLVER": "glpk" }
+        }
+    ]
+}

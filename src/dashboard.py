@@ -135,14 +135,55 @@ def _progress(pct, label):
 
 
 def dataframe_to_table(df, style=None):
-    """Plain html.Table equivalent of dbc.Table.from_dataframe (striped/hover via CSS)."""
+    """Plain html.Table equivalent of dbc.Table.from_dataframe (striped/hover via CSS).
+
+    Numeric-looking columns (real number dtypes, or strings that are all digits/
+    commas/decimals or the '—' missing-value placeholder) are centre-aligned;
+    everything else stays left-aligned.
+    """
+    def _is_numeric_col(col):
+        vals = df[col]
+        if pd.api.types.is_numeric_dtype(vals):
+            return True
+        return all(str(v).strip() == '—' or re.fullmatch(r'-?[\d,]+\.?\d*', str(v).strip())
+                   for v in vals)
+    centered = {col for col in df.columns if _is_numeric_col(col)}
+    center_style = {'textAlign': 'center'}
     return html.Table([
-        html.Thead(html.Tr([html.Th(col) for col in df.columns])),
+        html.Thead(html.Tr([html.Th(col, style=center_style if col in centered else None)
+                            for col in df.columns])),
         html.Tbody([
-            html.Tr([html.Td(v) for v in row])
+            html.Tr([html.Td(v, style=center_style if col in centered else None)
+                    for col, v in zip(df.columns, row)])
             for row in df.itertuples(index=False)
         ]),
     ], style=style)
+
+
+def sort_display_df(df, col, ascending=True):
+    """Sort a display dataframe by one column, robust to '$M'-formatted strings.
+
+    Table cells are already rendered strings ('1,451.9', '—') by the time a
+    table reaches this, so a plain sort_values would order them
+    lexicographically ('100' before '99'). Parses each value back to a float
+    where possible, sends the '—' placeholder (no CapEx / no cost basis) to
+    the end regardless of direction -- the usual spreadsheet convention, via
+    na_position='last' -- and falls back to case-insensitive text sorting for
+    genuinely non-numeric columns (Project, Type).
+    """
+    if col not in df.columns:
+        return df
+    def parse(v):
+        s = str(v).strip()
+        if s in ('—', '', 'nan', 'None'):
+            return np.nan
+        try:
+            return float(s.replace(',', ''))
+        except ValueError:
+            return s.lower()
+    keys = df[col].map(parse)
+    order = keys.sort_values(ascending=ascending, na_position='last', kind='mergesort').index
+    return df.loc[order].reset_index(drop=True)
 
 # ---------------------------------------------------------------------------
 # Persistence helpers
@@ -177,6 +218,7 @@ def load_static_data():
         'nodes':     pd.read_csv(os.path.join(d, "nodes.csv")),
         'arcs':      pd.read_csv(os.path.join(d, "arcs.csv")),
         'expansion': pd.read_csv(os.path.join(d, "expansion_options.csv")),
+        'supply':    pd.read_csv(os.path.join(d, "supply.csv")),
         'gpg_facs':  _safe_csv(os.path.join(d, "gpg_facilities.csv")),
         'ind_bbg':   _safe_csv(os.path.join(d, "industrial_facilities_bbg.csv")),
     }
@@ -672,12 +714,16 @@ body, html {
 .md-switch-input::before {
   content: '';
   position: absolute;
-  top: 2px;
+  /* Vertically centred via transform, not a fixed top offset, so the knob
+     stays centred in the pill regardless of any box-sizing/border quirks a
+     browser's default checkbox styling adds on top of appearance:none. */
+  top: 50%;
   left: 2px;
   width: 14px;
   height: 14px;
   border-radius: 50%;
   background: #fff;
+  transform: translateY(-50%);
   transition: left 0.15s;
 }
 .md-switch-input:checked        { background-color: var(--md-primary) !important; }
@@ -1076,6 +1122,106 @@ def _base_of(k):
     if 'Base_' not in k:
         return ''
     return k.split('Base_', 1)[1].split('_Winter', 1)[0]
+
+
+def _dr_of(k):
+    """Discount rate out of a scenario key, defaulting to the slider's 0.07.
+
+    The key only carries a ``_DR<pct>`` suffix when a run's discount rate
+    deviated from the 0.07 default (see the key-building logic around line 1709).
+    """
+    if '_DR' not in k:
+        return 0.07
+    pct = k.rsplit('_DR', 1)[1].split('_', 1)[0]
+    try:
+        return float(pct) / 100.0
+    except ValueError:
+        return 0.07
+
+
+def _annualised_capex(capex, life, r):
+    """CapEx spread over AssetLife at discount rate ``r``, or None if not costable.
+
+    Capital recovery factor ``CRF = r / (1 - (1+r)^-life)``, the same formula
+    capacity_model._asset_residual uses for the model's own NPV treatment of
+    capital -- so this reads as "what the model effectively charges per year"
+    rather than a separately invented convention. Falls back to straight-line
+    (capex / life) when r is 0. Returns None when there's no CapEx or no
+    AssetLife to spread it over (the field-development rows, whose capital is
+    folded into the gas commodity price rather than charged as a lump CapEx --
+    see build_field_developments.derived_capex).
+    """
+    try:
+        capex = float(capex)
+        life = float(life)
+    except (TypeError, ValueError):
+        return None
+    if not capex or life != life or life <= 0:
+        return None
+    if r <= 0:
+        return capex / life
+    return capex * r / (1.0 - (1.0 + r) ** -life)
+
+
+def _2c_premium_by_node():
+    """``{node: $/GJ}`` the 2C tranche's cost premium over that basin's 2P gas.
+
+    A field-development candidate (Golden Beach, Judith, the Otway fields, the
+    Surat/Bowen developments, Cooper_2C, Amadeus_2C, Beetaloo's rows) carries
+    zero CapEx by design -- its capital sits inside the 2C tranche's per-GJ
+    Cost in supply.csv rather than as a lump sum (see
+    build_field_developments.derived_capex). The 2C row's Cost IS AEMO's full
+    blended cost (opex + capital + royalty + tax + return), so there is no
+    published opex-only baseline to net it against directly. The best proxy
+    available is the SAME basin's 2P (developed) Cost: 2P gas is already
+    flowing without needing this candidate built, so 2C-minus-2P isolates
+    roughly what unlocking the contingent tranche costs on top of business as
+    usual -- e.g. Surat 2P $3.65/GJ vs 2C $6.65/GJ, a $3.00/GJ premium.
+
+    A basin with NO 2P row at all (Beetaloo) is not a missing-data case: it
+    means there is no developed baseline because the basin isn't producing
+    anything yet, so the field is entirely new rather than incremental. The
+    2P cost there is treated as $0, and the whole 2C cost -- $9.15/GJ for
+    Beetaloo -- is the premium, not a netted-down figure.
+    """
+    sup = static_data['supply']
+    out = {}
+    for node, g in sup.groupby('Node'):
+        c2 = g.loc[g['Tranche'] == '2C', 'Cost']
+        if c2.empty:
+            continue
+        p2 = g.loc[g['Tranche'] == '2P', 'Cost']
+        p2_cost = float(p2.iloc[0]) if not p2.empty else 0.0
+        out[node] = float(c2.iloc[0]) - p2_cost
+    return out
+
+
+def _annualised_cost(info, discount_rate, premium_by_node):
+    """Annual $ a built project adds, whichever way its capital is carried.
+
+    A project with a real CapEx (a pipeline, an FSRU) spreads it over
+    AssetLife via _annualised_capex. A field development that carries zero
+    CapEx instead has its capital folded into its basin's 2C gas price -- see
+    _2c_premium_by_node -- so here the annualised figure is that basin's
+    2C-over-2P premium times this candidate's OWN nameplate capacity run flat
+    out for a year: the annual dollars the gas PRICE embeds for exactly the
+    gas this candidate is sized to deliver. Not a lump CapEx equivalent and
+    not discounted (there's no capital recovery schedule to discount, just an
+    ongoing per-GJ charge) -- a straight annual read of what is priced in.
+    Returns None only when a node has no 2C row to derive a premium from at
+    all, which should not happen for any candidate this function is called on.
+    """
+    capex = info.get('CapEx')
+    if capex:
+        return _annualised_capex(capex, info.get('AssetLife'), discount_rate)
+    premium = premium_by_node.get(info.get('Target'))
+    try:
+        capacity = float(info.get('NewCapacity'))
+    except (TypeError, ValueError):
+        capacity = 0.0
+    if premium is None or capacity <= 0:
+        return None
+    return premium * capacity * 1000.0 * 365.0   # $/GJ * TJ/d->GJ/d * days/yr
 
 
 def short_key(k):
@@ -1586,6 +1732,26 @@ main = html.Div(className='md-main', children=[
 
             # Expansions
             html.Div(id='tab-exp-content', style={'display': 'none'}, children=[
+                html.Div([
+                    html.Span('Sort table by', style={'marginRight': '8px', 'fontSize': '0.85rem',
+                                                        'color': 'var(--md-text-med)'}),
+                    dcc.Dropdown(
+                        id='exp-sort-col',
+                        options=[{'label': c, 'value': c} for c in
+                                 ['Year', 'Project', 'Type', 'New Capacity (TJ/d)',
+                                  'CapEx ($M)', 'Annualised Cost ($M/yr)']],
+                        value='Year', clearable=False, searchable=False,
+                        style={'width': '230px', 'display': 'inline-block', 'verticalAlign': 'middle'},
+                    ),
+                    dcc.RadioItems(
+                        id='exp-sort-dir',
+                        options=[{'label': 'Ascending', 'value': 'asc'},
+                                 {'label': 'Descending', 'value': 'desc'}],
+                        value='asc', inline=True,
+                        style={'marginLeft': '12px', 'fontSize': '0.85rem', 'display': 'inline-block'},
+                        labelStyle={'marginRight': '10px'},
+                    ),
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginTop': '8px'}),
                 html.Div(id='expansions-content', className='md-table', style={'marginTop': '8px'}),
             ]),
 
@@ -1825,9 +1991,10 @@ def exp_label(name):
     return str(name).replace('_', ' ')
 
 
-def build_summary(filtered_results):
+def build_summary(filtered_results, discount_rate=0.07):
     rows, prices_trend, builds_timeline, total_cost = [], [], [], 0
     exp_lookup = static_data['expansion'].set_index('Name').to_dict('index')
+    premium_by_node = _2c_premium_by_node()
     for res in filtered_results:
         y = res['Year']
         _prices = res['prices']
@@ -1842,6 +2009,7 @@ def build_summary(filtered_results):
         for b in res['builds']:
             if not any(bt['Project'] == b for bt in builds_timeline):
                 info = exp_lookup.get(b, {})
+                ann = _annualised_cost(info, discount_rate, premium_by_node)
                 builds_timeline.append({
                     'Year': y,
                     # Project stays the RAW name: it is the join key back to
@@ -1852,12 +2020,13 @@ def build_summary(filtered_results):
                     'Type': info.get('Type', '—'),
                     'New Capacity (TJ/d)': info.get('NewCapacity', '—'),
                     'CapEx ($M)': f"{info['CapEx']/1e6:,.0f}" if info.get('CapEx') else '—',
+                    'Annualised Cost ($M/yr)': f"{ann/1e6:,.1f}" if ann is not None else '—',
                 })
     return (
         pd.DataFrame(rows) if rows else pd.DataFrame(columns=['Year','Production_PJ','Shortage_TJ','Avg_Price']),
         pd.concat(prices_trend, ignore_index=True)[['Year', 'Node', 'Price']]
         if prices_trend else pd.DataFrame(columns=['Year', 'Node', 'Price']),
-        pd.DataFrame(builds_timeline) if builds_timeline else pd.DataFrame(columns=['Year','Project','Label','Type','New Capacity (TJ/d)','CapEx ($M)']),
+        pd.DataFrame(builds_timeline) if builds_timeline else pd.DataFrame(columns=['Year','Project','Label','Type','New Capacity (TJ/d)','CapEx ($M)','Annualised Cost ($M/yr)']),
         total_cost,
     )
 
@@ -3552,8 +3721,10 @@ def download_supply_curves(n, key, end_year, mode):
     Input('horizon-slider',  'value'),
     Input('main-tabs',       'value'),
     Input('theme-store',     'data'),
+    Input('exp-sort-col',    'value'),
+    Input('exp-sort-dir',    'value'),
 )
-def update_expansions(key, end_year, active_tab, theme):
+def update_expansions(key, end_year, active_tab, theme, sort_col, sort_dir):
     if active_tab != 'tab-exp':
         return no_update
     tmpl = 'gary_dark' if theme == 'dark' else CHART_TEMPLATE
@@ -3562,7 +3733,7 @@ def update_expansions(key, end_year, active_tab, theme):
     filtered = get_filtered(key, end_year)
     if not filtered:
         return md_alert('No results in this horizon.', 'info')
-    _, _, builds_df, _ = build_summary(filtered)
+    _, _, builds_df, _ = build_summary(filtered, discount_rate=_dr_of(key))
     if builds_df.empty:
         return md_alert('No new infrastructure built in this scenario.', 'success')
 
@@ -3604,6 +3775,10 @@ def update_expansions(key, end_year, active_tab, theme):
                          .rename(columns={'Label': 'Project'}))
     table_df = table_df[['Year', 'Project'] + [c for c in table_df.columns
                                                if c not in ('Year', 'Project')]]
+    # The Gantt chart above stays chronological (its x-axis already encodes
+    # year, and the y-axis row order reads best that way) -- only the table
+    # itself follows the user's chosen sort.
+    table_df = sort_display_df(table_df, sort_col or 'Year', ascending=(sort_dir != 'desc'))
     table = dataframe_to_table(table_df, style={'fontSize': '0.85rem'})
     return html.Div([dcc.Graph(figure=fig, config={'displayModeBar': False}), table])
 
