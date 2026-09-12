@@ -205,6 +205,13 @@ it that fixes issue 1.
 >
 > The 2P total still moved only $0.38 — Option E's floor is real. The **2C** row moved all
 > the way to zero, and that is what changed the answer.
+>
+> **It buys nothing on issue 1.** Re-running the three-horizon test both ways on 12 Sep
+> 2026, 2051 → 2055: the reported export total moves **+1.8%** on the old credit and
+> **−2.0%** on the new one. Same size, opposite sign. The horizon's grip is the budget's
+> shape, exactly as item 16 says — removing a terminal-value artefact does not loosen it.
+> The table at the top of issue 1 was measured on an earlier code vintage and should not be
+> read against post-12-Sep runs.
 
 ---
 

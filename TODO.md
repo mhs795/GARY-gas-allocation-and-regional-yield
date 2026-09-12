@@ -882,6 +882,20 @@ dual is exactly zero (91% of the tranche is unproduced at the horizon), so there
 to absorb it. What the $1.32 was doing was holding the backfill tranche *above* the
 depleting tranche it exists to replace.
 
+**It does NOT improve the horizon sensitivity, measured both ways 12 Sep 2026.** Running
+the acceptance test with the stop year moved 2051 -> 2055 and still reporting to 2050:
+
+| | old terminal value | route-capacity credit |
+|---|---|---|
+| total exports 2025-50 | +1.8% | -2.0% |
+| last year with LNG exports | 2044 -> 2045 | 2046 -> 2045 |
+
+Same magnitude, opposite sign. Expected on reflection: the horizon's grip is
+`reserve_limit` being ONE budget spread across every year solved (item 16), not the level
+of the terminal credit — which is the same thing item 16's Option E said. **Do not compare
+either column with the 8.0% in docs/depletion.md issue 1**; that was measured on an earlier
+code vintage and is not like-for-like.
+
 ## 22. Beetaloo's terminal credit is struck on a price it has no pipeline to — NEW 12 Sep 2026
 
 `_least_cost_paths` deliberately walks only arcs that have capacity **today**, because a
