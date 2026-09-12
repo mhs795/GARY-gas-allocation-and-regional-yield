@@ -38,15 +38,26 @@ end-of-model artefacts so nobody reads them.
 This is the big one. Run the same scenario three times, changing only the year the model
 stops, and look at what each says about the years everyone reads:
 
-| | stop at 2051 | stop at 2055 | stop at 2060 |
-|---|---|---|---|
-| Last year with LNG exports | **2044** | **2042** | **2040** |
-| Surat scarcity rent in 2050 | $4.17 | $4.93 | $6.18 |
-| Total exports to 2050 | 23,101 PJ | 21,245 PJ | 19,358 PJ |
+Measured on the current model, 12 September 2026, moving the stop year 2051 → 2055 and
+reporting the same 2025–50 window either way:
 
-Same gas, same demand, same everything — different answers, because of an arbitrary
-choice about where to stop. And it does not settle down as the horizon lengthens; the gap
-keeps growing.
+| | old terminal value | route-capacity credit |
+|---|---|---|
+| total exports 2025–50 | **+1.8%** | **−2.0%** |
+| last year with LNG exports | 2044 → 2045 | 2046 → 2045 |
+| Surat rent in 2050 | 4.17 → 4.12 | 3.79 → 3.83 |
+
+Same gas, same demand, same everything — a different answer, because of an arbitrary
+choice about where to stop. It is **~2% either way and the fixes did not change it**,
+which is what you would expect: the horizon's grip is the budget's shape, not the terminal
+value's level.
+
+> **The earlier three-horizon table is superseded and must not be read against these
+> runs.** Measured 3 September 2026 on a much earlier code vintage, it had the last export
+> year moving 2044 → 2042 → 2040 across stops at 2051/2055/2060, and totals of 23,101 →
+> 21,245 → 19,358 PJ — an 8% swing, against 2% now. Every number in it predates the
+> export-eligibility fix, the terminal-value fix and the Bulletin Board input corrections.
+> Kept here only so nobody re-derives the comparison from it by accident.
 
 **Why.** The reserve constraint is a *budget over the years solved*: total production
 across the horizon ≤ reserves. Solve more years, the same gas has to cover more demand, so
@@ -89,13 +100,14 @@ decline rates are close to decorative** for the southern fields.
 | period | verdict |
 |---|---|
 | **2025–2039** | **Solid.** Well clear of the horizon, and the export path is set by real economics — the netback against the cost of getting gas to a train. |
-| **2040s** | **Conditional.** Directionally informative, but the exact year exports stop is partly an artefact of stopping the model at 2051. Quote it with the caveat. |
+| **2040s** | **Conditional, but for a different reason than it used to be.** The horizon now moves the answer by ~2%, not 8%. What the 2040s actually turn on is the cost of new Queensland gas against the export netback, and the netback rests on one number nobody publishes — see [`the-2040s.md`](the-2040s.md). Quote the export tail as a range or not at all. |
 | **Any single year's lump sums** | Volatile. Use the whole projection. |
 | **Anything attributed to a decline rate** | Don't. See issue 3. |
 
-The model is internally consistent and shorts zero gas in all 17 standard scenarios. The
-problem is not that it is broken — it is that the late years answer a question that
-includes "when did you stop asking?"
+The model is internally consistent and shorts zero gas in every scenario run. The problem
+is not that it is broken — it is that the late years answer a question that includes "when
+did you stop asking?", and, more importantly since 12 September 2026, one that includes
+"what did you assume liquefaction costs?"
 
 ---
 
