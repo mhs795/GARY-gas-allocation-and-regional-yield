@@ -921,6 +921,45 @@ any scenario that opens the NT corridor.
 well as base capacity and accept the build-schedule dependence. The first is a one-line
 change and a defensible reading; the second is more right and more work.
 
+## 22b. The export tail is decided by `export_netback_deduction`, not by the model — MEASURED 12 Sep 2026
+
+After items 20 and 21 the central case still stops exporting in 2046, and the reason is not
+a defect: with **every rent set to zero**, Surat 2C at AEMO's published $6.65/GJ full cost
+plus the cheapest feed-pipe tariff ($0.754) is **$7.40 against ACIL Allen's $7.12 Step
+Change netback in 2050**. 2P pays at every train in every year but is finite, so the
+marginal Queensland molecule in the 2040s IS 2C whatever the rent formulation does.
+Crossings at zero rent: QCLNG 2035, APLNG 2044, GLNG 2045.
+
+Both numbers are AEMO-commissioned and neither is GARY's. **AEMO never tests them against
+each other** — the GSOO supply forecast is producer-submitted project data, not an economic
+optimisation. Its own Figure 45 shows a zero Queensland supply gap every year to 2045,
+while Figure 28 shows **42% of 2045 northern production (425.6 of 1,017.8 PJ) classified
+"Uncertain"**, up from 0.3% in 2026. AEMO is counting gas that exists; GARY is asking
+whether it pays to drill it.
+
+**And the whole residual sits inside the one number nobody publishes.**
+`export_netback_deduction` is the midpoint (A$2.872/GJ) of the public US$1.5-2.5/mmbtu
+range, which at ACIL Allen's own FX 0.66 and C 1.055 is **A$2.154-3.590 — plus or minus
+72c**. Re-solved the whole horizon at the LOW end, nothing else changed:
+
+| year | GSOO path | deduction at midpoint | deduction at low end |
+|---|---|---|---|
+| 2043 | 1,000 | 948 | 1,343 |
+| 2045 | 1,000 | 886 | 935 |
+| 2046 | 1,000 | 406 | 901 |
+| 2047 | 1,000 | **0** | **901** |
+| 2050 | 1,000 | **0** | **880** |
+| total 2025-50 | 30,427 PJ | 24,656 PJ | **31,840 PJ** |
+
+Shortage zero in every year of both runs. The low-deduction run runs the trains to 2050 and
+comes out ABOVE the GSOO path, because the spot tail fills spare liquefaction capacity in
+the 2040s rather than merely meeting planned volume.
+
+**So the export tail is not a model result. It is an assumption about avoidable
+liquefaction cost wearing a model's clothes.** Quote it as a range or not at all. This is
+the parameter sheet's own instruction being followed: "a CHOICE, NOT A SOURCE - the first
+number to test if a netback result matters."
+
 ## 23. The 2P rent crosses its own backstop ceiling in the last years — NEW 12 Sep 2026
 
 **A cheap diagnostic for item 16, and it fails.** In a two-tranche basin with an
