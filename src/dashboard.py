@@ -2201,6 +2201,26 @@ def _run_sweep(jobs, data, set_progress):
     run_jobs(jobs, workers=workers, on_done=_done, on_year=_year)
 
 
+def _write_price_summary():
+    """Write output/domestic_price_summary.xlsx off the cache; return a status note.
+
+    Same contract as the tail of `run_standard_set.main()`: the workbook is built
+    from the CACHE, not from what this run happened to solve, so a set that skipped
+    sixteen cached scenarios still exports all seventeen. Never fatal -- the solves
+    are the expensive part and they are already on disk by the time this runs, so a
+    failed export costs a note in the status line, not the run.
+    """
+    import export_price_summary
+    try:
+        # SystemExit, not just Exception: write_summary raises SystemExit on an empty
+        # cache, and SystemExit is a BaseException -- it would escape a bare `except
+        # Exception` and kill the background worker instead of showing in the status.
+        out = export_price_summary.write_summary(log=False)
+        return f' \u2014 price summary written to {os.path.relpath(out, export_price_summary.ROOT)}'
+    except (Exception, SystemExit) as exc:
+        return f' \u2014 price summary export failed: {exc}'
+
+
 # ---------------------------------------------------------------------------
 # Run the standard set (background)
 # ---------------------------------------------------------------------------
@@ -2238,6 +2258,10 @@ def run_batch(set_progress, n_clicks, gap, rep_bins, refresh):
 
     Already-cached keys are skipped, so a re-run after adding a block costs one solve
     rather than seventeen. Clear Results to force a full rebuild.
+
+    Finishes by writing output/domestic_price_summary.xlsx off the cache, the same
+    way `python src/run_standard_set.py` does -- the button and the CLI now leave the
+    same two artefacts behind, the cache and the workbook.
     """
     import run_standard_set
 
@@ -2261,13 +2285,16 @@ def run_batch(set_progress, n_clicks, gap, rep_bins, refresh):
                          dict(kw, mip_gap=gap, rep_bins=rep_bins)))
 
     if not jobs:
-        return no_update, f'\u2713  Standard set \u2014 all {len(spec)} scenarios already cached'
+        return no_update, (f'\u2713  Standard set \u2014 all {len(spec)} scenarios already cached'
+                           + _write_price_summary())
 
     _run_sweep(jobs, data, set_progress)
     skipped = len(spec) - len(jobs)
     note = f' ({skipped} already cached)' if skipped else ''
+    set_progress(_progress(100, 'Writing the price summary workbook\u2026'))
+    export = _write_price_summary()
     return (refresh or 0) + 1, (f'\u2713  Standard set complete \u2014 {len(spec)} scenarios, '
-                                f'{len(blocks)} blocks{note}')
+                                f'{len(blocks)} blocks{note}{export}')
 
 # ---------------------------------------------------------------------------
 # Clear
