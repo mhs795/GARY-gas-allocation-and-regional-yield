@@ -197,6 +197,16 @@ PARAMETERS = [
      "the LNG netback per ACIL Allen (14 Jul 2023) 4.1. Self-terminating: once the "
      "netback falls below it the ceiling stops binding."),
 
+    ("LNG trains", "lng_availability", 0.897, "fraction",
+     "Share of a year each LNG train can actually liquefy at its Bulletin Board MDQ. "
+     "An MDQ is a DAY's maximum and GARY carries no maintenance or turnaround model, so "
+     "without this the fleet runs at 100% for 365 days whenever the netback is good -- "
+     "1,604 PJ/yr, which no year on record approaches. DERIVED FROM PUBLIC DATA: AEMO "
+     "2026 GSOO Figure 19 actual LNG consumption against the same 4,395 TJ/day of GBB "
+     "nameplate gives 82.6% (2019), 83.4%, 87.7%, 84.6%, 85.5%, 89.7% (2024), 88.7% "
+     "(2025). This is the BEST year on record, so it is a ceiling and not an "
+     "expectation; the seven-year mean is 86.0%. Puts the fleet limit at 3,942 TJ/day, "
+     "which is exactly what the trains consumed in 2024."),
     ("LNG trains", "lng_nameplate_tj_day", 3680.0, "TJ/day",
      "Total east coast liquefaction nameplate (100% utilisation). Mirrors "
      "This is the PHYSICAL ceiling on "

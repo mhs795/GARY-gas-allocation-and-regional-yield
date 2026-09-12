@@ -3,9 +3,9 @@ MSP,Moomba,Sydney,565,1.3992
 MAPS,Moomba,Adelaide,249,0.974
 SWQP,Moomba,Surat,365,1.5265
 SWQP_Rev,Surat,Moomba,512,1.5265
-APLNG_Pipe,Surat,APLNG,1630,0.7842
+APLNG_Pipe,Surat,APLNG,1760,0.7842
 GLNG_Pipe,Surat,GLNG,1430,0.754
-WGP_Pipe,Surat,QCLNG,1588,1.4171
+WGP_Pipe,Surat,QCLNG,1598,1.4171
 RBP,Surat,Brisbane,167,0.7005
 QGP,Surat,Gladstone,145,1.2532
 EGP,Gippsland,Sydney,350,1.5841

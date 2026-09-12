@@ -395,6 +395,88 @@ for _, r in supply.iterrows():
 ok('reserve-to-deliverability ratios checked')
 
 # ---------------------------------------------------------------------------
+section('12. The LNG export corridor — does it match the Bulletin Board?')
+
+# Everything about the 2040s export answer runs through three trains and three feed
+# pipes, so every one of those six numbers is checked against the GBB extract that
+# is already committed in this repo. See docs/the-2040s.md.
+_gbb = csv('GasBBNameplateRatingCurrent.csv')
+_arcs = csv('arcs.csv')
+import model as _M
+
+_lng = _gbb[(_gbb['facilitytype'] == 'LNGEXPORT') & (_gbb['capacitytype'] == 'MDQ')]
+_plate = {}
+for _name, _grp in _lng.groupby('facilityname'):
+    _node = _M.GBB_LNG_FACILITY.get(str(_name).strip().lower())
+    if _node:
+        _plate[_node] = float(_grp['capacityquantity'].min())
+check('every GBB export facility maps to a GARY node',
+      len(_plate) == 3, f'mapped {sorted(_plate)}')
+
+_have = _M.lng_train_nameplate()
+_avail = _M.P.get('lng_availability', 0.897)
+for _n, _v in sorted(_plate.items()):
+    check(f'{_n} limit is the GBB MDQ x availability',
+          abs(_have.get(_n, 0) - _v * _avail) < 0.5,
+          f'GARY {_have.get(_n, 0):.0f} vs GBB {_v:.0f} x {_avail:.3f} = {_v * _avail:.0f} TJ/d')
+
+# The availability factor is a ceiling taken from the best year on record, so the
+# fleet limit must sit at or above the most the trains have ever actually consumed.
+_best = 1439.0          # AEMO 2026 GSOO Figure 19, actual LNG consumption, 2024
+check('fleet limit is at least the best year the trains ever achieved',
+      sum(_have.values()) * 365 / 1000 >= _best - 1.0,
+      f'{sum(_have.values()) * 365 / 1000:,.0f} vs {_best:,.0f} PJ (2024 actual)')
+
+# The check that would have caught the old 3,680: a physical ceiling has to be able
+# to pass the volume the model is being asked to move through it.
+_dem = csv('demand_StepChange.csv')
+_peak = (_dem[_dem['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])]
+         .groupby('Year')['Demand'].sum().max() / 365.0)
+check('liquefaction nameplate can pass the GSOO LNG demand it is given',
+      sum(_have.values()) >= _peak,
+      f'nameplate {sum(_have.values()):.0f} vs peak GSOO demand {_peak:.0f} TJ/d')
+
+_pipes = {'APLNG_Pipe': 'APLNG Pipeline', 'GLNG_Pipe': 'GLNG Pipeline', 'WGP_Pipe': 'WGP'}
+_gp = _gbb[(_gbb['facilitytype'] == 'PIPE') & (_gbb['capacitytype'] == 'MDQ')]
+for _arc, _fac in _pipes.items():
+    _row = _gp[_gp['facilityname'].astype(str).str.strip() == _fac]
+    _a = _arcs[_arcs['Name'] == _arc]
+    if _row.empty or _a.empty:
+        warn(f'{_arc}: no GBB row to check against', _fac)
+        continue
+    check(f'{_arc} capacity is the GBB MDQ',
+          abs(float(_a['Capacity'].iloc[0]) - float(_row['capacityquantity'].max())) < 0.5,
+          f"GARY {float(_a['Capacity'].iloc[0]):.0f} vs GBB {float(_row['capacityquantity'].max()):.0f} TJ/d")
+
+# The three feed pipes run the same corridor (431-468 km by OSM route). Two carry the
+# network-wide posted-median rate and one carries AEMO's own posted tariff, and the two
+# bases differ by ~1.9x. Not a defect that can be fixed from the data, but it decides
+# which train drops out first, so it must not go unnoticed.
+_rates = {}
+try:
+    import json, math
+    _geo = json.load(open(os.path.join(DATA, 'pipeline_geometry.json')))
+    def _hav(p, q):
+        R = 6371.0
+        la1, lo1, la2, lo2 = map(math.radians, (p[1], p[0], q[1], q[0]))
+        return 2 * R * math.asin(math.sqrt(math.sin((la2 - la1) / 2) ** 2
+                                 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2))
+    for _arc in _pipes:
+        _c = _geo.get(_arc)
+        _km = sum(_hav(_c[i], _c[i + 1]) for i in range(len(_c) - 1))
+        _rates[_arc] = float(_arcs[_arcs['Name'] == _arc]['Cost'].iloc[0]) / _km * 1000
+except Exception as _e:                                    # geometry is optional
+    warn('could not measure feed-pipe route lengths', str(_e))
+if _rates:
+    _spread = max(_rates.values()) / min(_rates.values())
+    if _spread > 1.2:
+        warn('LNG feed pipes priced on different bases',
+             ' / '.join(f'{k} ${v:.2f}' for k, v in _rates.items()) + ' per 1000 km'
+             + f' — {_spread:.1f}x spread on a 431-468 km corridor')
+    else:
+        ok('LNG feed pipes priced on one consistent basis')
+
+# ---------------------------------------------------------------------------
 print(f"\n{'=' * 70}")
 print(f"{len(fails)} FAIL, {len(warns)} WARN")
 for f in fails:

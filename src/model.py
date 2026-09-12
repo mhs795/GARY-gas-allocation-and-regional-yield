@@ -138,14 +138,71 @@ IMPORT_NODES = P.get_list('import_nodes', ['Port_Kembla', 'Geelong', 'Adelaide']
 TERMINAL_EARLIEST = P.get_int('terminal_earliest', 2028)
 
 
+# GBB facility name -> GARY LNG node. The Bulletin Board is the source of record for
+# what each train can physically liquefy, and GARY already carries the file.
+GBB_LNG_FACILITY = {
+    'australia pacific lng': 'APLNG',
+    'glng (curtis island)': 'GLNG',
+    'qclng lng plant': 'QCLNG',
+}
+
+
 def lng_train_nameplate():
     """Each train's liquefaction nameplate, as ``{node: TJ/day}``.
 
     This is the PHYSICAL ceiling on exports under netback pricing: a train cannot
-    liquefy more than it can liquefy, however attractive the netback. It replaces
-    the earlier ``export_headroom`` multiple, which was an arbitrary number
-    standing in for a capacity GARY already knew.
+    liquefy more than it can liquefy, however attractive the netback.
+
+    READ PER FACILITY FROM THE GAS BULLETIN BOARD, not split out of one total. The
+    total it used to be split out of was 3,680 TJ/day, and the trouble with that
+    number is not that it is unsourced but that it is **too small to serve GARY's
+    own input**: the 2026 GSOO's LNG consumption is 3,757 TJ/day in 2025 and peaks
+    at 3,875 in 2029, and the trains actually consumed 3,942 TJ/day in 2024. A
+    physical ceiling below observed physical throughput is not a ceiling, it is an
+    error, and it was silently clipping ~27 PJ/yr off every early year and holding
+    every scenario at exactly 1,343 PJ/yr.
+
+    ``GasBBNameplateRatingCurrent.CSV`` carries an MDQ per export facility, and for
+    two of the three it carries TWO, which the Bulletin Board itself distinguishes:
+
+        GLNG   1,384  "Capacity that can be processed by LNG plant"
+               1,497  "Capacity that can be received by LNG plant"
+        QCLNG  1,420  "...can process to a liquefied state on a gas day"
+               1,573  "...can receive from a pipeline on a gas day"
+        APLNG  1,591  "2023 Name Plate Capacity"   (one row)
+
+    GARY's constraint is on LIQUEFACTION, so the PROCESS figure is the right one --
+    the smaller of the pair, which is also the conservative read. Total 4,395 TJ/day
+    against the old 3,680.
+
+    THEN SCALED BY AN AVAILABILITY FACTOR, because an MDQ is a DAY's maximum and
+    GARY has no maintenance model. Left at the raw MDQ the model runs the fleet at
+    100% for 365 days whenever the netback is good -- 1,604 PJ in 2030, which no
+    year on record comes close to. AEMO's own Figure 19 actuals against that same
+    1,604 PJ: 82.6% (2019), 83.4%, 87.7%, 84.6%, 85.5%, **89.7% (2024)**, 88.7%
+    (2025). ``lng_availability`` is the best year on record, so it is a ceiling
+    rather than an expectation, and it lands the fleet limit at 3,942 TJ/day --
+    exactly what the trains actually consumed in 2024.
+
+    Falls back to the workbook total x shares if the Bulletin Board file is missing,
+    so a clone without it still runs.
     """
+    avail = P.get('lng_availability', 0.897)
+    try:
+        _data = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+        gbb = pd.read_csv(os.path.join(_data, 'GasBBNameplateRatingCurrent.csv'))
+        rows = gbb[(gbb['facilitytype'] == 'LNGEXPORT')
+                   & (gbb['capacitytype'] == 'MDQ')]
+        out = {}
+        for name, grp in rows.groupby('facilityname'):
+            node = GBB_LNG_FACILITY.get(str(name).strip().lower())
+            if node:
+                # the smaller of process/receive is what the plant can liquefy
+                out[node] = float(grp['capacityquantity'].min())
+        if len(out) == len(GBB_LNG_FACILITY):
+            return {k: v * avail for k, v in out.items()}
+    except (OSError, KeyError, ValueError):
+        pass
     total = P.get('lng_nameplate_tj_day', 3680.0)
     shares = P.get_pairs('lng_train_shares',
                          [('APLNG', 0.357), ('GLNG', 0.31), ('QCLNG', 0.333)])
