@@ -128,15 +128,15 @@ def _realisable_backstop(arcs_df, import_price, netback_price, deliverability,
     """``{node: $/GJ}`` what a wellhead's gas can ACTUALLY be sold for at the horizon.
 
     THE FIX TO A PRICE THAT HAD NO QUANTITY BEHIND IT. ``_backstop_at_wellhead``
-    below answers "what is the dearest place this gas could go, less the tariff to
+    above answers "what is the dearest place this gas could go, less the tariff to
     get there?" -- and for Surat that is a southern regasification terminal, so it
     credits Queensland gas at landed-import parity less the haul: $12.29 - $2.50 =
-    $9.79/GJ. The tariff is right and the capacity is missing. The cheap way south
-    out of Queensland is the SWQP reversal and it is 512 TJ/day wide, against a
-    Surat that can deliver 6,085. Valuing tens of thousands of PJ against a route
-    that can carry 187 PJ/yr pays the basin a price only 8% of its gas can reach.
+    $9.79/GJ. The tariff is right and the capacity is missing. Measured on the 2051
+    network, the cheapest run south bottlenecks at 249 TJ/day into Adelaide and a
+    further 100 into Port Kembla -- 349 of Surat's 6,300 TJ/day of deliverability,
+    so the old rule paid the whole basin a price **5.5% of its gas could reach**.
 
-    What the other 92% can reach is a liquefaction train, at the export netback
+    What the other 94.5% can reach is a liquefaction train, at the export netback
     less the feed-pipe tariff -- $7.12 - $0.75 = $6.37/GJ in 2051, $3.42 below the
     import-parity figure because that gap is the liquefaction-shipping-regasification
     wedge. GARY already prices both sides: exports at the netback, imports at

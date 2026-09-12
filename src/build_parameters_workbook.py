@@ -135,7 +135,7 @@ PARAMETERS = [
      "one disposal price and keeps the old rule. Surat has two prices that differ by "
      "the liquefaction-shipping-regasification wedge ($9.79/GJ landed-import parity "
      "against $6.37/GJ export netback in 2051) and only 349 TJ/day of corridor to the "
-     "dearer one against 6,300 TJ/day of deliverability, so the old rule paid the whole "
+     "dearer one (349 of 6,300 TJ/day, 5.5%), so the old rule paid the whole "
      "basin a price 6% of its gas could reach. ON. Set FALSE to reproduce runs from "
      "before the change; it moves every Queensland scarcity rent, so every result moves."),
     ("Capacity model", "salvage_max_passes", 0, "passes",
