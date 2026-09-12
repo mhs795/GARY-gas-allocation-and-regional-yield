@@ -826,6 +826,18 @@ Code cap: exports there fell to 134 PJ in 2047-48 and 55 PJ in 2049-50 — the t
 inflows (SWQP 365 + SS2Surat 150 TJ/d) and nothing else, with Surat 2P exhausted and 15,315
 PJ of 2C sitting unused behind a constraint that could not see it.
 
+**Measured after the fix, LNG High** (with item 21, which does not bind at a $12 netback):
+
+| | before | after |
+|---|---|---|
+| 2044 | 1,322 | 1,343 |
+| 2045-46 | 901 | **1,343** |
+| 2047-48 | 134 | **1,343** |
+| 2049-50 | 55 | **1,343** |
+| total 2025-50 | 28,960 PJ | **34,928 PJ** |
+
+Full planned volume every year to 2050, shortage zero in every year. **+5,968 PJ, +21%.**
+
 Fixed in `model.py` and `capacity_model.py` by dropping the `not s_[1]`. The reserved
 tranche is still excluded, by the same mechanism it always actually was.
 
@@ -894,3 +906,45 @@ any scenario that opens the NT corridor.
 "gas you cannot move is not worth holding"), or walk `expansion_options.csv` capacity as
 well as base capacity and accept the build-schedule dependence. The first is a one-line
 change and a defensible reading; the second is more right and more work.
+
+## 23. The 2P rent crosses its own backstop ceiling in the last years — NEW 12 Sep 2026
+
+**A cheap diagnostic for item 16, and it fails.** In a two-tranche basin with an
+exhaustible cheap row and an abundant dearer row behind it, the depletion rent on the cheap
+row has a hard economic ceiling: **the cost of replacing that gas from the next tranche.**
+Nobody pays a premium for 2P gas larger than the extra it costs to lift 2C gas instead. So
+
+```
+rent(node, 2P, y)  <=  Cost(node, 2C) - Cost(node, 2P)
+```
+
+wherever the 2C row is developable and still holds stock. For Surat that ceiling is
+**$6.65 - $3.65 = $3.00/GJ**, and it applies from 2030, when the capacity layer builds the
+Bowen Gas Project.
+
+Measured 12 Sep 2026 after items 20 and 21, Step Change / Winter Medium / LNG Medium:
+
+| year | 2P rent | ceiling | |
+|---|---|---|---|
+| 2045 | 2.70 | 3.00 | ok |
+| 2046 | 2.89 | 3.00 | ok |
+| 2047 | 3.09 | 3.00 | **over** |
+| 2050 | 3.79 | 3.00 | **over by 26%** |
+
+**This is item 16's shape problem made visible, not a new defect.** `reserve_limit` is one
+constraint over the whole horizon, so it has one dual, and `get_scarcity_rents` spreads it
+as `lambda / df(y)` — a path that grows at exactly the discount rate whatever the gas is
+doing. It can therefore be right in the years 2P is genuinely on the margin against 2C
+(the mid-2040s, where it lands within a few cents of $3.00) and wrong either side of them
+by construction.
+
+**Nothing in the reported dispatch turns on it today**, because Surat 2P is exhausted by
+2047 in the central case and the overpriced years are years it does not produce. It does
+reach the reported *prices* at Surat and everything downstream of it.
+
+**Do not fix this by clamping the rent.** The rent exists to reconcile a budget-holding MIP
+with a stock-holding dispatch layer; capping it lets dispatch draw a tranche faster than
+the plan assumed, which is the failure mode the rent was introduced to cure (758 PJ/yr of
+shortage over 2047-50). The ceiling is a **test**, not a constraint — the right use of it
+is as an acceptance criterion on item 16's per-year stock, which should satisfy it without
+being told to.
