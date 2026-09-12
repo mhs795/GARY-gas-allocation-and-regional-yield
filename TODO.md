@@ -991,9 +991,15 @@ doing. It can therefore be right in the years 2P is genuinely on the margin agai
 (the mid-2040s, where it lands within a few cents of $3.00) and wrong either side of them
 by construction.
 
-**Nothing in the reported dispatch turns on it today**, because Surat 2P is exhausted by
-2047 in the central case and the overpriced years are years it does not produce. It does
-reach the reported *prices* at Surat and everything downstream of it.
+**Nothing turns on it at all — measured 12 Sep 2026, and this corrects an earlier guess in
+this item that it reached prices.** Surat 2P is exhausted from 2047 in the central case, so
+a zero-production row is never marginal and its rent prices nothing. The Surat dual pins at
+exactly **$6.65/GJ from 2047 to 2050** — Surat 2C's cost, flat — while the 2P rent climbs
+to $3.79. Brisbane sits at $7.35 and Gladstone $7.90 on the same flat line.
+
+That is also the textbook answer arriving on its own: once the cheap grade is gone the
+price IS the backstop cost, with no rent on top. So the over-ceiling tail is a reporting
+blemish in `get_scarcity_rents`, not an error in any number GARY publishes.
 
 **Do not fix this by clamping the rent.** The rent exists to reconcile a budget-holding MIP
 with a stock-holding dispatch layer; capping it lets dispatch draw a tranche faster than
