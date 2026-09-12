@@ -3753,13 +3753,20 @@ def update_industrial(key, end_year, active_tab, theme):
         return b
     allr = pd.concat(parts)
     allr['Month'] = allr['Date'].dt.to_period('M').dt.to_timestamp()
-    g = allr.groupby(['Month', 'Tier_base'])[['Served', 'Curtailed']].sum().reset_index()
-    rows = []
-    for _, x in g.iterrows():
-        rows.append({'Month': x['Month'], 'Tier': f"{x['Tier_base']} served", 'PJ': x['Served'] / 1000})
-        if x['Curtailed'] / 1000 > 0.0001:
-            rows.append({'Month': x['Month'], 'Tier': f"{x['Tier_base']} curtailed", 'PJ': x['Curtailed'] / 1000})
-    dd = pd.DataFrame(rows)
+    g = allr.groupby(['Month', 'Tier_base'])[['Served', 'Curtailed']].sum() / 1000
+    # Every tier on every month, zero where nothing was curtailed. Emitting
+    # curtailed rows only for months that had some left those areas with a
+    # handful of points, and plotly filled them to their neighbour's endpoints
+    # as wedges (the same fault as the production dispatch chart).
+    wide = g.unstack('Tier_base').fillna(0.0).sort_index()
+    cols = {}
+    for base in wide['Served'].columns:
+        cols[f'{base} served'] = wide['Served'][base]
+    for base in wide['Curtailed'].columns:
+        if wide['Curtailed'][base].max() > 0.0001:     # no legend entry for a tier never shed
+            cols[f'{base} curtailed'] = wide['Curtailed'][base]
+    dd = (pd.DataFrame(cols).rename_axis('Month').reset_index()
+            .melt(id_vars='Month', var_name='Tier', value_name='PJ'))
     cmap = {'GPG served': '#2563eb', 'GPG curtailed': '#93c5fd',
             'Large Industrial served': '#b45309', 'Large Industrial curtailed': '#fcd34d'}
     fig = px.area(dd, x='Month', y='PJ', color='Tier', color_discrete_map=cmap,
