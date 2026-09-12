@@ -368,13 +368,19 @@ cache: [`docs/running.md`](docs/running.md).
 
 ## Full documentation
 
+**[`docs/README.md`](docs/README.md) is the index** — it says which page to read and in
+what order. The short version:
+
 | Page | What is in it |
 |---|---|
+| [`docs/the-2040s.md`](docs/the-2040s.md) | **Read before quoting anything after ~2040.** Why exports stop, what the GSOO does differently, and which of the two to believe about what |
 | [`docs/model.md`](docs/model.md) | The formulation — sets, variables, objective term by term, constraints, the two-stage solve, the curtailment ladder, and where a dual is meaningless |
-| [`docs/inputs.md`](docs/inputs.md) | The three input groups, the parameters workbook, the demand build pipeline, and the GSOO sector split that fixed GARY's price level |
 | [`docs/pricing.md`](docs/pricing.md) | LNG netback formation, the Gas Market Code cap, foundation contracts, what a GARY price is and is not, and customer-segment prices |
-| [`docs/scenarios.md`](docs/scenarios.md) | Every lever in detail, with measured results: winter, LNG market, reservation, dunkelflaute, data centre load |
+| [`docs/inputs.md`](docs/inputs.md) | The three input groups, the parameters workbook, the demand build pipeline, and the GSOO sector split that fixed GARY's price level |
 | [`docs/expansions.md`](docs/expansions.md) | The candidate menu — every project, its source and its basis — GSOO vs market scan, the arc cost convention, and the import-terminal switch |
+| [`docs/scenarios.md`](docs/scenarios.md) | Every lever in detail, with measured results: winter, LNG market, reservation, dunkelflaute, data centre load |
 | [`docs/running.md`](docs/running.md) | CLI reference, solver backends, parallel sweeps, the results cache, project layout |
-| [`TODO.md`](TODO.md) | Open items and known limitations |
+| [`docs/scarcity-rent.md`](docs/scarcity-rent.md) | What the surcharge on scarce gas is, why it has to exist, and how close GARY's is to what theory says |
+| [`docs/depletion.md`](docs/depletion.md) | What is still wrong with depletion, what you can trust anyway, and what fixing it would cost |
+| [`TODO.md`](TODO.md) | The engineering log — every known defect and limitation, numbered and kept numbered |
 | [`src/data/README_DATA.md`](src/data/README_DATA.md) | File-by-file account of `src/data/` |

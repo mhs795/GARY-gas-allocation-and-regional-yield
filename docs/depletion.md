@@ -15,38 +15,16 @@ here are in [`TODO.md`](../TODO.md) items 15, 16 and 17.
 
 ## 1. How GARY decides, today
 
-**Gas in the ground has a price.** Producing a gigajoule of Surat gas costs $3.65 to lift
-— but it also uses up a gigajoule you can never sell again. That second cost is the
-**scarcity rent**, and the real cost of producing today is:
+**Moved.** The whole of "what the scarcity rent is, why it has to exist, what the right
+answer looks like and how close GARY is to it" now lives in
+[`scarcity-rent.md`](scarcity-rent.md) — plain language, nine short sections, and with
+the numbers re-measured after the 12 September 2026 fixes. Read that first; this page
+assumes it.
 
-```
-lifting cost  +  what you give up by not saving it for later
-```
-
-Without it the model burns the cheapest gas first and hits a wall. (It did: 758 PJ/yr of
-shortage over 2047–50 before the rent existed.)
-
-**The rent has two parts.**
-
-| part | what it is | where it comes from |
-|---|---|---|
-| **Reserve dual** | how much the model wishes it had more gas | the constraint saying a field can't produce more than it holds |
-| **Terminal value** | what leftover gas is worth after the model stops | assumed, from the import price |
-
-**The terminal value exists because the model stops before the gas does.** GARY runs to
-2050; fields don't. Told nothing, the model decides leftover gas is worthless and empties
-every field into the final year. So leftover gas is credited at what replacement gas would
-cost — landed imported LNG, $12.29/GJ in 2050 — with two deductions:
-
-| step | why | Surat 2P |
-|---|---|---|
-| start: imported LNG, landed | what the substitute costs | $12.29 |
-| **less the pipeline south** | that price is at an import terminal in the south. Queensland gas has to get there. | −$2.50 → **$9.79** |
-| **less the lifting cost** | the gas is still in the ground; you'd still have to pay to get it out | −$3.65 → **$6.14** |
-| **divided by the wait** | you can't sell it all at once. Surat holds ~20 years of production. | ÷2.39 → **$2.57** |
-
-That last step matters more than its size suggests — see issue 2 below for what happens
-without it.
+The two-line version: producing a GJ of Surat gas costs $3.65 to lift **and** uses up a
+GJ you can never sell again. That second cost is the scarcity rent. Without it the model
+burns the cheap gas first and hits a wall — measured at 758 PJ/yr of shortage over
+2047–50 before the rent existed.
 
 **The horizon.** GARY solves to 2051 and reports to 2050. The extra year absorbs
 end-of-model artefacts so nobody reads them.
