@@ -49,16 +49,33 @@ which falls out of the dual and the discount factor rather than being imposed.
 It is not a payment anyone makes. Nobody is billed a rent; it is the shadow value of
 scarcity, and it accrues to whoever owns the resource as economic profit.
 
-**It can be the larger term.** Surat's rent starts at $4.14/GJ against an extraction
-cost of $3.65 — so more than half the marginal value of Queensland gas is scarcity, not
-cost — and it compounds. Before the stock limit this term was implicitly **zero**, i.e.
-GARY assumed gas was effectively unlimited. That was equally an assumption, just an
-invisible one.
+**It compounds, and it used to run away.** Before the stock limit the term was implicitly
+**zero** — GARY assumed gas was effectively unlimited, which was equally an assumption,
+just an invisible one. Adding it then overshot in the other direction, and until 12
+September 2026 it carried Queensland prices somewhere no buyer would go: **Gladstone
+reached $26.91/GJ by 2050** against a netback of $7.12. That was the terminal value being
+struck on a price the gas could not reach, plus a backfill tranche priced above the
+tranche it replaces — see [`scarcity-rent.md`](scarcity-rent.md) and TODO item 21.
 
-**Where the rent shows up, and where it does not.** A node with an import terminal is
-capped by import parity and barely moves: Melbourne runs $10.77 → $11.24 across the
-horizon. A node with neither a terminal nor economic backfill carries the full rent —
-Gladstone reaches $26.91 by 2050 and Darwin $21.61, against a netback of $7.12.
+**Where it shows up now** (Step Change · Winter Medium · LNG Medium, measured):
+
+| $/GJ, mean | 2025 | 2030 | 2040 | 2050 |
+|---|---|---|---|---|
+| Surat | 10.22 | 6.65 | 6.39 | **6.65** |
+| Brisbane | 10.95 | 7.35 | 7.09 | 7.35 |
+| Gladstone | 11.47 | 7.90 | 7.64 | **7.90** |
+| Sydney | 10.27 | 8.74 | 8.24 | 8.48 |
+| Adelaide | 9.91 | 9.61 | 8.60 | 8.54 |
+| Melbourne | 9.32 | 10.01 | 9.03 | 8.95 |
+| *Surat scarcity rent* | *0.70* | *0.98* | *1.93* | *3.79* |
+
+Two things to read off it. **Queensland is anchored, not rent-bearing**: from 2030 Surat
+sits at $6.65 — exactly what Surat 2C costs to lift — and Brisbane and Gladstone are that
+plus their pipeline tariff to the cent ($0.70 on the RBP, $1.25 on the QGP). The scarcity
+rent climbs to $3.79 and touches none of it, because by then the tranche it prices is
+exhausted and a field producing nothing is never the marginal supplier. **The south is
+capped by import parity** and barely moves: Melbourne runs $9.32 → $8.95 across the whole
+horizon.
 
 > **Read a rent-bearing price carefully.** A high dual at an import-inaccessible node
 > is telling you the resource serving it is scarce and its replacement is not being
@@ -279,11 +296,19 @@ spot cargoes"* (§2.3.2).
 > export volume is contestable at all.
 
 The spot block's ceiling is **physical liquefaction nameplate** less the foundation
-volume (3,680 TJ/d total, split APLNG/GLNG/QCLNG). That replaced an earlier
-`export_headroom` multiple, which was an arbitrary number standing in for a capacity the
-model already knew. It also means spare liquefaction can *absorb* cheap gas, so the
-netback **anchors** domestic prices in a well-supplied year rather than only capping them
-in scarcity.
+volume. That replaced an earlier `export_headroom` multiple, which was an arbitrary number
+standing in for a capacity the model already knew. It also means spare liquefaction can
+*absorb* cheap gas, so the netback **anchors** domestic prices in a well-supplied year
+rather than only capping them in scarcity.
+
+The nameplate itself is read **per train from the Gas Bulletin Board** — APLNG 1,591 +
+GLNG 1,384 + QCLNG 1,420 TJ/day, taking the *process* figure where the GBB publishes both
+process and receive — and then scaled by `lng_availability` = 0.897, the best annual
+utilisation on record (AEMO Figure 19 actuals), because an MDQ is a day's maximum and GARY
+has no maintenance model. Fleet limit **3,942 TJ/day**, exactly what the trains consumed in
+2024. Until 12 September 2026 it was a flat 3,680 TJ/day, which was a *demand* figure
+reused as a capacity and sat below both observed throughput and GARY's own input — see
+[`the-2040s.md`](the-2040s.md) §6.
 
 ## What a GARY price is, and when it is not a wholesale price
 
