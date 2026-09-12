@@ -2918,7 +2918,23 @@ def update_prod(key, end_year, active_tab, theme):
         return b, b, b, html.Div()
     all_prod = pd.concat(prod_frames)
 
-    ann_prod = all_prod.groupby(['Year','Node'])['Value'].sum().reset_index()
+    def _stack_grid(df, x):
+        """One row per node per x, zero where a node produced nothing.
+
+        Stacked areas need every trace on the same x grid. Production rows are
+        only emitted above 0.01 TJ and split by Potential, so a node that starts
+        late (Beetaloo, 2035) or stops early (Blacktip, 2034) has no points
+        outside its life, and a node with two tranches has two points per day.
+        Plotly then fills each area down to the neighbouring trace's endpoints,
+        painting a wedge in the late starter's colour over the whole stack.
+        Nodes are sorted so both charts assign the same colour to each node.
+        """
+        wide = (df.astype({'Node': str}).groupby([x, 'Node'])['Value'].sum()
+                  .unstack('Node').fillna(0.0).sort_index())
+        return (wide[sorted(wide.columns)].reset_index()
+                    .melt(id_vars=x, var_name='Node', value_name='Value'))
+
+    ann_prod = _stack_grid(all_prod, 'Year')
     ann_prod['Value'] /= 1000
     fig_ann = px.area(ann_prod, x='Year', y='Value', color='Node',
                       title='Annual Production (PJ)', template=tmpl,
@@ -2933,7 +2949,7 @@ def update_prod(key, end_year, active_tab, theme):
             daily.append(r['production'].assign(
                 GlobalDay=r['production']['Day'] + (r['Year'] - 2025) * 365))
     if daily:
-        df_d = pd.concat(daily)
+        df_d = _stack_grid(pd.concat(daily), 'GlobalDay')
         fig_disp = px.area(df_d, x='GlobalDay', y='Value', color='Node',
                            title='Continuous Dispatch (TJ/d)', template=tmpl,
                            labels={'GlobalDay': 'Days from 2025', 'Value': 'TJ/d'})
