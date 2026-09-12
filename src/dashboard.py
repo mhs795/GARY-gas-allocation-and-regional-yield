@@ -1387,9 +1387,14 @@ sidebar = html.Div(className='md-sidebar', children=[
         # ── Actions ───────────────────────────────────────────────────────
         html.P('Actions', className='md-section-label'),
 
-        html.Button('▶  Run Scenario',       id='run-btn',   className='md-btn md-btn-filled'),
-        html.Button('⚡  Run Scenarios',      id='batch-btn', className='md-btn md-btn-tonal'),
-        html.Button('⛽  Run Reservation Scenarios', id='reserve-btn', className='md-btn md-btn-tonal'),
+        # TWO run buttons, deliberately. One solves the sidebar as it stands; the
+        # other solves the standard set, which is a FIXED list in
+        # run_standard_set.build() and ignores the sidebar. There used to be a
+        # third that swept every reservation level x every baseline; it was a
+        # ~12 h cross-product nobody ran, and the standard set already carries the
+        # reservation cases worth reading (blocks C, E and F).
+        html.Button('▶  Run This Scenario',   id='run-btn',   className='md-btn md-btn-filled'),
+        html.Button('⚡  Run Standard Set',    id='batch-btn', className='md-btn md-btn-tonal'),
         html.Button('↺  Regenerate All Data', id='regen-btn', className='md-btn md-btn-text'),
         html.Button('✕  Clear Results',      id='clear-btn', className='md-btn md-btn-danger'),
 
@@ -2083,7 +2088,6 @@ def show_tab(active):
     running=[
         (Output('run-btn',          'disabled'), True,  False),
         (Output('batch-btn',        'disabled'), True,  False),
-        (Output('reserve-btn',      'disabled'), True,  False),
         (Output('solver-progress',  'style'),
          {'display': 'block'}, {'display': 'none'}),
         (Output('run-status', 'children'), '⏳  Solving…', ''),
@@ -2198,7 +2202,7 @@ def _run_sweep(jobs, data, set_progress):
 
 
 # ---------------------------------------------------------------------------
-# Run All Scenarios (background)
+# Run the standard set (background)
 # ---------------------------------------------------------------------------
 @app.callback(
     Output('refresh-counter', 'data',     allow_duplicate=True),
@@ -2206,175 +2210,64 @@ def _run_sweep(jobs, data, set_progress):
     Input('batch-btn', 'n_clicks'),
     State('gap-slider', 'value'),
     State('rep-slider', 'value'),
-    State('baseline-selector', 'value'),
-    State('discount-slider', 'value'),
-    State('foresight-toggle', 'value'),
-    State('reservation-toggle', 'value'),
-    State('reservation-slider', 'value'),
-    State('netback-toggle', 'value'),
-    State('gsoo-exp-toggle', 'value'),
-    State('imports-toggle', 'value'),
-    State('contracts-toggle', 'value'),
-    State('dc-nsw-input', 'value'),
-    State('dc-vic-input', 'value'),
-    State('dc-start-slider', 'value'),
-    State('dc-file-input', 'value'),
     State('refresh-counter', 'data'),
     background=True,
     running=[
         (Output('run-btn',         'disabled'), True,  False),
         (Output('batch-btn',       'disabled'), True,  False),
-        (Output('reserve-btn',     'disabled'), True,  False),
         (Output('solver-progress', 'style'),
          {'display': 'block'}, {'display': 'none'}),
-        (Output('run-status', 'children'), '⏳  Batch running…', ''),
+        (Output('run-status', 'children'), '\u23f3  Standard set running\u2026', ''),
     ],
     progress=[Output('solver-progress-bar', 'style'), Output('solver-progress-bar', 'children')],
     prevent_initial_call=True,
 )
-def run_batch(set_progress, n_clicks, gap, rep_bins, baseline, discount, foresight_v,
-              resv_on, resv_i, netback_v, gsoo_exp_v, imports_v, contracts_v,
-              dc_nsw, dc_vic, dc_start, dc_file, refresh):
-    # Every combination: all GSOO baselines x Winter x LNG (dunkelflaute
-    # off) -> 27 runs, plus one Step Change + SA Dunkelflaute (2027) case at the
-    # central Winter/LNG so it sits alongside its plain Step Change counterpart.
-    #
-    # The batch honours the sidebar reservation setting: with the toggle on it
-    # solves the whole sweep at that reserved share and writes _Reserve<pct>
-    # keys, which land in the result dropdown ALONGSIDE the plain runs rather
-    # than replacing them. It does not loop over reservation levels itself --
-    # one batch, one share, deliberately (the full cross-product is ~12 h).
-    foresight = 'on' in (foresight_v or [])
-    reservation = reservation_share(resv_on, resv_i)
-    # The data centre lever rides along the same way the reservation does: the
-    # whole sweep is solved with it, under its own keys, alongside the plain runs.
-    try:
-        datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start, dc_file)
-    except datacentre_series.DataCentreSeriesError as exc:
-        # Stop rather than solve without the load: a run that silently dropped a
-        # linked series would be indistinguishable from one where it did nothing.
-        return no_update, f'✗  Data centre series — {exc}'
-    netback = 'on' in (netback_v or [])
-    gsoo_exp = 'on' in (gsoo_exp_v or [])
-    allow_imports = 'on' in (imports_v or [])
-    respect_contracts = 'on' in (contracts_v or [])
-    dr = 0.07 if discount is None else float(discount)
-    combos = [(b['value'], w, l, False) for b in BASELINES for w in LEVELS for l in LEVELS]
-    combos.append(('StepChange', 'Medium', 'Medium', True))
-    data = load_results()
-    jobs = []
-    for b, w, l, dunkel in combos:
-        key = scenario_key(b, w, l, dunkel, reservation, foresight, dr, datacentre,
-                           netback, respect_contracts, gsoo_exp, allow_imports,
-                           rep_bins)
-        # Skip already-computed base combos, but always recompute the dunkelflaute
-        # case so edits to the event flow through on a re-run.
-        if dunkel or key not in data['all_scenarios']:
-            jobs.append((key, pretty_key(key),
-                         dict(winter=w, lng=l, mip_gap=gap, rep_bins=rep_bins, baseline=b,
-                              dunkelflaute=dunkel, discount_rate=dr,
-                              foresight=foresight, reservation=reservation,
-                              datacentre=datacentre, netback_pricing=netback,
-                              respect_contracts=respect_contracts,
-                              gsoo_expansions_only=gsoo_exp,
-                              allow_import_terminals=allow_imports)))
-    _run_sweep(jobs, data, set_progress)
-    resv_note = f' at {round(reservation * 100)}% reservation' if reservation else ''
-    return (refresh or 0) + 1, f'✓  Batch complete — {len(combos)} scenarios (all baselines + SA dunkelflaute){resv_note}'
+def run_batch(set_progress, n_clicks, gap, rep_bins, refresh):
+    """Solve the standard scenario set -- the same 17 runs as `python src/run_standard_set.py`.
 
-# ---------------------------------------------------------------------------
-# Run Reservation Scenarios (background)
-# ---------------------------------------------------------------------------
-@app.callback(
-    Output('refresh-counter', 'data',     allow_duplicate=True),
-    Output('run-status',      'children', allow_duplicate=True),
-    Input('reserve-btn', 'n_clicks'),
-    State('winter-slider', 'value'),
-    State('lng-slider',    'value'),
-    State('gap-slider',    'value'),
-    State('rep-slider',    'value'),
-    State('dunkelflaute-toggle', 'value'),
-    State('discount-slider', 'value'),
-    State('foresight-toggle', 'value'),
-    State('netback-toggle', 'value'),
-    State('gsoo-exp-toggle', 'value'),
-    State('imports-toggle', 'value'),
-    State('contracts-toggle', 'value'),
-    State('dc-nsw-input', 'value'),
-    State('dc-vic-input', 'value'),
-    State('dc-start-slider', 'value'),
-    State('dc-file-input', 'value'),
-    State('refresh-counter', 'data'),
-    background=True,
-    running=[
-        (Output('run-btn',     'disabled'), True,  False),
-        (Output('batch-btn',   'disabled'), True,  False),
-        (Output('reserve-btn', 'disabled'), True,  False),
-        (Output('solver-progress', 'style'),
-         {'display': 'block'}, {'display': 'none'}),
-        (Output('run-status', 'children'), '⏳  Reservation sweep running…', ''),
-    ],
-    progress=[Output('solver-progress-bar', 'style'), Output('solver-progress-bar', 'children')],
-    prevent_initial_call=True,
-)
-def run_reservation_sweep(set_progress, n_clicks, wi, li, gap, rep_bins, dunkel,
-                          discount, foresight_v, netback_v, gsoo_exp_v, imports_v,
-                          contracts_v, dc_nsw, dc_vic, dc_start, dc_file, refresh):
-    """Every reservation level x every GSOO baseline, at the selected Winter/LNG case.
+    THE SIDEBAR IS DELIBERATELY IGNORED except for the two numerical solve settings
+    (MIP gap, representative-day bins). The set is a fixed, documented list in
+    `run_standard_set.build()`, and its whole value is that it is the same list every
+    time: six blocks -- outlook, weather, structural, data centres, and the two
+    reservation blocks that differ only by whether foundation contracts are respected.
+    Letting the sidebar bend it would mean the cache held seventeen runs whose identity
+    depended on what the sliders happened to be set to when somebody pressed the button.
 
-    Two sidebar controls are deliberately ignored, because this button sweeps both
-    of them itself: the reservation toggle and the GSOO baseline dropdown. Winter
-    and LNG come from the sliders as selected — that is the case being studied —
-    and the rest (dunkelflaute, data centre load, foresight,
-    discount) follow the sidebar exactly as a single run does.
+    Use "Run This Scenario" for anything the sidebar describes. That is the division:
+    one button for the standard set, one for whatever you are looking at.
 
-    Every baseline gets its own 0% run. A reservation is only readable against the
-    same case without one, and "the same case" includes the demand trajectory, so
-    the three baselines cannot share one comparison run.
+    Already-cached keys are skipped, so a re-run after adding a block costs one solve
+    rather than seventeen. Clear Results to force a full rebuild.
     """
-    w, l = LEVELS[wi], LEVELS[li]
-    dunkelflaute = bool(dunkel) and 'on' in dunkel
-    foresight = 'on' in (foresight_v or [])
-    netback = 'on' in (netback_v or [])
-    gsoo_exp = 'on' in (gsoo_exp_v or [])
-    allow_imports = 'on' in (imports_v or [])
-    respect_contracts = 'on' in (contracts_v or [])
+    import run_standard_set
+
     try:
-        datacentre = datacentre_spec(dc_nsw, dc_vic, dc_start, dc_file)
+        spec = run_standard_set.build()
     except datacentre_series.DataCentreSeriesError as exc:
-        # Stop rather than solve without the load: a run that silently dropped a
-        # linked series would be indistinguishable from one where it did nothing.
-        return no_update, f'✗  Data centre series — {exc}'
-    dr = 0.07 if discount is None else float(discount)
-    levels = [0.0] + list(RESERVATION_LEVELS)
-    # Baseline outer, reservation inner: an interrupted sweep then leaves whole
-    # readable ladders behind rather than a 0% run for each of three baselines.
-    combos = [(b['value'], share) for b in BASELINES for share in levels]
+        # Stop rather than solve without the load: a run that silently dropped the
+        # data centre series would be indistinguishable from one where it did nothing.
+        return no_update, f'\u2717  Data centre series \u2014 {exc}'
 
     data = load_results()
-    jobs = []
-    for base, share in combos:
-        key = scenario_key(base, w, l, dunkelflaute, share, foresight, dr,
-                           datacentre, netback, respect_contracts, gsoo_exp,
-                           allow_imports, rep_bins)
-        # Cached combinations are skipped, so a re-run after adding a level costs
-        # one solve rather than the whole sweep. Clear Results to force a rebuild.
-        if key not in data['all_scenarios']:
+    jobs, blocks = [], []
+    for block, kw in spec:
+        key = run_standard_set.key_for(kw)
+        if block not in blocks:
+            blocks.append(block)
+        # The dunkelflaute case is always re-solved so edits to the event flow
+        # through; everything else is skipped if it is already in the cache.
+        if kw.get('dunkelflaute') or key not in data['all_scenarios']:
             jobs.append((key, pretty_key(key),
-                         dict(winter=w, lng=l, mip_gap=gap, rep_bins=rep_bins, baseline=base,
-                              dunkelflaute=dunkelflaute, discount_rate=dr,
-                              foresight=foresight, reservation=share,
-                              datacentre=datacentre,
-                              netback_pricing=netback,
-                              respect_contracts=respect_contracts,
-                              gsoo_expansions_only=gsoo_exp,
-                              allow_import_terminals=allow_imports)))
+                         dict(kw, mip_gap=gap, rep_bins=rep_bins)))
+
+    if not jobs:
+        return no_update, f'\u2713  Standard set \u2014 all {len(spec)} scenarios already cached'
+
     _run_sweep(jobs, data, set_progress)
-    shares = ' / '.join(f'{round(x * 100)}%' for x in levels)
-    skipped = len(combos) - len(jobs)
+    skipped = len(spec) - len(jobs)
     note = f' ({skipped} already cached)' if skipped else ''
-    return (refresh or 0) + 1, (f'✓  Reservation sweep — {len(combos)} runs: {shares} '
-                                f'x {len(BASELINES)} baselines · Winter {w} · LNG {l}{note}')
+    return (refresh or 0) + 1, (f'\u2713  Standard set complete \u2014 {len(spec)} scenarios, '
+                                f'{len(blocks)} blocks{note}')
 
 # ---------------------------------------------------------------------------
 # Clear
@@ -2401,7 +2294,6 @@ def clear_results(n, refresh):
     running=[
         (Output('run-btn',     'disabled'), True, False),
         (Output('batch-btn',   'disabled'), True, False),
-        (Output('reserve-btn', 'disabled'), True, False),
         (Output('regen-btn',   'disabled'), True, False),
         (Output('solver-progress', 'style'),
          {'display': 'block'}, {'display': 'none'}),
