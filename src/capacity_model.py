@@ -30,8 +30,15 @@ for _mo in range(1, 13):
             _MONTH_OF_DAY[_d] = _mo
             _d += 1
 
-def _least_cost_paths(arcs_df):
+def _least_cost_paths(arcs_df, with_capacity=False):
     """``{(from, to): $/GJ}`` least-cost transport between nodes, self-pairs at 0.
+
+    With ``with_capacity`` it also returns ``{(from, to): TJ/day}``, the BOTTLENECK
+    of that least-cost path -- the narrowest arc a molecule taking the cheapest
+    route has to squeeze through. That is what says how much gas a route can
+    actually carry, as against what it costs to send one GJ down it, and the two
+    are different questions: the SWQP reversal is the cheap way south out of
+    Queensland and it is 512 TJ/day wide.
 
     Dijkstra over the arcs that HAVE capacity today. A reversal or a greenfield
     route the model has not chosen -- ``Bulloo``, ``SEA_Gas_Rev``, ``EGP_Rev`` and
@@ -46,23 +53,28 @@ def _least_cost_paths(arcs_df):
         nodes.update((a['From'], a['To']))
         if float(a.get('Capacity') or 0) <= 0:
             continue
-        adj.setdefault(a['From'], []).append((a['To'], float(a['Cost'])))
+        adj.setdefault(a['From'], []).append((a['To'], float(a['Cost']),
+                                              float(a['Capacity'])))
     out = {(n, n): 0.0 for n in nodes}
+    caps = {(n, n): float('inf') for n in nodes}
     for src in nodes:
         dist = {src: 0.0}
+        bott = {src: float('inf')}
         q = [(0.0, src)]
         while q:
             d, n = heapq.heappop(q)
             if d > dist.get(n, float('inf')):
                 continue
-            for nxt, w in adj.get(n, []):
+            for nxt, w, c in adj.get(n, []):
                 nd = d + w
                 if nd < dist.get(nxt, float('inf')):
                     dist[nxt] = nd
+                    bott[nxt] = min(bott[n], c)
                     heapq.heappush(q, (nd, nxt))
         for n, d in dist.items():
             out[(src, n)] = d
-    return out
+            caps[(src, n)] = bott[n]
+    return (out, caps) if with_capacity else out
 
 
 def _backstop_at_wellhead(nodes_df, arcs_df, backstop, import_nodes=IMPORT_NODES):
@@ -100,6 +112,89 @@ def _backstop_at_wellhead(nodes_df, arcs_df, backstop, import_nodes=IMPORT_NODES
     for n in {a for a, _ in sp}:
         runs = [sp[(n, i)] for i in import_nodes if (n, i) in sp]
         out[n] = float(backstop) - min(runs) if runs else float(backstop)
+    return out
+
+
+# Whether the terminal salvage credit is struck on the routes a basin's gas can
+# ACTUALLY take, weighted by their capacity (see _realisable_backstop), or on the
+# pre-existing rule of "the import backstop less the cheapest tariff to a terminal"
+# (_backstop_at_wellhead). On by default. Switchable so a run can be read against
+# the old one -- it changes every scarcity rent, so every result moves.
+SALVAGE_ROUTE_CAPACITY = str(P.get_str('salvage_route_capacity', 'TRUE')).strip().upper() in ('TRUE', '1', 'YES')
+
+
+def _realisable_backstop(arcs_df, import_price, netback_price, deliverability,
+                         lng_source=(), import_nodes=IMPORT_NODES, lng_nodes=LNG_NODES):
+    """``{node: $/GJ}`` what a wellhead's gas can ACTUALLY be sold for at the horizon.
+
+    THE FIX TO A PRICE THAT HAD NO QUANTITY BEHIND IT. ``_backstop_at_wellhead``
+    below answers "what is the dearest place this gas could go, less the tariff to
+    get there?" -- and for Surat that is a southern regasification terminal, so it
+    credits Queensland gas at landed-import parity less the haul: $12.29 - $2.50 =
+    $9.79/GJ. The tariff is right and the capacity is missing. The cheap way south
+    out of Queensland is the SWQP reversal and it is 512 TJ/day wide, against a
+    Surat that can deliver 6,085. Valuing tens of thousands of PJ against a route
+    that can carry 187 PJ/yr pays the basin a price only 8% of its gas can reach.
+
+    What the other 92% can reach is a liquefaction train, at the export netback
+    less the feed-pipe tariff -- $7.12 - $0.75 = $6.37/GJ in 2051, $3.42 below the
+    import-parity figure because that gap is the liquefaction-shipping-regasification
+    wedge. GARY already prices both sides: exports at the netback, imports at
+    ACIL Allen's injection cost. The terminal value was using only the dearer one.
+
+    So: enumerate every disposal route a node has -- to each regasification
+    terminal at ``import_price`` less the haul, to each LNG train at
+    ``netback_price`` less the haul -- take each route's BOTTLENECK capacity, fill
+    them dearest first out of the node's own deliverability, and return the
+    capacity-weighted price. Surat comes out at $6.49 rather than $9.79, and the
+    consequence is the point: its 2C tranche costs $6.65 to lift, so on the routes
+    that exist there is no margin left in the ground at all and its terminal credit
+    is correctly zero rather than $1.32/GJ. That $1.32 was the thing holding the
+    backfill tranche above the depleting 2P tranche it is supposed to replace.
+
+    ONLY THE BASINS THAT FEED THE TRAINS ARE RE-STRUCK, and the restriction is the
+    point rather than a convenience. A basin sitting inside the market it supplies
+    -- Gippsland, Otway, Cooper -- has ONE disposal price, import parity, and the
+    "haul to a terminal" in _backstop_at_wellhead is a proxy for where it sits, not
+    a corridor it has to fit through: its gas displaces an import by serving the
+    same southern customer, and southern demand is far larger than any of them can
+    deliver. Blending a long-haul export route into those nodes would read a
+    bottleneck into a market they are already inside (measured: Gippsland $10.53 ->
+    $7.59, Otway $10.49 -> $9.19, purely from routes those basins would never use).
+    Surat is the only node with two materially different disposal prices and a real
+    corridor between it and the dearer one, so it is the only one re-struck.
+
+    ``deliverability`` is ``{node: TJ/day}`` at the horizon and ``lng_source`` the
+    nodes the feed pipes run from. Every other node is returned exactly as
+    _backstop_at_wellhead struck it.
+    """
+    out = _backstop_at_wellhead(None, arcs_df, import_price, import_nodes)
+    if not import_price or not netback_price or not lng_source:
+        return out
+    sp, caps = _least_cost_paths(arcs_df, with_capacity=True)
+    for n in lng_source:
+        routes = []
+        for i in import_nodes:
+            if (n, i) in sp and n != i:
+                routes.append((float(import_price) - sp[(n, i)], caps[(n, i)]))
+        for t in lng_nodes:
+            if (n, t) in sp and n != t:
+                routes.append((float(netback_price) - sp[(n, t)], caps[(n, t)]))
+        # A route you would lose money sending gas down is not a disposal route.
+        routes = [(p, c) for p, c in routes if c > 0 and p > 0]
+        if not routes:
+            continue
+        routes.sort(key=lambda pc: -pc[0])
+        room = float(deliverability.get(n, 0.0)) or sum(c for _, c in routes)
+        filled, value = 0.0, 0.0
+        for price, cap in routes:
+            take = min(cap, room - filled)
+            if take <= 0:
+                break
+            filled += take
+            value += take * price
+        if filled > 0:
+            out[n] = value / filled
     return out
 
 
@@ -415,8 +510,22 @@ class CapacityExpansionModel:
         # regasification terminal and a reserve tranche is not. See
         # _backstop_at_wellhead: crediting the gross terminal price against a
         # Queensland extraction cost pays the field for a haul it never performed.
-        self.backstop_at_node = _backstop_at_wellhead(self.nodes, self.arcs,
-                                                      salvage_price)
+        # The horizon deliverability each node can dispose of, TJ/day -- the
+        # denominator the route blend is struck over. Every supply row at the node,
+        # on its own decline curve at the last solved year, stock limit not applied
+        # (the blend describes the ROUTES, not what is left to send down them).
+        _deliv = {}
+        for _, _row in self.supply.iterrows():
+            _deliv[_row['Node']] = _deliv.get(_row['Node'], 0.0) + _declined_capacity(
+                _row, self.years[-1], 0.0)
+        if SALVAGE_ROUTE_CAPACITY:
+            self.backstop_at_node = _realisable_backstop(
+                self.arcs, salvage_price,
+                self.netback_by_year.get(self.years[-1]), _deliv,
+                lng_source=self.lng_source)
+        else:
+            self.backstop_at_node = _backstop_at_wellhead(self.nodes, self.arcs,
+                                                          salvage_price)
         # {(node, is_potential): years} reserves-to-production ratio measured on the
         # stock ACTUALLY LEFT at the horizon, from a previous solve. None means use
         # the row's nameplate ratio, which is the first-iteration guess. See
@@ -792,7 +901,9 @@ class CapacityExpansionModel:
         # node except the reserved tranche, transit inflows included. See the
         # header block in model.py.
         if self.lng_arcs:
-            _commercial = [s_ for s_ in m.Supply if s_[0] in self.lng_source and not s_[1]]
+            # Every commercial tranche at the source, 2C included -- see the
+            # matching note in model.py.
+            _commercial = [s_ for s_ in m.Supply if s_[0] in self.lng_source]
             _inflows = [a for n in self.lng_source for a in arcs_to[n]]
             m.export_eligibility = pyo.Constraint(m.YR, rule=lambda m, y, i:
                 pyo.quicksum(m.flow[a, y, i] for a in self.lng_arcs) <=

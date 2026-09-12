@@ -1127,7 +1127,20 @@ class GasMarketModel:
         # those days and change the no-reservation base case.
         # With the node balance, this is equivalent to requiring the reserved gas
         # to be absorbed by demand at the source or to leave on a non-LNG route.
-        commercial_at_source = [s_ for s_ in m.Supply if s_[0] in lng_source and not s_[1]]
+        #
+        # EVERY COMMERCIAL TRANCHE AT THE SOURCE COUNTS, developed and undeveloped alike.
+        # This used to filter on ``not s_[1]`` -- IsPotential -- which was meant to keep
+        # the free reserved tranche out and did not do that: the reserved gas is
+        # ``reserved_prod``, a separate variable, and it is excluded simply by not
+        # appearing in this sum. What ``not s_[1]`` actually excluded was Surat's 2C
+        # row: 23,270 PJ, the Bowen Gas Project backfill the capacity layer builds in
+        # 2030, structurally barred from the three feed pipes. Exports could then be
+        # supplied only by the DEPLETING 2P tranche plus whatever transited in up the
+        # SWQP, so the backfill could never backfill an export, and once 2P was drawn
+        # down the trains had nowhere to turn. Measured in the LNG High case, exports
+        # fell to 134 PJ in 2047-48 and 55 PJ in 2049-50 -- the transit inflows and
+        # nothing else.
+        commercial_at_source = [s_ for s_ in m.Supply if s_[0] in lng_source]
         inflows_to_source = [a for n in lng_source for a in arcs_to[n]]
         m.export_eligibility = pyo.Constraint(m.T, rule=lambda m, t:
             sum(m.flow[a, t] for a in lng_arcs) <=

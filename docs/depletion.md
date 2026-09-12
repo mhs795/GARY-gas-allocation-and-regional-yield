@@ -170,7 +170,7 @@ demand against the same fixed reserves manufactured scarcity faster than the lon
 relieved it — the reserve dual went from $0.00 to $14.42/GJ. It also makes the 2050 answer
 depend on demand data AEMO never published.
 
-### Option E — retune the terminal value ❌
+### Option E — retune the terminal value ❌ (for the 2P row)
 
 **Tried 3 Sep 2026. Cannot work, and this was measured rather than argued.**
 
@@ -185,6 +185,26 @@ other rises to match:
 
 Below a floor, changing the terminal value changes nothing at all. There is no setting of
 it that fixes issue 1.
+
+> **The substitution is a property of a BINDING row, and that is the loophole — closed
+> 12 Sep 2026.** It holds for Surat 2P, whose reserve constraint binds, so there is a dual
+> standing by to absorb whatever the credit gives up. It does **not** hold for Surat **2C**,
+> whose dual is exactly zero because 91% of the tranche is still in the ground at the
+> horizon. Nothing absorbs a change there.
+>
+> That matters because 2C is the **backfill** — the tranche that is supposed to take over
+> when 2P runs down. Carrying $1.32/GJ of terminal credit, it priced at $6.65 + $1.32 =
+> $7.97 against a 2P tranche at $3.65 + $4.17 = $7.82, so the replacement stayed dearer
+> than the thing it replaces right through the depletion. Removing the credit (TODO item
+> 21) put 2C back underneath, and the model's own arbitrage then capped the 2P rent:
+>
+> | | 2P dual | 2P salvage | **2P rent** | 2C rent |
+> |---|---|---|---|---|
+> | shipped | 1.76 | 2.40 | **4.17** | 1.32 |
+> | route-capacity credit | 2.72 | 1.07 | **3.79** | **0.00** |
+>
+> The 2P total still moved only $0.38 — Option E's floor is real. The **2C** row moved all
+> the way to zero, and that is what changed the answer.
 
 ---
 

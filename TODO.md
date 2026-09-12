@@ -799,3 +799,98 @@ Fixed in `build_demand_gsoo.to_365`, which folds the trace onto 365 days by scal
 node's days 1-365 so its **annual total is preserved** — the right way round, because every
 sector is calibrated to a GSOO annual level while the shape is empirical. What the model
 actually dispatches moved +0.034%; no series is defined off the solved horizon any more.
+
+## 20. ~~The 2C backfill tranche was barred from the LNG trains~~ — FIXED 12 Sep 2026
+
+Both layers wrote export eligibility as
+
+```python
+commercial_at_source = [s_ for s_ in m.Supply if s_[0] in lng_source and not s_[1]]
+```
+
+and `not s_[1]` is `not IsPotential`. The filter was written to keep the free reserved
+tranche out of the export stream, and it never did that: the reserved gas is
+`reserved_prod`, a **separate variable**, excluded simply by not appearing in the sum.
+What the filter actually excluded was **Surat's 2C row** — 23,270 PJ, the Bowen Gas
+Project the capacity layer builds in 2030 — from the three feed pipes.
+
+So exports could be supplied only by the **depleting** 2P tranche plus whatever transited
+into Surat up the SWQP and from Silver Springs. The backfill could backfill a domestic
+customer and never an export, and once 2P was drawn down the trains had nowhere to turn.
+
+**Where it bit.** Nowhere in Step Change Medium: measured 12 Sep 2026, an eligibility-only
+run reproduces the shipped export path to the PJ in every year, because Surat 2C at AEMO's
+$6.65/GJ full cost plus a feed-pipe tariff is above the Step Change netback anyway and the
+model would not have chosen it. It bit in **LNG High**, where the netback is at the $12
+Code cap: exports there fell to 134 PJ in 2047-48 and 55 PJ in 2049-50 — the transit
+inflows (SWQP 365 + SS2Surat 150 TJ/d) and nothing else, with Surat 2P exhausted and 15,315
+PJ of 2C sitting unused behind a constraint that could not see it.
+
+Fixed in `model.py` and `capacity_model.py` by dropping the `not s_[1]`. The reserved
+tranche is still excluded, by the same mechanism it always actually was.
+
+## 21. Terminal value struck on a route with no capacity behind it — FIXED 12 Sep 2026
+
+`_backstop_at_wellhead` valued gas left in the ground at the dearest place it could go
+less the **tariff** to get there, and never asked how much could go. For Surat that is a
+southern regasification terminal: $12.29 landed less $2.50 of haul = **$9.79/GJ**. The
+tariff is right. The capacity is 349 TJ/day — 249 on the cheapest run to Adelaide, 100 to
+Port Kembla — against a Surat that can deliver **6,300**. The old rule paid the whole basin
+a price 6% of its gas could reach.
+
+The other 94% can reach a liquefaction train, at the export netback less the feed-pipe
+tariff: **$6.37/GJ** in 2051. The gap to $9.79 is the liquefaction-shipping-regasification
+wedge, and GARY already carries both sides of it — exports at ACIL Allen's netback, imports
+at ACIL Allen's injection cost. The terminal value was using only the dearer one, which is
+the asymmetry `_salvage_rate`'s own docstring warned about ("the backstop is an import
+price and the netback an export price, so it excludes exports at the horizon by
+construction") without closing it.
+
+`_realisable_backstop` enumerates every disposal route a node has, takes each route's
+**bottleneck** capacity from `_least_cost_paths(with_capacity=True)`, fills them dearest
+first out of the node's own deliverability, and returns the capacity-weighted price. Surat
+comes out at $6.37 rather than $9.79.
+
+**Only the basins feeding the trains are re-struck, and that restriction is the point.** A
+basin inside the market it supplies — Gippsland, Otway, Cooper — has ONE disposal price,
+and the haul in `_backstop_at_wellhead` is a proxy for where it sits rather than a corridor
+it has to fit through. Blending a long-haul export route into those nodes reads a
+bottleneck into a market they are already in (measured: Gippsland $10.53 → $7.59, Otway
+$10.49 → $9.19, purely from routes those basins would never use). Surat is the only node
+with two materially different disposal prices and a real corridor between it and the dearer
+one.
+
+Behind `salvage_route_capacity` on the Parameters sheet, ON. Properties checked in
+`tests/check_realisable_backstop.py` (no solve).
+
+**Why this is not item 16's Option E.** Option E showed the 2P terminal credit and the 2P
+reserve dual are perfectly substitutable, so no *level* of the 2P credit changes the total.
+This changes a different row: **Surat 2C's credit goes $1.32 → $0.00**, and 2C's reserve
+dual is exactly zero (91% of the tranche is unproduced at the horizon), so there is nothing
+to absorb it. What the $1.32 was doing was holding the backfill tranche *above* the
+depleting tranche it exists to replace.
+
+## 22. Beetaloo's terminal credit is struck on a price it has no pipeline to — NEW 12 Sep 2026
+
+`_least_cost_paths` deliberately walks only arcs that have capacity **today**, because a
+reversal or a greenfield route the model has not built is not a path a molecule can take.
+Every route out of the Beetaloo is exactly that: `NEAP` (Beetaloo→Surat) and the Sturt
+Plateau tie-in both sit at base capacity 0. So the node reaches no regasification terminal,
+`_backstop_at_wellhead` falls through to its "no route" branch, and Beetaloo 2C is credited
+against the **gross** $12.29/GJ landed import price — a price at an Adelaide terminal it has
+no pipe to. Terminal credit $1.08/GJ, rent $1.01/GJ at 2050.
+
+Same class of error as item 21 and worse in kind: a narrow route there, no route at all
+here. Not fixed with item 21 because the two want different answers. Surat's fix is to
+blend the routes it HAS; the Beetaloo's question is whether an *unbuilt* route counts, and
+the honest answer is "only if the model builds it" — which makes the terminal value depend
+on the build schedule and so on the solve it feeds.
+
+**Small, for now.** Beetaloo produces 144 PJ over the whole horizon in the central case
+(2.8% of its 5,109 PJ 2C), so nothing reported turns on it. It would stop being small in
+any scenario that opens the NT corridor.
+
+**To close it:** either credit an unrouted basin at zero (conservative, and consistent with
+"gas you cannot move is not worth holding"), or walk `expansion_options.csv` capacity as
+well as base capacity and accept the build-schedule dependence. The first is a one-line
+change and a defensible reading; the second is more right and more work.

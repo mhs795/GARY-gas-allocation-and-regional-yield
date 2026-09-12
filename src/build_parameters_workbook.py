@@ -127,6 +127,17 @@ PARAMETERS = [
      "the model against long-lived and late-built infrastructure, which is the class of "
      "candidate a 2050 horizon most needs to judge fairly. Set FALSE to reproduce runs "
      "from before the credit existed."),
+    ("Capacity model", "salvage_route_capacity", "TRUE", "TRUE/FALSE",
+     "Strike the terminal salvage credit on the disposal routes a basin's gas can "
+     "ACTUALLY take, weighted by each route's bottleneck capacity, instead of on the "
+     "single dearest destination less the tariff to reach it. Only the basins feeding "
+     "the LNG trains are affected -- a basin sitting inside the market it supplies has "
+     "one disposal price and keeps the old rule. Surat has two prices that differ by "
+     "the liquefaction-shipping-regasification wedge ($9.79/GJ landed-import parity "
+     "against $6.37/GJ export netback in 2051) and only 349 TJ/day of corridor to the "
+     "dearer one against 6,300 TJ/day of deliverability, so the old rule paid the whole "
+     "basin a price 6% of its gas could reach. ON. Set FALSE to reproduce runs from "
+     "before the change; it moves every Queensland scarcity rent, so every result moves."),
     ("Capacity model", "salvage_max_passes", 0, "passes",
      "Extra capacity solves spent chasing the terminal-value fixed point. The salvage "
      "credit scales leftover margin by 1/(1+r.tau) and tau must be measured on the stock "

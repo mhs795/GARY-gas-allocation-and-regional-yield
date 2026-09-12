@@ -305,8 +305,9 @@ before, and each is load-bearing:
 |---|---|---|
 | `salvage_price` | ACIL Allen's landed **import injection** cost in the final solved year — the backstop, i.e. what the substitute costs. Published, not chosen. | **$12.29**/GJ |
 | `_backstop_at_wellhead` | less the cheapest run from this node **to a regasification terminal**. The backstop is a price at Port Kembla, Geelong or Adelaide, not at a wellhead; a basin only earns it by delivering there. Surat's cheapest is Adelaide, $1.53 up the SWQP reversal plus $0.97 on MAPS. | −$2.50 → **$9.79** |
-| `_salvage_rate`, step 1 | less the row's own **extraction cost**, floored at zero. The gas is un-extracted, so the delivered price overstates what it is worth in the ground. | −$3.65 → **$6.14** |
-| `_salvage_rate`, step 2 | scaled by **`Λ = 1/(1 + r·τ)`**, the closed-form value of a stock produced on a decline over `τ = Reserves/deliverability` years. A stock is not sold at the horizon instant; Surat holds 19.8 years of production. | ×0.419 → **$2.57** |
+| `_realisable_backstop` | **for the basins that feed the trains only**, re-struck on the routes the gas can actually take, weighted by each route's bottleneck capacity. That $9.79 is reachable by 349 TJ/day of southbound corridor against 6,300 TJ/day of Surat deliverability; the rest can only reach a train, at the netback less the feed-pipe tariff. A basin inside the market it supplies has one disposal price and is not re-struck. `salvage_route_capacity`, ON. | → **$6.37** |
+| `_salvage_rate`, step 1 | less the row's own **extraction cost**, floored at zero. The gas is un-extracted, so the delivered price overstates what it is worth in the ground. | −$3.65 → **$2.72** |
+| `_salvage_rate`, step 2 | scaled by **`Λ = 1/(1 + r·τ)`**, the closed-form value of a stock produced on a decline over `τ = Reserves/deliverability` years. A stock is not sold at the horizon instant; Surat holds 19.8 years of production. | ×0.419 → **$1.14** |
 
 Both nettings are what make the credit basin-specific, which is the whole point — a
 uniform credit collapses every rent onto the same floor and stops distinguishing a
@@ -315,11 +316,26 @@ nearly-exhausted basin from an abundant one. The 2 Sep 2026 values:
 | | Surat | Moomba | Gippsland | Iona | Amadeus | Beetaloo |
 |---|---|---|---|---|---|---|
 | **τ, years** | 19.8 | 5.8 | 4.0 | 2.4 | 11.5 | 27.2 |
-| **2P salvage** | 2.57 | 2.04 | 4.20 | 2.76 | 0.79 | — |
-| **2C salvage** | 1.32 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| **wellhead backstop** | **6.37** | 11.32 | 10.53 | 10.49 | 7.92 | 12.29 |
+| **2P salvage** | **1.14** | 2.04 | 4.20 | 2.76 | 0.79 | — |
+| **2C salvage** | **0.00** | 0.00 | 0.00 | 0.00 | 0.00 | 1.08 |
 
-Beetaloo at zero is the netting working: $9.15/GJ to lift against a $7.46 delivered
-backstop is not worth holding. And τ is what separates Iona — 2.4 years of production
+Surat's two rows are the ones the route-capacity rule moved (12 Sep 2026; they were
+$9.79 / $2.57 / $1.32). **The 2C zero is the consequence the change was made for**: new
+Surat gas costs $6.65/GJ to lift against a $6.37 realisable wellhead price, so there is
+no margin left in the ground and its terminal credit is correctly nothing. The $1.32 it
+used to carry was holding the backfill tranche above the depleting 2P tranche it exists
+to replace — see TODO item 21.
+
+Beetaloo is **not** the netting working, and the table above corrects a stale claim that
+it was. `_least_cost_paths` only walks arcs that have capacity today, and every route out
+of the Beetaloo — NEAP to Surat, the Sturt Plateau tie-in — is a greenfield arc at base
+capacity 0. So the node reaches no terminal, falls through to the *gross* $12.29, and its
+2C tranche carries $1.08/GJ of terminal credit struck on a price at an Adelaide
+regasification terminal it has no pipeline to. That is the same class of error the route
+rule just fixed for Surat, and worse in kind — no route rather than a narrow one. Left
+alone for now because the Beetaloo produces 144 PJ across the whole horizon in the central
+case; logged as TODO item 22. And τ is what separates Iona — 2.4 years of production
 left, so its stock is nearly cash and keeps 86% of its margin — from Surat, which is
 holding twenty years of inventory and keeps 42%.
 
