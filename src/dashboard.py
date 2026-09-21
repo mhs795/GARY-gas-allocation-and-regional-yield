@@ -426,6 +426,52 @@ app = dash.Dash(
 )
 server = app.server
 
+# ---------------------------------------------------------------------------
+# Build stamp and cache control
+# ---------------------------------------------------------------------------
+# GARY runs off a separate copy of this tree on each machine, so "is this the
+# current version?" has to be answerable from the page itself: BUILD_ID is the
+# git commit where there is one, otherwise the dashboard.py timestamp. It is
+# printed at startup and shown in the header.
+def _build_id():
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        import subprocess
+        rev = subprocess.run(['git', '-C', here, 'rev-parse', '--short', 'HEAD'],
+                             capture_output=True, text=True, timeout=5)
+        # Only code counts as "local changes" -- output/ and the data files the
+        # model writes are modified on every run and would mark every build dirty.
+        dirty = subprocess.run(['git', '-C', here, 'status', '--porcelain', '-uno', '--', '*.py'],
+                               capture_output=True, text=True, timeout=5)
+        if rev.returncode == 0 and rev.stdout.strip():
+            return rev.stdout.strip() + ('+local' if dirty.stdout.strip() else '')
+    except Exception:
+        pass
+    import datetime
+    mtime = os.path.getmtime(os.path.abspath(__file__))
+    return datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M')
+
+
+BUILD_ID = _build_id()
+
+
+@server.after_request
+def _no_store(response):
+    """Stop the browser replaying a previous version's UI against this one.
+
+    Dash draws the page from /_dash-layout and wires every button from
+    /_dash-dependencies. Neither carries a cache-busting URL, so a browser that
+    serves either from its cache renders the OLD layout and posts clicks under
+    component ids this build no longer has: the dashboard looks out of date and
+    no button does anything. The hashed component bundles are versioned in their
+    URLs, so those stay cacheable.
+    """
+    from flask import request
+    if not request.path.startswith('/_dash-component-suites/'):
+        response.headers['Cache-Control'] = 'no-store, max-age=0, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+    return response
+
 
 def background_callback(*spec, running=None, progress=None, **kwargs):
     """Register one of the long-running callbacks.
@@ -638,6 +684,8 @@ body, html {
 }
 .md-btn:active    { opacity: 0.85; }
 .md-btn:disabled  { opacity: 0.5 !important; cursor: not-allowed !important; }
+.md-build-stamp { margin-left: 10px; font-size: 11px; opacity: 0.55;
+                  font-family: var(--font) !important; white-space: nowrap; }
 
 .md-btn-filled {
   background-color: var(--md-primary);
@@ -1661,6 +1709,10 @@ main = html.Div(className='md-main', children=[
         html.Span('GARY — Gas Allocation and Regional Yield Model', className='md-header-title'),
         html.Div(id='header-scenario-chip', className='md-scenario-chip',
                  children='No scenario loaded'),
+        # Which copy of the code this page came from. If it disagrees with the
+        # build printed in the terminal, the browser is showing a cached page.
+        html.Span(f'build {BUILD_ID}', id='header-build', className='md-build-stamp',
+                  title='Code version serving this page'),
     ]),
 
     # Content area
@@ -3891,4 +3943,29 @@ if __name__ == '__main__':
         solvers.set_solver_name(_args.solver)
     print(f"Solver: {solvers.describe()}")
     solvers.require_available()
-    app.run(debug=False, host='127.0.0.1', port=8050)
+
+    host = os.environ.get('GARY_HOST', '127.0.0.1')
+    port = int(os.environ.get('GARY_PORT', '8050'))
+
+    # A GARY left running from an earlier session keeps the port, and the new
+    # process dies on bind while the browser happily keeps talking to the OLD
+    # one -- an out-of-date dashboard with no sign anything went wrong. Say so
+    # instead of failing with a bare "Address already in use".
+    import socket
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        probe.bind((host, port))
+    except OSError:
+        print(f"\nPort {port} is already in use: something is serving http://{host}:{port} "
+              f"already -- most likely an older GARY that is still running.")
+        print("Close it (or kill the process), then start GARY again. "
+              "To run alongside it instead, set GARY_PORT to a free port.")
+        sys.exit(1)
+    finally:
+        probe.close()
+
+    print(f"GARY build {BUILD_ID} from {os.path.dirname(os.path.abspath(__file__))}")
+    print(f"Open http://{host}:{port} -- if the page looks out of date, "
+          f"reload it with Ctrl+Shift+R and check the build shown in the header.")
+    app.run(debug=False, host=host, port=port)
