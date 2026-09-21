@@ -10,7 +10,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
 from plotly.subplots import make_subplots
-import diskcache
 import dash
 from dash import dcc, html, Input, Output, State, DiskcacheManager, no_update, ctx
 
@@ -123,10 +122,20 @@ def _dl_btn(btn_id):
 # ---------------------------------------------------------------------------
 # Background callback manager
 # ---------------------------------------------------------------------------
-_cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tmp', 'cache')
-os.makedirs(_cache_dir, exist_ok=True)
-_disk_cache = diskcache.Cache(_cache_dir)
-background_callback_manager = DiskcacheManager(_disk_cache)
+# The long-running callbacks (solve, standard set, regenerate) run on Dash's
+# background queue, which needs diskcache. That is a pure-Python package, but it
+# cannot be installed on every machine GARY runs on, so it is optional: without it
+# those callbacks run inline instead. They still work; the browser just waits
+# instead of showing a progress bar. See background_callback() below.
+try:
+    import diskcache
+except ImportError:
+    background_callback_manager = None
+else:
+    _cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tmp', 'cache')
+    os.makedirs(_cache_dir, exist_ok=True)
+    _disk_cache = diskcache.Cache(_cache_dir)
+    background_callback_manager = DiskcacheManager(_disk_cache)
 
 
 def _progress(pct, label):
@@ -424,6 +433,36 @@ app = dash.Dash(
     title='GARY — Gas Allocation and Regional Yield Model',
 )
 server = app.server
+
+
+def background_callback(*spec, running=None, progress=None, **kwargs):
+    """Register a long-running callback, on the background queue where one exists.
+
+    With a background manager the callback behaves as a normal Dash background
+    callback: `running` disables the buttons and shows the progress bar, and the
+    function is handed a real `set_progress`.
+
+    Without one (diskcache not installed) Dash has no queue to hand the work to, so
+    the callback is registered as an ordinary one and runs inline. The `running` and
+    `progress` outputs are dropped, since neither can update while a synchronous
+    callback is blocking, and the function is given a no-op `set_progress` so the
+    same function body works either way. The work still completes; the browser waits
+    for it rather than showing progress.
+    """
+    if background_callback_manager is not None:
+        return app.callback(
+            *spec, background=True, running=running, progress=progress, **kwargs
+        )
+
+    def decorator(func):
+        def inline(*args):
+            return func(lambda *a, **k: None, *args)
+
+        inline.__name__ = func.__name__
+        inline.__doc__ = func.__doc__
+        return app.callback(*spec, **kwargs)(inline)
+
+    return decorator
 
 # ---------------------------------------------------------------------------
 # Material Design CSS injected into the page head
@@ -2061,7 +2100,7 @@ def show_tab(active):
 # ---------------------------------------------------------------------------
 # Run Scenario (background)
 # ---------------------------------------------------------------------------
-@app.callback(
+@background_callback(
     Output('refresh-counter', 'data',     allow_duplicate=True),
     Output('run-status',      'children', allow_duplicate=True),
     Input('run-btn', 'n_clicks'),
@@ -2084,7 +2123,6 @@ def show_tab(active):
     State('dc-start-slider', 'value'),
     State('dc-file-input', 'value'),
     State('refresh-counter', 'data'),
-    background=True,
     running=[
         (Output('run-btn',          'disabled'), True,  False),
         (Output('batch-btn',        'disabled'), True,  False),
@@ -2224,14 +2262,13 @@ def _write_price_summary():
 # ---------------------------------------------------------------------------
 # Run the standard set (background)
 # ---------------------------------------------------------------------------
-@app.callback(
+@background_callback(
     Output('refresh-counter', 'data',     allow_duplicate=True),
     Output('run-status',      'children', allow_duplicate=True),
     Input('batch-btn', 'n_clicks'),
     State('gap-slider', 'value'),
     State('rep-slider', 'value'),
     State('refresh-counter', 'data'),
-    background=True,
     running=[
         (Output('run-btn',         'disabled'), True,  False),
         (Output('batch-btn',       'disabled'), True,  False),
@@ -2314,10 +2351,9 @@ def clear_results(n, refresh):
 # ---------------------------------------------------------------------------
 # Regen demand
 # ---------------------------------------------------------------------------
-@app.callback(
+@background_callback(
     Output('run-status', 'children', allow_duplicate=True),
     Input('regen-btn', 'n_clicks'),
-    background=True,
     running=[
         (Output('run-btn',     'disabled'), True, False),
         (Output('batch-btn',   'disabled'), True, False),

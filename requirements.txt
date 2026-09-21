@@ -6,7 +6,8 @@ highspy            # default solver backend
 # package, not a pip one:  sudo apt install glpk-utils
 plotly
 dash
-diskcache
+diskcache        # OPTIONAL: background callbacks (progress bars) fall back to
+                 # running inline without it -- see background_callback() in dashboard.py
 multiprocess
 zstandard        # results-cache compression (falls back to stdlib gzip)
 psutil

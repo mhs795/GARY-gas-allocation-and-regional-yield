@@ -27,6 +27,7 @@ Output: data/gpg_demand_profile_<scenario>.csv  (Year, Node, Day, Demand in TJ/d
 For the StepChange baseline the legacy filename gpg_demand_profile_gsoo.csv is also
 written.
 """
+import functools
 import os
 import numpy as np
 import pandas as pd
@@ -47,14 +48,30 @@ SCENARIOS = P.get_list("gsoo_baselines", ["StepChange", "Accelerated", "SlowerGr
 # NT is outside the NEM so it is handled separately below.
 DROP_NODES = {"Gladstone"}
 _GPG_REGIONS = P.get_list("gpg_nem_regions", ["NSW", "SA", "VIC", "QLD"])
-_FAC = pd.read_csv(os.path.join(DATA, "gpg_facilities.csv"))
-REGION_NODES = {
-    r: sorted(set(_FAC.loc[(_FAC["State"] == r) & (~_FAC["Node"].isin(DROP_NODES)),
-                           "Node"]))
-    for r in _GPG_REGIONS
-}
-REGION_NODES = {r: n for r, n in REGION_NODES.items() if n}
-MODEL_REGIONS = list(REGION_NODES)
+
+
+@functools.lru_cache(maxsize=1)
+def region_nodes():
+    """GSOO region -> the GARY nodes that carry its gas-fired generation.
+
+    Read when first needed rather than at import. gpg_facilities.csv is written by
+    an earlier regeneration step (build_curtailable_demand), so on a fresh clone it
+    does not exist yet; reading it at import made this module unimportable, and the
+    dashboard imports it in order to offer the button that creates the file.
+    """
+    fac = pd.read_csv(os.path.join(DATA, "gpg_facilities.csv"))
+    nodes = {
+        r: sorted(set(fac.loc[(fac["State"] == r) & (~fac["Node"].isin(DROP_NODES)),
+                              "Node"]))
+        for r in _GPG_REGIONS
+    }
+    return {r: n for r, n in nodes.items() if n}
+
+
+def model_regions():
+    """The GSOO regions that have at least one modelled node."""
+    return list(region_nodes())
+
 
 # --- Northern Territory GPG (not in the NEM, so absent from the GSOO NEM data) ---
 # NT domestic gas is principally power generation. Sized from the AER's Amadeus Gas
@@ -141,7 +158,7 @@ def _modelled_peak_total(peaks_scen):
     for y, py in peaks_scen.groupby("Year"):
         smax = py.pivot_table(index="Region", columns="Season", values="GPG_TJd")
         tot = 0.0
-        for r in MODEL_REGIONS:
+        for r in model_regions():
             if r in smax.index:
                 tot += float((smax.loc[r, "Summer"] + smax.loc[r, "Winter"]) / 2)
         out[int(y)] = tot
@@ -163,7 +180,7 @@ def build(scenario="StepChange"):
 
     # within-region node share from historical means
     region_node_share = {}
-    for reg, nodes in REGION_NODES.items():
+    for reg, nodes in region_nodes().items():
         tot = sum(node_mean.get(n, 0.0) for n in nodes)
         region_node_share[reg] = {n: (node_mean.get(n, 0.0) / tot if tot else 1.0 / len(nodes))
                                    for n in nodes}
@@ -178,9 +195,9 @@ def build(scenario="StepChange"):
         smax = py.pivot_table(index="Region", columns="Season", values="GPG_TJd")
         # regional weight = mean of summer & winter peak (only modelled regions)
         weight = {r: float((smax.loc[r, "Summer"] + smax.loc[r, "Winter"]) / 2)
-                  for r in MODEL_REGIONS if r in smax.index}
+                  for r in model_regions() if r in smax.index}
         wsum = sum(weight.values())
-        for reg, nodes in REGION_NODES.items():
+        for reg, nodes in region_nodes().items():
             if reg not in weight:
                 continue
             reg_energy_pj = A * weight[reg] / wsum            # PJ/y to this region
