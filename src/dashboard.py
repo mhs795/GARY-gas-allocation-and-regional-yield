@@ -1,4 +1,5 @@
 import base64
+import json
 import os, re, sys
 import logging
 # Background callbacks poll the server twice a second while a solve runs, so
@@ -11,7 +12,7 @@ import plotly.graph_objects as go
 import plotly.io as pio
 from plotly.subplots import make_subplots
 import dash
-from dash import dcc, html, Input, Output, State, DiskcacheManager, no_update, ctx
+from dash import dcc, html, Input, Output, State, no_update, ctx
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import datacentre_series
@@ -122,20 +123,12 @@ def _dl_btn(btn_id):
 # ---------------------------------------------------------------------------
 # Background callback manager
 # ---------------------------------------------------------------------------
-# The long-running callbacks (solve, standard set, regenerate) run on Dash's
-# background queue, which needs diskcache. That is a pure-Python package, but it
-# cannot be installed on every machine GARY runs on, so it is optional: without it
-# those callbacks run inline instead. They still work; the browser just waits
-# instead of showing a progress bar. See background_callback() below.
-try:
-    import diskcache
-except ImportError:
-    background_callback_manager = None
-else:
-    _cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tmp', 'cache')
-    os.makedirs(_cache_dir, exist_ok=True)
-    _disk_cache = diskcache.Cache(_cache_dir)
-    background_callback_manager = DiskcacheManager(_disk_cache)
+# GARY does not use Dash's background callback queue. Every queue backend needs a
+# package or a service that cannot be installed on all of the machines GARY runs
+# on: diskcache would not install on one, and Celery needs a Redis/RabbitMQ broker
+# and a second worker process. The three long-running callbacks (solve, standard
+# set, regenerate) therefore run inline, with click feedback supplied by the
+# clientside callbacks below instead of by Dash's `running` argument.
 
 
 def _progress(pct, label):
@@ -428,7 +421,6 @@ pio.templates['gary_dark'] = go.layout.Template(
 # ---------------------------------------------------------------------------
 app = dash.Dash(
     __name__,
-    background_callback_manager=background_callback_manager,
     suppress_callback_exceptions=True,
     title='GARY — Gas Allocation and Regional Yield Model',
 )
@@ -436,23 +428,15 @@ server = app.server
 
 
 def background_callback(*spec, running=None, progress=None, **kwargs):
-    """Register a long-running callback, on the background queue where one exists.
+    """Register one of the long-running callbacks.
 
-    With a background manager the callback behaves as a normal Dash background
-    callback: `running` disables the buttons and shows the progress bar, and the
-    function is handed a real `set_progress`.
-
-    Without one (diskcache not installed) Dash has no queue to hand the work to, so
-    the callback is registered as an ordinary one and runs inline. The `running` and
-    `progress` outputs are dropped, since neither can update while a synchronous
-    callback is blocking, and the function is given a no-op `set_progress` so the
-    same function body works either way. The work still completes; the browser waits
-    for it rather than showing progress.
+    These were Dash background callbacks. There is no queue backend available on
+    every machine GARY runs on, so they run inline instead: `running` and
+    `progress` are accepted and ignored, and the function is handed a no-op
+    `set_progress` so the callback bodies are unchanged. The work still completes;
+    the browser waits for it. Immediate click feedback comes from the clientside
+    callbacks registered by clicked_feedback() instead.
     """
-    if background_callback_manager is not None:
-        return app.callback(
-            *spec, background=True, running=running, progress=progress, **kwargs
-        )
 
     def decorator(func):
         def inline(*args):
@@ -463,6 +447,28 @@ def background_callback(*spec, running=None, progress=None, **kwargs):
         return app.callback(*spec, **kwargs)(inline)
 
     return decorator
+
+
+def clicked_feedback(button_id, message):
+    """Show `message` the instant `button_id` is clicked.
+
+    The long-running callbacks run inline, so nothing they return reaches the
+    browser until they finish -- a solve can look like a dead button for minutes.
+    This runs in the browser, so it paints immediately and needs no queue backend.
+    The server callback overwrites the status text when it completes.
+    """
+    app.clientside_callback(
+        "function (n) { return n ? %s : window.dash_clientside.no_update; }"
+        % json.dumps(message),
+        Output('run-status', 'children', allow_duplicate=True),
+        Input(button_id, 'n_clicks'),
+        prevent_initial_call=True,
+    )
+
+
+clicked_feedback('run-btn',   '\u23f3  Solving\u2026 (this can take a few minutes)')
+clicked_feedback('batch-btn', '\u23f3  Standard set running\u2026 (this takes a while)')
+clicked_feedback('regen-btn', '\u23f3  Regenerating data from source\u2026')
 
 # ---------------------------------------------------------------------------
 # Material Design CSS injected into the page head
@@ -2970,9 +2976,19 @@ def update_prod(key, end_year, active_tab, theme):
         return (wide[sorted(wide.columns)].reset_index()
                     .melt(id_vars=x, var_name='Node', value_name='Value'))
 
+    # One hue per basin, from the same fixed palette the supply curve uses, so a
+    # colour means the same gas in every chart. Without this Plotly hands out
+    # colourway slots in the order the nodes happen to be sorted, which is
+    # alphabetical: Beetaloo takes a prominent hue for 0.5% of production, and any
+    # basin that drops out of a filtered view repaints every basin after it.
+    def _basin_colours(nodes):
+        dark = theme == 'dark'
+        return {n: supply_color(sc.source_family(n), dark) for n in nodes}
+
     ann_prod = _stack_grid(all_prod, 'Year')
     ann_prod['Value'] /= 1000
     fig_ann = px.area(ann_prod, x='Year', y='Value', color='Node',
+                      color_discrete_map=_basin_colours(ann_prod['Node'].unique()),
                       title='Annual Production (PJ)', template=tmpl,
                       labels={'Value': 'PJ'})
     fig_ann.update_yaxes(rangemode='tozero')
@@ -2987,6 +3003,7 @@ def update_prod(key, end_year, active_tab, theme):
     if daily:
         df_d = _stack_grid(pd.concat(daily), 'GlobalDay')
         fig_disp = px.area(df_d, x='GlobalDay', y='Value', color='Node',
+                           color_discrete_map=_basin_colours(df_d['Node'].unique()),
                            title='Continuous Dispatch (TJ/d)', template=tmpl,
                            labels={'GlobalDay': 'Days from 2025', 'Value': 'TJ/d'})
         fig_disp.update_layout(xaxis_rangeslider_visible=True)
