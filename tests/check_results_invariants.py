@@ -12,9 +12,16 @@ Each check is a defect that was found in a real cache, not a hypothetical:
   prices        no negative nodal price and none above VOLL
   reserves      no tranche, 2P or 2C, produces more over the horizon than it
                 holds (dispatch did not check 2C reserves until 23 Sep 2026)
-  counterflow   no same-day flow both ways down a reversible corridor in a
-                reservation run -- that is how reserved gas was laundered to
-                the trains (91.6 PJ in the contract-breaking run, 21 Sep 2026)
+  reservation   a reservation run was solved WITH reserved-gas tracking (every
+                run carrying a provenance stamp was). Before it, reserved gas
+                was laundered to the trains by same-day round trips -- 91.6 PJ
+                in the contract-breaking run of 21 Sep 2026 -- so an unstamped
+                reservation run FAILS.
+  counterflow   same-day flow both ways down a reversible corridor (WARN).
+                With tracking it can no longer launder anything; what remains
+                is a swap the model pays both tariffs for -- reserved gas south
+                to domestic load while commercial gas comes north to a train
+                (12 PJ on Bulloo/SWQP in 2029 on the 23 Sep 2026 set).
   rents         a foresight run carries scarcity rents (an empty set used to
                 be swallowed silently, and dispatch then ran without them)
   gap           the capacity MIP closed to within its configured tolerance
@@ -85,8 +92,10 @@ def main():
                 if a in pv and b in pv:
                     both += float(pv[[a, b]].min(axis=1).sum()) / 1000.0
         if both > TOL_PJ:
-            (fails if reserving else warns).append(
-                f"{tag}: {both:,.1f} PJ of same-day counterflow on reversible corridors")
+            warns.append(f"{tag}: {both:,.1f} PJ of same-day counterflow on reversible corridors")
+        if reserving and not any(y.get('run_meta') for y in years):
+            fails.append(f"{tag}: reservation run solved before reserved-gas tracking "
+                         f"(reserved gas could reach the trains)")
 
         myopic = '_Myopic' in key
         if not myopic and not any(y.get('scarcity_rent') for y in years):
