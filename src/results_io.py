@@ -196,3 +196,60 @@ def load(path, expand=False):
 
     _walk_years(obj, lambda yr: _normalise_in_place(yr, expand))
     return obj
+
+
+# --- Provenance -------------------------------------------------------------
+# A cached scenario is filed under a key built from the SCENARIO settings, which
+# says nothing about the inputs or the code it was solved with. Edit supply.csv or
+# the workbook and the dashboard would keep serving the old answer under the same
+# key, indistinguishable from a fresh one. So every solve stamps its results with
+# a fingerprint of both, and the dashboard flags a scenario whose stamp no longer
+# matches the working tree.
+_SRC = os.path.dirname(os.path.abspath(__file__))
+# Modules whose code changes the numbers. The dashboard and the build scripts are
+# left out on purpose: editing a chart must not mark every result stale.
+MODEL_MODULES = ('model.py', 'capacity_model.py', 'solve.py', 'params.py',
+                 'solvers.py', 'datacentre_series.py')
+
+
+def _digest(paths):
+    import hashlib
+    h = hashlib.sha256()
+    for p in sorted(paths):
+        h.update(os.path.basename(p).encode())
+        with open(p, 'rb') as f:
+            h.update(f.read())
+    return h.hexdigest()[:12]
+
+
+def provenance():
+    """``{'inputs': sha, 'code': sha}`` for the working tree as it stands now.
+
+    ``inputs`` covers every CSV and the parameters workbook in src/data -- source
+    and derived alike, since the derived files are what the model actually reads.
+    """
+    data = os.path.join(_SRC, 'data')
+    inputs = [os.path.join(data, f) for f in os.listdir(data)
+              if f.lower().endswith(('.csv', '.xlsx'))]
+    code = [os.path.join(_SRC, f) for f in MODEL_MODULES]
+    # Hashing ~64 MB takes ~0.2 s, and the dashboard asks on every header
+    # refresh, so the answer is memoised on the files' sizes and mtimes.
+    stamp = tuple((p, os.stat(p).st_mtime_ns, os.stat(p).st_size)
+                  for p in sorted(inputs + code))
+    if _PROV_MEMO.get('stamp') != stamp:
+        _PROV_MEMO.update(stamp=stamp, value={'inputs': _digest(inputs),
+                                              'code': _digest(code)})
+    return dict(_PROV_MEMO['value'])
+
+
+_PROV_MEMO = {}
+
+
+def stale_reason(results, current=None):
+    """Why a cached scenario no longer matches the working tree, or '' if it does."""
+    meta = next((r.get('run_meta') for r in results if r.get('run_meta')), None)
+    if not meta:
+        return 'solved before provenance was recorded'
+    current = current or provenance()
+    why = [k for k in ('inputs', 'code') if meta.get(k) != current[k]]
+    return ('solved with different ' + ' and '.join(why)) if why else ''

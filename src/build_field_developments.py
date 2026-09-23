@@ -50,7 +50,7 @@ FAC = os.path.join(SRC, "G26 Processing Transmission Storage Facilities.xlsx")
 FIG = os.path.join(SRC, "2026-gsoo-report-figures-and-data.xlsx")
 OUT = os.path.join(DATA, "gsoo")
 
-HORIZON_START = P.get_int('horizon_start', 2025)
+HORIZON_START = P.get_int('horizon_start')
 
 # AEMO's basin names -> the GARY supply node that basin's gas enters the network
 # at. A basin GARY does not carry (Galilee, Gunnedah, Bass) maps to None and its

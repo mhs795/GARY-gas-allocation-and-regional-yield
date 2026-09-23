@@ -58,7 +58,7 @@ out.
 | `trans_cost` | Σ `flow` × arc tariff × 1000 | Moving it. **This is the term that makes a Melbourne price differ from a Surat price.** |
 | `shortage_penalty` | Σ `shortage` × $300/GJ × 1000 | Unserved demand at VOLL. The backstop that keeps the LP feasible. |
 | `storage_cost` | Σ (`injection` + `withdrawal`) × $0.50/GJ × 1000 | A round-trip charge, so inventory cycles only when the seasonal spread justifies it |
-| `exp_capex` | Σ `build[e]` × CapEx × 0.08 | Annualised capital at 8%/yr on anything built |
+| `exp_capex` | Σ `build[e]` × CapEx × CRF(r, AssetLife) | Annualised capital on anything built: the capital recovery factor at the run's discount rate over the asset's life, charged only while the asset is inside that life |
 | `gpg_pen` | Σ `gpg_curtail` × $22/GJ × 1000 | GPG shed at its strike |
 | `ind_pen` | Σ `ind_curtail` × $120/GJ × 1000 | Large industrial shed at its strike |
 | `lng_benefit` | Σ `lng_export` × netback × 1000 | Export revenue. **Subtracted**, not added. |
@@ -119,8 +119,9 @@ this equation.
 | `gpg_curtail_cap` | A tier can shed at most its own demand |
 | `ind_curtail_cap` | Industrial shedding is capped at `ind_demand − data_centre_demand` — data centre load is **firm** and cannot be shed at the industrial strike |
 | `supply_cap` | Production ≤ declined deliverability. A **potential** source produces only if a terminal fronting it was built. With a reservation running, `production + reserved_prod ≤ deliverability` — the reserved gas is the *same* gas, not extra |
+| `stock_cap` | A potential (2C) row's production ≤ what is left of its reserve, spread over the year. The 2P rows get the same limit inside `supply_cap`. Added 23 Sep 2026; before that dispatch never checked a 2C reserve |
 | `flow_cap` | `flow ≤ base capacity + Σ built expansions targeting this arc` |
-| `export_eligibility` | Flow down the three LNG feed pipes ≤ commercial gas reaching Surat (own production **plus transit inflows**). Without this the free reserved gas would flow straight to the trains and a reservation would achieve nothing |
+| `rbalance`, `rflow_share`, `rcons_cap`, `rinv_*` | **Reserved gas is tracked as its own commodity** whenever a reservation is running. `rflow` is the reserved share of each arc's flow, and it may use any arc except one into an LNG train. `rcons` is the reserved gas a node's *served* domestic load takes, and stores carry a reserved inventory. Without this the free gas would flow straight to the trains. It replaced a single inequality at Surat (`export_eligibility`) that leaked: reserved gas could leave on a non-LNG arc and come straight back counted as commercial. Measured on the 21 Sep 2026 cache: 18.8 PJ in the 20% reservation run and 91.6 PJ in the contract-breaking one, via same-day Surat → Silver Springs → Surat round trips |
 | `storage_cont` | Inventory balance; day 1 opens at half full |
 | `storage_cap`, `inj_rate`, `wd_rate` | Volume and plant-rate limits |
 | `storage_close` | Inventory on day 365 ≥ the opening level |

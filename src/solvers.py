@@ -27,6 +27,8 @@ import shutil
 
 import pyomo.environ as pyo
 
+import params as P
+
 DEFAULT_SOLVER = "highs"
 SOLVERS = ("highs", "glpk")
 
@@ -93,7 +95,7 @@ def require_available(name=None):
 
 
 def solver_threads():
-    """HiGHS threads per solve, from GARY_SOLVER_THREADS (default 4).
+    """HiGHS threads per solve, from GARY_SOLVER_THREADS, else solver_threads_default.
 
     Sweeps set this to 1 in their worker processes: HiGHS's simplex is serial in
     practice, so several single-threaded solves in parallel beat one solve given
@@ -105,7 +107,7 @@ def solver_threads():
             return max(1, int(raw))
         except ValueError:
             pass
-    return 4
+    return P.get_int('solver_threads_default')
 
 
 def make_solver(rel_gap=None, threads=None, time_limit=None, name=None):
@@ -116,7 +118,16 @@ def make_solver(rel_gap=None, threads=None, time_limit=None, name=None):
     MIP-only flags on an LP).
 
     ``threads`` defaults to :func:`solver_threads` (the GARY_SOLVER_THREADS
-    environment variable, else 4).
+    environment variable, else the workbook).
+
+    A MIP solve also gets an ABSOLUTE gap, ``mip_abs_gap_aud``, and HiGHS stops
+    at whichever of the two is met first. The relative gap is measured against
+    the whole-system objective -- ~$94bn NPV on the central case -- so 0.5% let
+    the solver stop ~$470m from optimal, more than most candidates cost, and the
+    build schedule was not actually settled (measured 23 Sep 2026: at 0.5% the
+    central case stopped $104m short and built one project fewer, with Bulloo a
+    year later, than at 0.01%). GLPK has no absolute gap; it uses the relative one
+    alone.
 
     A fresh instance is returned every call. The appsi_highs persistent
     interface caches the model between solves, so reusing one across calls
@@ -129,6 +140,7 @@ def make_solver(rel_gap=None, threads=None, time_limit=None, name=None):
         opt.options['threads'] = solver_threads() if threads is None else threads
         if rel_gap is not None:
             opt.options['mip_rel_gap'] = rel_gap
+            opt.options['mip_abs_gap'] = P.get('mip_abs_gap_aud')
         if time_limit is not None:
             opt.options['time_limit'] = time_limit
     else:

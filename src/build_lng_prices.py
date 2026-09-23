@@ -109,7 +109,7 @@ OUT_FILE = "lng_prices.csv"
 
 # Follows the workbook horizon rather than a literal, so extending the solved
 # horizon does not silently leave the price series a year short of the demand.
-YEARS = range(P.get_int("horizon_start", 2025), P.get_int("horizon_end", 2051) + 1)
+YEARS = range(P.get_int('horizon_start'), P.get_int('horizon_end') + 1)
 
 # ACIL Allen Table 2.1 / B.7, "Price of LNG injected into ECGM". Reproducing this
 # is the check that the shipping and regasification adders are being applied the
@@ -127,14 +127,12 @@ PUBLISHED_INJECTION = {
 def load_params(data_dir=DATA):
     """Scalar assumptions, from the Parameters sheet of the parameters workbook.
 
-    Falls back to acil_lng_params.csv -- the plain-text mirror of the same
-    numbers -- if the workbook is absent, so a clone without it still builds.
+    acil_lng_params.csv is a plain-text mirror of the same numbers for reading;
+    it is NOT a fallback. A missing workbook raises (see params.py) rather than
+    building prices from a second copy that may have drifted.
     """
     from model import load_params as workbook_params
-    if P.available():
-        return workbook_params()
-    df = pd.read_csv(os.path.join(data_dir, PARAMS_FILE))
-    return {str(r['Parameter']): float(r['Value']) for _, r in df.iterrows()}
+    return workbook_params()
 
 
 def contract_price(brent_usd_bbl, p):
@@ -194,8 +192,6 @@ def main():
     # Anchors come from the workbook's LNG_Anchors sheet when it is there, so a
     # scenario assumption is edited in one place; the CSV is the fallback mirror.
     anchors_all = P.sheet('LNG_Anchors')
-    if anchors_all.empty:
-        anchors_all = pd.read_csv(os.path.join(DATA, ANCHORS_FILE))
 
     frames = []
     for scenario, anchors in anchors_all.groupby('Scenario', sort=False):
@@ -209,10 +205,12 @@ def main():
     ix = out.set_index(['Scenario', 'Year'])['Import_Injection_AUD_GJ']
     for key, published in PUBLISHED_INJECTION.items():
         got = float(ix.loc[key])
-        assert abs(got - published) < 0.01, (
-            f"injection cost for {key} is {got:.2f}, ACIL Allen Table 2.1 "
-            f"publishes {published:.2f} -- check acil_lng_anchors.csv and the "
-            f"shipping/regasification adders in acil_lng_params.csv")
+        # A real check, not an assert: `python -O` strips asserts.
+        if abs(got - published) >= 0.01:
+            raise ValueError(
+                f"injection cost for {key} is {got:.2f}, ACIL Allen Table 2.1 "
+                f"publishes {published:.2f} -- check the LNG_Anchors sheet and the "
+                f"shipping/regasification parameters in the workbook")
 
     path = os.path.join(DATA, OUT_FILE)
     out.to_csv(path, index=False)

@@ -28,7 +28,7 @@ BASE = os.path.dirname(__file__)
 DATA = os.path.join(BASE, "data")
 GSOO = os.path.join(DATA, "gsoo")
 
-SCENARIOS = P.get_list("gsoo_baselines", ["StepChange", "Accelerated", "SlowerGrowth"])
+SCENARIOS = P.get_list('gsoo_baselines')
 
 
 def build(scenario="StepChange"):
@@ -47,8 +47,8 @@ def build(scenario="StepChange"):
     annual = pd.read_csv(os.path.join(GSOO, "annual_sector.csv"))
     ind_tot = annual[(annual.Scenario == scenario) & (annual.Sector == "Industrial")
                      ].set_index("Year")["PJ_per_year"].to_dict()
-    base_yr = P.get_int("gsoo_index_base_year", 2026)
-    last_yr = P.get_int("gsoo_index_last_year", 2045)
+    base_yr = P.get_int('gsoo_index_base_year')
+    last_yr = P.get_int('gsoo_index_last_year')
     index = {y: ind_tot[y] / ind_tot[base_yr] for y in ind_tot if base_yr <= y <= last_yr}
 
     rows = []

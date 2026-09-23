@@ -3,9 +3,19 @@
 Not a pytest suite — plain scripts, run them directly:
 
 ```
-python tests/check_asset_salvage.py     # fast; no solve
-python tests/check_salvage_objective.py # solves the investment MIP twice (~5 min)
+python tests/check_results_invariants.py  # fast; reads the results cache, no solve
+python tests/check_asset_salvage.py       # fast; no solve
+python tests/check_salvage_objective.py   # solves the investment MIP twice (~5 min)
+python src/build_parameters_workbook.py --check   # every parameter is on the workbook
 ```
+
+`check_results_invariants.py` is the one to run after every batch. It checks the
+properties every cached result has to hold: optimal price LPs, prices within
+[0, VOLL], no tranche (2P or 2C) overdrawn, no same-day counterflow on a reversible
+corridor in a reservation run (how reserved gas used to reach the trains),
+scarcity rents present, the capacity MIP settled to its configured gap, and
+results solved against the current inputs and code. Give it a cache path to check
+an older copy instead.
 
 `check_asset_salvage.py` covers the properties the terminal asset credit has to
 hold whatever the scenario — boundaries, monotonicity, bounds, the r=0

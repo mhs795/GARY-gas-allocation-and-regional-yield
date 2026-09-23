@@ -10,9 +10,10 @@ this script would silently discard those edits, so:
   * it is not in the regenerate_all pipeline and no button calls it
 
 Use it to create the workbook on a fresh clone, to inspect what the defaults are,
-or with --check to list parameters the code asks for that the workbook does not
-have (which is how a typo in a parameter name gets caught -- params.py falls back
-to the in-code default rather than raising).
+or with --check to confirm the model imports cleanly against the workbook.
+params.py has no in-code defaults: a parameter the workbook lacks raises
+ParamError naming it, so --check simply imports the model and reports the first
+one missing.
 
 The ACIL Allen sheets seed from the CSVs the netback work shipped with, so the
 workbook stays the authority and the CSVs remain a readable plain-text mirror.
@@ -85,13 +86,6 @@ PARAMETERS = [
      "lock: the box is editable and --dc-file overrides it. See "
      "src/data/datacentre_demand_example.csv for the layout"),
 
-    ("Cost coefficients", "capex_annualisation_rate", 0.08, "fraction",
-     "Share of a built project's CapEx charged to each single-year dispatch solve. "
-     "The dispatch model has no NPV to charge a lump sum against, so a build shows "
-     "up as an annual carrying cost at this rate. GARY's own number, not a source: "
-     "it sits above discount_rate_default because it stands in for return OF "
-     "capital as well as return ON it. The capacity MIP does NOT use it -- that "
-     "layer charges full CapEx once, discounted to the build year."),
     ("Cost coefficients", "storage_cycle_cost", 0.50, "A$/GJ",
      "Round-trip charge on storage, applied to injection AND withdrawal, so "
      "inventory cycles only when the seasonal price spread justifies it. GARY's "
@@ -107,11 +101,32 @@ PARAMETERS = [
      "Global LNG price level the dashboard opens on. Under netback pricing this lever "
      "selects a PRICE path, not an export volume: Medium is the run's own GSOO "
      "scenario path, so it is the internally consistent choice."),
-    ("Dashboard defaults", "mip_gap_default", 0.005, "fraction",
-     "Relative MIP gap for the capacity layer. Matches solve_scenario's own default; "
-     "the dashboard slider used to open at 0.01, a wider tolerance than any headless "
-     "run used. That matters more since field developments carry derived CapEx in the "
-     "tens of billions -- 1% of the objective is enough to hide a build decision."),
+    ("Dashboard defaults", "mip_gap_default", 0.0001, "fraction",
+     "Relative MIP gap for the capacity layer. Measured 23 Sep 2026 on the central "
+     "case: at 0.005 the solver stopped $104m from its bound and built one project "
+     "fewer (NGP_Reversal) and Bulloo a year later than at 0.0001, which closed to "
+     "$7m in 111 s against 15 s. The relative gap is on the WHOLE-SYSTEM NPV "
+     "(~$94bn), so 0.5% allowed ~$470m -- more than most candidates cost. HiGHS "
+     "stops at whichever of this and mip_abs_gap_aud is met first."),
+    ("Capacity model", "mip_abs_gap_aud", 10000000, "A$",
+     "Absolute MIP gap, dollars of objective. Set well below the smallest candidate "
+     "CapEx ($24m) so the solver cannot stop with a build decision unsettled. HiGHS "
+     "only; GLPK has no absolute gap and uses mip_gap_default alone."),
+    ("Solver", "solver_threads_default", 4, "threads",
+     "HiGHS threads per solve when GARY_SOLVER_THREADS is not set. Parallel sweeps "
+     "pin their workers to 1."),
+    ("Seasonality", "winter_nodes", "Melbourne,Adelaide,Sydney", "nodes",
+     "Nodes whose distribution demand the Winter lever multiplies over "
+     "winter_day_start..winter_day_end."),
+    ("Scenario levers", "lng_low_decline_after", 0.03, "fraction/yr",
+     "LNG Low (netback pricing OFF only): annual fall in the export volume "
+     "multiplier after the Scenario_Levers LNG/Low window, continuing from wherever "
+     "the window ended. See solve.get_lng_mult."),
+    ("Scenario levers", "lng_low_floor", 0.2, "multiple",
+     "LNG Low (netback pricing OFF only): floor on the export volume multiplier."),
+    ("Scenario levers", "lng_high_outside_window", 1.1, "multiple",
+     "LNG High (netback pricing OFF only): export volume multiplier outside the "
+     "Scenario_Levers LNG/High window."),
 
     ("Capacity model", "discount_rate_default", 0.07, "fraction",
      "NPV discount rate for the perfect-foresight capacity MIP"),
@@ -316,20 +331,14 @@ def build(force=False):
 
 
 def check():
-    """Import the model and report parameters it wanted that the workbook lacks."""
+    """Import the model against the workbook; report the first missing parameter."""
     import params as P
-    if not P.available():
-        raise SystemExit(f"No workbook at {WORKBOOK}. Run this script without --check.")
-    import model            # noqa: F401  -- importing is what triggers the lookups
-    import capacity_model   # noqa: F401
-    import solve            # noqa: F401
-    miss = P.missing()
-    if miss:
-        print("Parameters requested but NOT found in the workbook (in-code defaults "
-              "were used):")
-        for name in miss:
-            print(f"  - {name}")
-        raise SystemExit(1)
+    try:
+        import model            # noqa: F401  -- importing is what triggers the lookups
+        import capacity_model   # noqa: F401
+        import solve            # noqa: F401
+    except P.ParamError as exc:
+        raise SystemExit(f"Workbook incomplete: {exc}")
     print(f"All parameters resolved from {WORKBOOK}.")
 
 
@@ -339,6 +348,6 @@ if __name__ == "__main__":
     ap.add_argument("--force", action="store_true",
                     help="overwrite an existing workbook, discarding hand edits")
     ap.add_argument("--check", action="store_true",
-                    help="list parameters the code asks for that the workbook lacks")
+                    help="confirm every parameter the model reads is on the workbook")
     a = ap.parse_args()
     check() if a.check else build(force=a.force)

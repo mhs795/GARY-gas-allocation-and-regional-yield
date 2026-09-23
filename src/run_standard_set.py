@@ -100,7 +100,7 @@ def key_for(kw):
                         dunkelflaute=kw.get('dunkelflaute', False),
                         reservation=kw.get('reservation', 0.0),
                         foresight=kw.get('foresight', True),
-                        discount=kw.get('discount_rate', 0.07),
+                        discount=kw.get('discount_rate'),
                         datacentre=kw.get('datacentre'),
                         netback=kw.get('netback_pricing', False),
                         respect_contracts=kw.get('respect_contracts', True),
@@ -115,7 +115,8 @@ def main():
     ap.add_argument('--keep', action='store_true',
                     help='Merge into the cache, skipping keys already present')
     ap.add_argument('--list', action='store_true', help='Print the set and exit')
-    ap.add_argument('--mip-gap', type=float, default=0.005)
+    ap.add_argument('--mip-gap', type=float, default=None,
+                    help='Relative MIP gap (default: mip_gap_default on the workbook)')
     ap.add_argument('--no-export', action='store_true',
                     help='Skip the domestic price summary workbook')
     args = ap.parse_args()

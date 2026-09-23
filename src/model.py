@@ -52,11 +52,11 @@ import solvers
 # that stresses Moomba->Adelaide and the SEA Gas import from Victoria. The window
 # is a full month (deliberately longer than any historical event) to stress-test
 # a prolonged drought.
-DUNKELFLAUTE_YEAR = P.get_int('dunkelflaute_year', 2027)
-DUNKELFLAUTE_NODE = P.get_str('dunkelflaute_node', "Adelaide")
-DUNKELFLAUTE_DAYS = range(P.get_int('dunkelflaute_day_start', 152),
-                          P.get_int('dunkelflaute_day_end', 181) + 1)
-DUNKELFLAUTE_MULT = P.get('dunkelflaute_mult', 2.75)
+DUNKELFLAUTE_YEAR = P.get_int('dunkelflaute_year')
+DUNKELFLAUTE_NODE = P.get_str('dunkelflaute_node')
+DUNKELFLAUTE_DAYS = range(P.get_int('dunkelflaute_day_start'),
+                          P.get_int('dunkelflaute_day_end') + 1)
+DUNKELFLAUTE_MULT = P.get('dunkelflaute_mult')
 
 
 # --- Domestic gas reservation ------------------------------------------------
@@ -87,7 +87,7 @@ DUNKELFLAUTE_MULT = P.get('dunkelflaute_mult', 2.75)
 # which the reserved gas was never produced at all: domestic demand was already
 # met, so cost minimisation simply left it in the ground and the reservation was
 # an export cap by another name. Pricing it at zero is what makes it move.
-LNG_NODES = P.get_list('lng_nodes', ['APLNG', 'GLNG', 'QCLNG'])
+LNG_NODES = P.get_list('lng_nodes')
 
 
 # --- LNG netback price formation (ACIL Allen / GasMark methodology) ----------
@@ -130,12 +130,12 @@ LNG_PRICES_FILE = "lng_prices.csv"
 
 # Regasification terminals: potential supply whose cost is an international price
 # (Asian LNG + shipping + regas), not a field development cost.
-IMPORT_NODES = P.get_list('import_nodes', ['Port_Kembla', 'Geelong', 'Adelaide'])
+IMPORT_NODES = P.get_list('import_nodes')
 
 # Earliest year an import/field terminal may be commissioned. The capacity layer
 # reads the same parameter (capacity_model.py), so the two stages cannot disagree
 # about when a terminal is allowed to exist.
-TERMINAL_EARLIEST = P.get_int('terminal_earliest', 2028)
+TERMINAL_EARLIEST = P.get_int('terminal_earliest')
 
 
 # GBB facility name -> GARY LNG node. The Bulletin Board is the source of record for
@@ -187,7 +187,7 @@ def lng_train_nameplate():
     Falls back to the workbook total x shares if the Bulletin Board file is missing,
     so a clone without it still runs.
     """
-    avail = P.get('lng_availability', 0.897)
+    avail = P.get('lng_availability')
     try:
         _data = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
         gbb = pd.read_csv(os.path.join(_data, 'GasBBNameplateRatingCurrent.csv'))
@@ -203,9 +203,8 @@ def lng_train_nameplate():
             return {k: v * avail for k, v in out.items()}
     except (OSError, KeyError, ValueError):
         pass
-    total = P.get('lng_nameplate_tj_day', 3680.0)
-    shares = P.get_pairs('lng_train_shares',
-                         [('APLNG', 0.357), ('GLNG', 0.31), ('QCLNG', 0.333)])
+    total = P.get('lng_nameplate_tj_day')
+    shares = P.get_pairs('lng_train_shares')
     out = {}
     for node, share in shares:
         try:
@@ -220,8 +219,8 @@ def _contracted_export_pj():
 
     The LNG_Contracts sheet, sourced from ACCC's Gas Inquiry June 2025 interim
     update: 16,301 PJ of remaining contracted exports to 2036 (Chart 1), expiring
-    "from 2031" with "a sharp drop off in exports ... after 2035". Empty if the
-    sheet is missing, in which case callers fall back to the flat scalar.
+    "from 2031" with "a sharp drop off in exports ... after 2035". Raises (via
+    params.sheet) if the sheet is missing.
     """
     df = P.sheet('LNG_Contracts')
     if df.empty:
@@ -262,15 +261,17 @@ def lng_foundation_share(year=None, planned_pj=None):
     demand rather than by an expired commitment.
 
     ``planned_pj`` is that year's planned export volume; the share is the
-    contracted volume over it, capped at 1. Without a year (or without the sheet)
+    contracted volume over it, capped at the scalar. Without a year
     this returns the flat scalar, which is the pre-2026 behaviour.
     """
-    flat = P.get('lng_foundation_share', 0.93)
+    flat = P.get('lng_foundation_share')
     if year is None:
         return flat
     contracted = _contracted_export_pj()
-    if not contracted or year not in contracted:
-        return flat
+    if year not in contracted:
+        # No silent fallback to the flat share: that is 93% take-or-pay, which
+        # for a year past the contract table is the most rigid answer available.
+        raise P.ParamError(f"LNG_Contracts sheet has no row for {year}")
     if not planned_pj or planned_pj <= 0:
         return flat if contracted[year] > 0 else 0.0
     # CAPPED AT THE SCALAR, not at 1.0. ACCC's contracted total slightly exceeds
@@ -293,11 +294,10 @@ def load_params(data_dir=None):
     lives at a fixed path (see params.py). The signature is kept so callers that
     already thread a data directory around do not need to care.
     """
-    defaults = {'oil_link_fixed': 0.40, 'oil_link_slope': 0.12,
-                'fx_usd_per_aud': 0.66, 'gj_per_mmbtu': 1.055,
-                'shipping': 0.80, 'regasification': 1.50,
-                'export_netback_deduction': 2.87, 'code_price_cap': 12.00}
-    return {k: P.get(k, v) for k, v in defaults.items()}
+    names = ('oil_link_fixed', 'oil_link_slope', 'fx_usd_per_aud', 'gj_per_mmbtu',
+             'shipping', 'regasification', 'export_netback_deduction',
+             'code_price_cap')
+    return {k: P.get(k) for k in names}
 
 
 def load_lng_prices(data_dir, baseline, year, code_price_cap=True):
@@ -320,14 +320,14 @@ def load_lng_prices(data_dir, baseline, year, code_price_cap=True):
         sub = df[df['Scenario'] == baseline]
         if sub.empty:
             return {}
-        sub = sub.iloc[[(sub['Year'] - int(year)).abs().idxmin() - sub.index[0]]]
+        sub = sub.loc[[(sub['Year'] - int(year)).abs().idxmin()]]
     row = sub.iloc[0].to_dict()
     row['Netback_AUD_GJ'] = float(row['Netback_Capped_AUD_GJ' if code_price_cap
                                       else 'Netback_Uncapped_AUD_GJ'])
     return row
 
 # Reservation shares offered by the dashboard slider (fraction of export volume).
-RESERVATION_LEVELS = P.get_list('reservation_levels', [0.05, 0.10, 0.20, 0.30], cast=float)
+RESERVATION_LEVELS = P.get_list('reservation_levels', cast=float)
 
 
 # --- Data centre gas demand --------------------------------------------------
@@ -391,8 +391,7 @@ RESERVATION_LEVELS = P.get_list('reservation_levels', [0.05, 0.10, 0.20, 0.30], 
 # gas is cheap (netted out of the *expansion* headroom the raise blocks are a
 # share of) nor stands down when gas is dear (netted out of the *curtailment*
 # cap). Everything else about it is ordinary industrial load.
-DATACENTRE_STATE_NODE = P.get_pairs('datacentre_state_node',
-                                    [('NSW', 'Sydney'), ('VIC', 'Melbourne')])
+DATACENTRE_STATE_NODE = P.get_pairs('datacentre_state_node')
 
 
 def datacentre_volume(spec, state, year):
@@ -478,38 +477,49 @@ def datacentre_profile(spec, year, gpg_demand):
 # conservative; it is left as-is because changing it moves every historical result,
 # but it is the number to revisit if VOLL ever matters to a conclusion.
 # First modelled year, the origin of every decline curve.
-BASE_YEAR = P.get_int('horizon_start', 2025)
+BASE_YEAR = P.get_int('horizon_start')
 
-VOLL_PER_GJ = P.get('voll_per_gj', 300.0)
+VOLL_PER_GJ = P.get('voll_per_gj')
 
 # ACIL Allen's regasification allowance inside the import injection price. GARY
 # also charges an import terminal its CapEx in expansion_options.csv, and a regas
 # tolling fee is how a terminal recovers exactly that capital -- so charging both
 # bills the terminal's capital twice. The adder comes back off the injection price
 # wherever the CapEx is charged; see _import_injection_cost.
-REGAS_ADDER = P.get('regasification', 1.50)
+REGAS_ADDER = P.get('regasification')
 
-# Annual carrying cost charged on anything the capacity layer built, as a share of
-# CapEx. A dispatch solve covers one year and has no NPV to charge a lump sum
-# against, so a build has to show up as an annual cost or it would look free. It
-# sits above the capacity MIP's discount_rate_default because it stands in for
-# return OF capital as well as return ON it. GARY's own number, not a source.
-CAPEX_ANNUALISATION = P.get('capex_annualisation_rate', 0.08)
+
+
+def capital_recovery_factor(rate, life):
+    """Annual charge per $ of CapEx that repays it, with return, over ``life`` years.
+
+    A dispatch solve covers one year and has no NPV to charge a lump sum against,
+    so a build shows up as this annual charge for each year of its AssetLife and
+    nothing after. It replaced a flat 8% of CapEx, charged every year forever
+    whatever the asset's life -- 9.4% is right for a 20-year FSRU at 7%, 7.2% for a
+    50-year pipe, and neither should still be paying in year 51. Same rate and
+    same lives the capacity MIP's asset residual uses, so the two layers price
+    capital alike.
+    """
+    rate, life = float(rate), float(life)
+    if rate <= 0:
+        return 1.0 / life
+    return rate / (1.0 - (1.0 + rate) ** -life)
 
 # Round-trip charge on storage, applied to injection AND withdrawal, so the solver
 # cycles inventory only when the seasonal price spread justifies it. Shared with
 # capacity_model.py so both layers value a store the same way.
-STORAGE_CYCLE_COST = P.get('storage_cycle_cost', 0.50)
+STORAGE_CYCLE_COST = P.get('storage_cycle_cost')
 
 # Share of capacity a store holds on day 1, and the level it must be back at on
 # day 365. Each year is solved independently, so this is an assumption either way;
 # what matters is that the two are the SAME number, or the year creates gas.
-STORAGE_OPENING = P.get('storage_opening_fraction', 0.5)
+STORAGE_OPENING = P.get('storage_opening_fraction')
 
 # Southern winter window (gas day-of-year) used by the Winter lever, and by the
 # per-block WinterScale that damps the price response through the heating season.
-WINTER_DAYS = range(P.get_int('winter_day_start', 150),
-                    P.get_int('winter_day_end', 250) + 1)
+WINTER_DAYS = range(P.get_int('winter_day_start'),
+                    P.get_int('winter_day_end') + 1)
 
 
 def planned_export_pj(demand_df):
@@ -660,21 +670,32 @@ def _declined_capacity(row, year, cumulative_pj=0.0):
     if end is not None and str(end).strip() not in ('', 'nan', 'None'):
         if year >= int(float(end)):
             return 0.0
-    cap = max(0.0, cap * ((1 + (row.get('DeclineRate') or 0)) ** (year - BASE_YEAR)))
+    cap = max(0.0, cap * ((1 + (_num(row, 'DeclineRate') or 0.0)) ** (year - BASE_YEAR)))
+    stock = _stock_cap_tjd(row, cumulative_pj)
+    return cap if stock is None else min(cap, stock)
+
+
+def _stock_cap_tjd(row, cumulative_pj=0.0):
+    """The HARD STOCK LIMIT as a daily rate, TJ/day, or None if not stock-limited.
+
+    PJ left -> the flat TJ/day that would exhaust them over one year, so the final
+    year tapers to the remainder instead of stopping dead on a day. Applies to
+    every tranche that carries ``Reserves_PJ`` -- the developed 2P rows through
+    _declined_capacity, and the undeveloped 2C rows through the stock_cap
+    constraint in build_model (their deliverability is set by what was built, not
+    by a decline curve, but the stock behind them is just as finite).
+    """
     reserves = _reserves_pj(row)
-    if reserves is not None:
-        remaining_pj = reserves - float(cumulative_pj or 0.0)
-        if remaining_pj <= 0.0:
-            return 0.0
-        # PJ left -> the flat TJ/day that would exhaust them over one year, so the
-        # final year tapers to the remainder instead of stopping dead on a day.
-        cap = min(cap, remaining_pj * 1000.0 / 365.0)
-    return cap
+    if reserves is None:
+        return None
+    remaining_pj = reserves - float(cumulative_pj or 0.0)
+    return max(0.0, remaining_pj) * 1000.0 / 365.0
 
 
 class GasMarketModel:
     def __init__(self, nodes_df, arcs_df, supply_df, demand_df, expansion_df, year=2025, already_built=None, baseline="StepChange", dunkelflaute=False, builds_fixed=None, reserved_by_day=None, datacentre=None, netback_pricing=False, code_price_cap=True, netback_scenario=None,
-                 reservation_applied=0.0, respect_contracts=True):
+                 reservation_applied=0.0, respect_contracts=True,
+                 discount_rate=None, build_years=None):
         self.nodes = nodes_df
         self.arcs = arcs_df
         self.supply = supply_df
@@ -724,10 +745,20 @@ class GasMarketModel:
         _arc_ix = arcs_df.set_index('Name')
         self.lng_arcs = [a for a in arcs_df['Name'] if _arc_ix.loc[a, 'To'] in LNG_NODES]
         self.lng_source = sorted({_arc_ix.loc[a, 'From'] for a in self.lng_arcs})
+        # The reserved tranche is ONE variable per day, entered at the source node.
+        # With two feed nodes it would be entered -- and reported -- twice.
+        if len(self.lng_source) != 1:
+            raise ValueError(f"The reservation formulation assumes one LNG feed node; "
+                             f"arcs.csv has {self.lng_source}")
         # When set (a set of active project names), ALL build decisions are fixed:
         # projects in the set -> 1, all others -> 0. Used by the two-stage solve so
         # dispatch honours the capacity model's schedule and runs as a pure LP.
         self.builds_fixed = builds_fixed
+        # Capital charge: the run's discount rate, and {project: year built} so a
+        # build stops paying once it has lived out its AssetLife.
+        self.discount_rate = (P.get('discount_rate_default') if discount_rate is None
+                              else float(discount_rate))
+        self.build_years = dict(build_years or {})
         self.solved = False
 
         base_path = os.path.dirname(__file__)
@@ -746,7 +777,9 @@ class GasMarketModel:
             except FileNotFoundError:
                 return {}
 
-        def _load_year_profile(year_fname, flat_fname, lo=2026, hi=2045):
+        def _load_year_profile(year_fname, flat_fname,
+                               lo=P.get_int('gsoo_index_base_year'),
+                               hi=P.get_int('gsoo_index_last_year')):
             """Year-specific GSOO Step Change profile (Year,Node,Day,Demand),
             clamped to the available range; falls back to the flat GBB profile."""
             try:
@@ -848,8 +881,8 @@ class GasMarketModel:
         # Firm load has no rung on this ladder: data centres and foundation LNG
         # cargoes cannot shed at a strike and go straight to VOLL, which is what
         # makes them outbid everything else for scarce gas.
-        self.strike_gpg = float(strikes.get('GPG', P.get('strike_gpg_default', 22.0)))
-        self.strike_ind = float(strikes.get('Industrial', P.get('strike_ind_default', 120.0)))
+        self.strike_gpg = float(strikes.get('GPG', P.get('strike_gpg_default')))
+        self.strike_ind = float(strikes.get('Industrial', P.get('strike_ind_default')))
         self.gpg_nodes = sorted({n for (n, _) in self.gpg_demand})
         self.ind_nodes = sorted({n for (n, _) in self.ind_demand})
 
@@ -1033,9 +1066,10 @@ class GasMarketModel:
             storage_cost = sum((m.injection[sn, t] + m.withdrawal[sn, t])
                                * STORAGE_CYCLE_COST * 1000
                                for sn in m.StorageNodes for t in m.T)
-            # Annualised capex for anything built, at CAPEX_ANNUALISATION. build[e]
-            # is binary, which is what makes the capacity layer a MILP not an LP.
-            exp_capex = sum(m.build[e] * exp_data[e]['CapEx'] * CAPEX_ANNUALISATION
+            # Annualised capex for anything built: CapEx x capital recovery factor
+            # over its AssetLife, while it is inside that life. build[e] is binary,
+            # which is what makes the myopic path a MILP not an LP.
+            exp_capex = sum(m.build[e] * exp_data[e]['CapEx'] * self._capital_charge(e, exp_data[e])
                             for e in m.Expansion)
             # Curtailment penalties = strike price ($/GJ) x 1000 (GJ/TJ). Shedding a
             # tier costs its strike price, so a tier only sheds when the marginal
@@ -1163,6 +1197,20 @@ class GasMarketModel:
             return m.production[node, is_pot, t] <= declined
         m.supply_cap = pyo.Constraint(m.Supply, m.T, rule=supply_cap_rule)
 
+        # THE 2C STOCK LIMIT. supply_cap gates an undeveloped row on what was built
+        # and returns before any reserve is consulted, so until 23 Sep 2026 the 2C
+        # tranches had no stock limit in dispatch at all -- cumulative_pj was
+        # tracked for them and never read. The capacity MIP always enforced it
+        # (reserve_limit); this makes the two layers agree. It did not bind in any
+        # cached run (worst case 67% of Surat 2C by 2050), which is why it went
+        # unnoticed, but a longer horizon or a tighter scenario would have overdrawn.
+        pot_stock = [s_ for s_ in m.Supply
+                     if s_[1] and _reserves_pj(supply_dict[s_]) is not None]
+        m.PotStockRows = pyo.Set(initialize=pot_stock, dimen=2)
+        m.stock_cap = pyo.Constraint(m.PotStockRows, m.T, rule=lambda m, node, is_pot, t:
+            m.production[node, is_pot, t] <= _stock_cap_tjd(
+                supply_dict[node, is_pot], self.cumulative_pj.get((node, is_pot), 0.0)))
+
 
 
         def flow_cap_rule(m, a, t):
@@ -1170,39 +1218,68 @@ class GasMarketModel:
             return m.flow[a, t] <= arc_data[a]['Capacity'] + extra
         m.flow_cap = pyo.Constraint(m.Arcs, m.T, rule=flow_cap_rule)
 
-        # Exports may draw only on commercial gas. Without this the free reserved
-        # gas would flow straight to the trains -- they are ordinary demand nodes
-        # and cannot tell one molecule from another -- and the reservation would
-        # achieve nothing. Exact, not an approximation: the trains have no feed
-        # other than these pipes.
+        # RESERVED GAS IS TRACKED AS ITS OWN COMMODITY, so it cannot reach a train.
         #
-        # "Commercial gas" is everything reaching the source node EXCEPT the
-        # reserved tranche, which includes gas that transited in from elsewhere.
-        # Surat has inflows from Moomba (SWQP) and Silver Springs, and LNG demand
-        # exceeds Surat's own deliverability on ~30 days a year, so restricting
-        # exports to Surat's own production would wrongly strand the trains on
-        # those days and change the no-reservation base case.
-        # With the node balance, this is equivalent to requiring the reserved gas
-        # to be absorbed by demand at the source or to leave on a non-LNG route.
+        # The trains are ordinary demand nodes and cannot tell one molecule from
+        # another, so without a rule the free reserved gas would simply flow to
+        # them and a reservation would achieve nothing. The rule used to be one
+        # inequality at Surat -- flow down the LNG feed pipes <= commercial
+        # production there plus every inflow -- and that LEAKED: reserved gas could
+        # leave on a non-LNG arc and come straight back, counted as an "inflow".
+        # Measured on the 21 Sep 2026 cache, same-day Surat -> Silver Springs ->
+        # Surat round trips at $0.10/GJ carried 18.8 PJ in the 20% reservation and
+        # 91.6 PJ in the contract-breaking one, and none in any run without a
+        # reservation. The SWQP/SWQP_Rev loop through Moomba was the same hole at
+        # $3.05/GJ. No single-node inequality closes it: a loop through any
+        # neighbour re-labels the gas.
         #
-        # EVERY COMMERCIAL TRANCHE AT THE SOURCE COUNTS, developed and undeveloped alike.
-        # This used to filter on ``not s_[1]`` -- IsPotential -- which was meant to keep
-        # the free reserved tranche out and did not do that: the reserved gas is
-        # ``reserved_prod``, a separate variable, and it is excluded simply by not
-        # appearing in this sum. What ``not s_[1]`` actually excluded was Surat's 2C
-        # row: 23,270 PJ, the Bowen Gas Project backfill the capacity layer builds in
-        # 2030, structurally barred from the three feed pipes. Exports could then be
-        # supplied only by the DEPLETING 2P tranche plus whatever transited in up the
-        # SWQP, so the backfill could never backfill an export, and once 2P was drawn
-        # down the trains had nowhere to turn. Measured in the LNG High case, exports
-        # fell to 134 PJ in 2047-48 and 55 PJ in 2049-50 -- the transit inflows and
-        # nothing else.
-        commercial_at_source = [s_ for s_ in m.Supply if s_[0] in lng_source]
-        inflows_to_source = [a for n in lng_source for a in arcs_to[n]]
-        m.export_eligibility = pyo.Constraint(m.T, rule=lambda m, t:
-            sum(m.flow[a, t] for a in lng_arcs) <=
-            sum(m.production[s_[0], s_[1], t] for s_ in commercial_at_source)
-            + sum(m.flow[a, t] for a in inflows_to_source))
+        # So the reserved tranche is followed through the network. ``rflow`` is the
+        # reserved share of each arc's flow, ``rcons`` the reserved gas a node's
+        # domestic load actually takes, and the reserved share of storage is kept
+        # as its own inventory. A reserved molecule may go anywhere a commercial
+        # one can EXCEPT down an arc into an LNG train, and it has to end up
+        # consumed by domestic load that was served. Laundering is impossible by
+        # construction, because the tag survives the round trip.
+        #
+        # Built only when a reservation is running; without one it is empty and
+        # the model is exactly what it was.
+        reserving = any(v > 0 for v in self.reserved_by_day.values())
+        lng_node_set = set(LNG_NODES)
+        m.RArcs = pyo.Set(initialize=[a for a in m.Arcs if reserving
+                                      and arc_data[a]['To'] not in lng_node_set])
+        m.RNodes = pyo.Set(initialize=[n for n in m.Nodes if reserving
+                                       and n not in lng_node_set])
+        m.RStorage = pyo.Set(initialize=[sn for sn in m.StorageNodes if reserving])
+        m.rflow = pyo.Var(m.RArcs, m.T, domain=pyo.NonNegativeReals)
+        m.rcons = pyo.Var(m.RNodes, m.T, domain=pyo.NonNegativeReals)
+        m.rinv = pyo.Var(m.RStorage, m.T, domain=pyo.NonNegativeReals)
+        m.rinj = pyo.Var(m.RStorage, m.T, domain=pyo.NonNegativeReals)
+        m.rwd = pyo.Var(m.RStorage, m.T, domain=pyo.NonNegativeReals)
+        m.rflow_share = pyo.Constraint(m.RArcs, m.T,
+            rule=lambda m, a, t: m.rflow[a, t] <= m.flow[a, t])
+        r_to = {n: [a for a in m.RArcs if arc_data[a]['To'] == n] for n in m.RNodes}
+        r_from = {n: [a for a in m.RArcs if arc_data[a]['From'] == n] for n in m.RNodes}
+        m.rbalance = pyo.Constraint(m.RNodes, m.T, rule=lambda m, n, t:
+            (m.reserved_prod[t] if n in lng_source else 0)
+            + sum(m.rflow[a, t] for a in r_to[n])
+            + (m.rwd[n, t] - m.rinj[n, t] if n in m.RStorage else 0)
+            == sum(m.rflow[a, t] for a in r_from[n]) + m.rcons[n, t])
+        # Only load that was actually SERVED can absorb reserved gas: posted
+        # demand less anything shed or left short.
+        m.rcons_cap = pyo.Constraint(m.RNodes, m.T, rule=lambda m, n, t:
+            m.rcons[n, t] <= node_demand.get((n, t), 0) + gpg_dem.get((n, t), 0)
+            + ind_dem.get((n, t), 0) - m.shortage[n, t]
+            - (m.gpg_curtail[n, t] if n in m.GPGNodes else 0)
+            - (m.ind_curtail[n, t] if n in m.INDNodes else 0))
+        m.rinj_share = pyo.Constraint(m.RStorage, m.T,
+            rule=lambda m, sn, t: m.rinj[sn, t] <= m.injection[sn, t])
+        m.rwd_share = pyo.Constraint(m.RStorage, m.T,
+            rule=lambda m, sn, t: m.rwd[sn, t] <= m.withdrawal[sn, t])
+        m.rinv_cont = pyo.Constraint(m.RStorage, m.T, rule=lambda m, sn, t:
+            m.rinv[sn, t] == (m.rinv[sn, t - 1] if t > 1 else 0.0)
+            + m.rinj[sn, t] - m.rwd[sn, t])
+        m.rinv_share = pyo.Constraint(m.RStorage, m.T,
+            rule=lambda m, sn, t: m.rinv[sn, t] <= m.inventory[sn, t])
 
         def storage_cont_rule(m, sn, t):
             cap = storage_caps.get(sn, 0)
@@ -1269,7 +1346,19 @@ class GasMarketModel:
                 m.build_group_once = pyo.Constraint(m.ExpGroup, rule=lambda m, g:
                     sum(m.build[e] for e in groups[g]) <= 1)
 
-    def solve(self, mip_gap=0.005):
+    def _capital_charge(self, e, row):
+        """This year's capital charge on project ``e`` per $ of CapEx."""
+        if not float(row.get('CapEx') or 0) > 0:
+            return 0.0
+        life = _num(row, 'AssetLife')
+        if life is None or life <= 0:
+            raise ValueError(f"{e} carries CapEx but no AssetLife in expansion_options.csv")
+        built = self.build_years.get(e, self.year)
+        if self.year - built >= life:
+            return 0.0
+        return capital_recovery_factor(self.discount_rate, life)
+
+    def solve(self, mip_gap=None):
         m = self.model
 
         def make_solver(rel_gap=None):
@@ -1288,32 +1377,31 @@ class GasMarketModel:
         # If all expansion vars are already fixed there are no free binaries —
         # solve as pure LP (much faster, duals available immediately).
         all_fixed = all(m.build[e].is_fixed() for e in m.Expansion)
-        if all_fixed:
+        if not all_fixed:
+            # MIP solve (free binaries -- the myopic path). `feasible` is enough
+            # here: the builds are then fixed and the prices come from the LP below.
+            res = make_solver(rel_gap=mip_gap if mip_gap is not None else P.get('mip_gap_default')
+                              ).solve(m, tee=False)
+            if res.solver.termination_condition not in (pyo.TerminationCondition.optimal,
+                                                         pyo.TerminationCondition.feasible):
+                self.solved = False
+                return str(res.solver.termination_condition)
+            # Fix binary decisions, rounded to the decision actually made, then
+            # relax their domain so the re-solve is a pure LP with duals.
             for e in m.Expansion:
-                m.build[e].domain = pyo.Reals
-            m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
-            res = make_solver().solve(m, tee=False)
-            if res.solver.termination_condition in [pyo.TerminationCondition.optimal,
-                                                     pyo.TerminationCondition.feasible]:
-                self.solved = True
-                return "ok"
-            self.solved = False
-            return str(res.solver.termination_condition)
+                m.build[e].fix(1.0 if pyo.value(m.build[e]) > 0.5 else 0.0)
 
-        # MIP solve (free binaries)
-        res = make_solver(rel_gap=mip_gap if mip_gap is not None else 0.005).solve(m, tee=False)
-        if res.solver.termination_condition not in [pyo.TerminationCondition.optimal,
-                                                     pyo.TerminationCondition.feasible]:
-            self.solved = False
-            return str(res.solver.termination_condition)
-
-        # Fix binary decisions, relax their domain, then re-solve as a pure LP
-        # for dual values (prices)
         for e in m.Expansion:
-            m.build[e].fix(pyo.value(m.build[e]))
             m.build[e].domain = pyo.Reals
         m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
-        make_solver().solve(m, tee=False)
+        res = make_solver().solve(m, tee=False)
+        # ONLY `optimal`. Every nodal price is read off this solve's duals, and a
+        # merely feasible LP point (a time limit, say) has duals that are not
+        # prices. This used to accept `feasible`, and on the MIP path did not check
+        # the re-solve at all -- solved=True was set whatever came back.
+        if res.solver.termination_condition != pyo.TerminationCondition.optimal:
+            self.solved = False
+            return f"price LP: {res.solver.termination_condition}"
         self.solved = True
         return "ok"
 

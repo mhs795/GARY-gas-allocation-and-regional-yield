@@ -120,7 +120,7 @@ def _backstop_at_wellhead(nodes_df, arcs_df, backstop, import_nodes=IMPORT_NODES
 # pre-existing rule of "the import backstop less the cheapest tariff to a terminal"
 # (_backstop_at_wellhead). On by default. Switchable so a run can be read against
 # the old one -- it changes every scarcity rent, so every result moves.
-SALVAGE_ROUTE_CAPACITY = str(P.get_str('salvage_route_capacity', 'TRUE')).strip().upper() in ('TRUE', '1', 'YES')
+SALVAGE_ROUTE_CAPACITY = P.get_bool('salvage_route_capacity')
 
 
 def _realisable_backstop(arcs_df, import_price, netback_price, deliverability,
@@ -315,14 +315,14 @@ def _salvage_rate(row, backstop, discount_rate, tau=None):
 
 
 # Days represented by the annual peak day (adequacy).
-PEAK_DAY_WEIGHT = P.get('peak_day_weight', 5.0)
+PEAK_DAY_WEIGHT = P.get('peak_day_weight')
 
 # Whether a built asset keeps a terminal value for the service life the horizon
 # cuts off -- see _asset_residual. On by default: without it the objective
 # credits leftover GAS at 2050 but writes off the STEEL that moves it, and the
 # asymmetry is a bias, not a conservatism. Switchable so a run can be read
 # against one without it.
-ASSET_SALVAGE = str(P.get_str('asset_salvage', 'TRUE')).strip().upper() in ('TRUE', '1', 'YES')
+ASSET_SALVAGE = P.get_bool('asset_salvage')
 
 
 def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
@@ -358,11 +358,11 @@ def build_representative_days(years, demand_all, gpg_all, ind_all, nodes_df,
     reserved_all = reserved_all or {}
     dc_all = dc_all or {}
     k = max(1, int(bins_per_month if bins_per_month is not None
-                   else P.get_int('rep_bins_per_month', 3)))
+                   else P.get_int('rep_bins_per_month')))
     # 'medoid' picks a REAL day per bin; 'mean' averages the bin. See the note in the
     # loop below -- a mean cannot represent a binding corridor.
     medoid = (medoid_days if medoid_days is not None
-              else P.get_str('rep_day_mode', 'medoid').strip().lower() == 'medoid')
+              else P.get_str('rep_day_mode').strip().lower() == 'medoid')
 
     rep = {}
     for y in years:
@@ -441,9 +441,9 @@ class CapacityExpansionModel:
         self.rep = rep                      # {year: [rep-day dicts]}
         # Defaults come from the parameters workbook, not from the signature, so the
         # workbook stays the single place a parameter is set.
-        self.r = P.get('discount_rate_default', 0.07) if discount_rate is None else discount_rate
-        self.strike_gpg = P.get('strike_gpg_default', 22.0) if strike_gpg is None else strike_gpg
-        self.strike_ind = P.get('strike_ind_default', 120.0) if strike_ind is None else strike_ind
+        self.r = P.get('discount_rate_default') if discount_rate is None else discount_rate
+        self.strike_gpg = P.get('strike_gpg_default') if strike_gpg is None else strike_gpg
+        self.strike_ind = P.get('strike_ind_default') if strike_ind is None else strike_ind
         # Reservation: which arcs feed the LNG trains and which node supplies them,
         # so the investment layer sees the same zero-cost reserved tranche and the
         # same export-eligibility rule the dispatch layer will face.
@@ -496,9 +496,9 @@ class CapacityExpansionModel:
         else:
             self.reserve_applied_by_year = {}
             self.reserve_applied = float(reservation_applied or 0.0)
-        self.terminal_earliest = (P.get_int('terminal_earliest', 2028)
+        self.terminal_earliest = (P.get_int('terminal_earliest')
                                   if terminal_earliest is None else terminal_earliest)
-        self.base_year = (P.get_int('capacity_base_year', 2025)
+        self.base_year = (P.get_int('capacity_base_year')
                           if base_year is None else base_year)
         # $/GJ that gas is worth at the horizon -- the BACKSTOP price, i.e. what the
         # substitute costs. Landed imported LNG here, which is genuinely GARY's
@@ -888,27 +888,49 @@ class CapacityExpansionModel:
         m.StockRows = pyo.Set(initialize=stock_rows, dimen=2)
         m.reserve_limit = pyo.Constraint(m.StockRows, rule=reserve_rule)
 
-        # Exports draw only on commercial gas, so the free reserved gas cannot
-        # simply flow to the trains. See the header block in model.py.
-
 
         def flow_cap_rule(m, a, y, i):
             extra = pyo.quicksum(active(e, y) * exp_data[e]['NewCapacity'] for e in m.Expansion if exp_data[e]['Target'] == a)
             return m.flow[a, y, i] <= arc_data[a]['Capacity'] + extra
         m.flow_cap = pyo.Constraint(m.Arcs, m.YR, rule=flow_cap_rule)
 
-        # Exports draw only on commercial gas -- everything reaching the source
-        # node except the reserved tranche, transit inflows included. See the
-        # header block in model.py.
-        if self.lng_arcs:
-            # Every commercial tranche at the source, 2C included -- see the
-            # matching note in model.py.
-            _commercial = [s_ for s_ in m.Supply if s_[0] in self.lng_source]
-            _inflows = [a for n in self.lng_source for a in arcs_to[n]]
-            m.export_eligibility = pyo.Constraint(m.YR, rule=lambda m, y, i:
-                pyo.quicksum(m.flow[a, y, i] for a in self.lng_arcs) <=
-                pyo.quicksum(m.production[s_[0], s_[1], y, i] for s_ in _commercial)
-                + pyo.quicksum(m.flow[a, y, i] for a in _inflows))
+        # Reserved gas is tracked as its own commodity so it cannot reach a train,
+        # exactly as in the dispatch layer -- see the RESERVED GAS block in
+        # model.build_model for why a single inequality at Surat leaked. This layer
+        # has no inventory state, so the reserved share of a store is bounded by
+        # the store's own movements and must net to no more than zero over the
+        # year: reserved gas can be moved within a year, not conjured.
+        reserving = any(rd(y, i).get('reserved', 0.0) > 0 for (y, i) in YR)
+        lng_set = set(LNG_NODES)
+        m.RArcs = pyo.Set(initialize=[a for a in m.Arcs if reserving
+                                      and arc_data[a]['To'] not in lng_set])
+        m.RNodes = pyo.Set(initialize=[n for n in m.Nodes if reserving and n not in lng_set])
+        m.RStorage = pyo.Set(initialize=[sn for sn in m.StorageNodes if reserving])
+        m.rflow = pyo.Var(m.RArcs, m.YR, domain=pyo.NonNegativeReals)
+        m.rcons = pyo.Var(m.RNodes, m.YR, domain=pyo.NonNegativeReals)
+        m.rinj = pyo.Var(m.RStorage, m.YR, domain=pyo.NonNegativeReals)
+        m.rwd = pyo.Var(m.RStorage, m.YR, domain=pyo.NonNegativeReals)
+        m.rflow_share = pyo.Constraint(m.RArcs, m.YR,
+            rule=lambda m, a, y, i: m.rflow[a, y, i] <= m.flow[a, y, i])
+        r_to = {n: [a for a in m.RArcs if arc_data[a]['To'] == n] for n in m.RNodes}
+        r_from = {n: [a for a in m.RArcs if arc_data[a]['From'] == n] for n in m.RNodes}
+        m.rbalance = pyo.Constraint(m.RNodes, m.YR, rule=lambda m, n, y, i:
+            (m.reserved_prod[y, i] if n in self.lng_source else 0)
+            + pyo.quicksum(m.rflow[a, y, i] for a in r_to[n])
+            + (m.rwd[n, y, i] - m.rinj[n, y, i] if n in m.RStorage else 0)
+            == pyo.quicksum(m.rflow[a, y, i] for a in r_from[n]) + m.rcons[n, y, i])
+        m.rcons_cap = pyo.Constraint(m.RNodes, m.YR, rule=lambda m, n, y, i:
+            m.rcons[n, y, i] <= rd(y, i)['demand'].get(n, 0) + rd(y, i)['gpg'].get(n, 0)
+            + rd(y, i)['ind'].get(n, 0) - m.shortage[n, y, i]
+            - (m.gpg_curtail[n, y, i] if n in m.GPGNodes else 0)
+            - (m.ind_curtail[n, y, i] if n in m.INDNodes else 0))
+        m.rinj_share = pyo.Constraint(m.RStorage, m.YR,
+            rule=lambda m, sn, y, i: m.rinj[sn, y, i] <= m.injection[sn, y, i])
+        m.rwd_share = pyo.Constraint(m.RStorage, m.YR,
+            rule=lambda m, sn, y, i: m.rwd[sn, y, i] <= m.withdrawal[sn, y, i])
+        m.rstor_annual = pyo.Constraint(m.RStorage, Y, rule=lambda m, sn, y:
+            pyo.quicksum((m.rwd[sn, y, i] - m.rinj[sn, y, i]) * wt[y, i]
+                         for (yy, i) in YR if yy == y) <= 0.0)
 
         # Storage on a representative day. This layer carries no inventory state,
         # so the bounds have to do two jobs: cap the DAILY rate at the facility's
@@ -951,8 +973,8 @@ class CapacityExpansionModel:
             pyo.quicksum((m.withdrawal[sn, y, i] - m.injection[sn, y, i]) * wt[y, i]
                          for (yy, i) in YR if yy == y) == 0.0)
 
-    def solve(self, mip_gap=0.005):
-        opt = solvers.make_solver(rel_gap=mip_gap if mip_gap is not None else 0.005,
+    def solve(self, mip_gap=None):
+        opt = solvers.make_solver(rel_gap=mip_gap if mip_gap is not None else P.get('mip_gap_default'),
                                   time_limit=solvers.env_time_limit())
         res = opt.solve(self.model, tee=False)
         ok = res.solver.termination_condition in (pyo.TerminationCondition.optimal,
@@ -960,7 +982,19 @@ class CapacityExpansionModel:
         self.solved = ok
         if not ok:
             return str(res.solver.termination_condition)
-        self._solve_duals()
+        # The gap the solver actually closed, in dollars and relative -- recorded
+        # with every result so a build schedule can be read against how settled
+        # it was. Not every backend reports a bound; None then.
+        try:
+            lb, ub = float(res.problem.lower_bound), float(res.problem.upper_bound)
+            self.gap_abs = ub - lb
+            self.gap_rel = (ub - lb) / abs(ub) if ub else None
+        except (TypeError, ValueError, AttributeError):
+            self.gap_abs = self.gap_rel = None
+        st = self._solve_duals()
+        if st != "ok":
+            self.solved = False
+            return st
         return "ok"
 
     def _solve_duals(self):
@@ -971,28 +1005,26 @@ class CapacityExpansionModel:
         binaries are fixed at their MIP values and relaxed to Reals first --
         the same trick model.py uses to get nodal prices out of its own MILP.
 
-        A failure here is not fatal: rents come back empty and the dispatch layer
-        falls back to bare field costs, which is the pre-rent behaviour.
+        A FAILURE HERE IS FATAL. It used to be swallowed: rents came back empty
+        and dispatch ran on bare field costs, which is the configuration that put
+        758 PJ/yr of shortage into 2047-50 (docs/model.md) -- with nothing in the
+        result to say it had happened.
         """
         m = self.model
-        try:
-            for e in m.Expansion:
-                for y in self.years:
-                    # Round before fixing. A MILP hands back binaries at floating
-                    # point noise -- build[NGP_Reversal, 2036] came out of HiGHS at
-                    # -4.5e-15 -- and writing that into a Binary domain raises
-                    # Pyomo W1001 for every such variable. Harmless to the answer,
-                    # since every reader of a build decision tests `> 0.5`, but it
-                    # buries the solve log and it is a negative build quantity
-                    # sitting in the objective. Round to the decision the MIP
-                    # actually made, then relax the domain.
-                    m.build[e, y].fix(1.0 if pyo.value(m.build[e, y]) > 0.5 else 0.0)
-                    m.build[e, y].domain = pyo.Reals
-            m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
-            solvers.make_solver(time_limit=solvers.env_time_limit()).solve(m, tee=False)
-        except Exception:
-            if hasattr(m, 'dual'):
-                del m.dual
+        for e in m.Expansion:
+            for y in self.years:
+                # Round before fixing. A MILP hands back binaries at floating
+                # point noise -- build[NGP_Reversal, 2036] came out of HiGHS at
+                # -4.5e-15 -- and writing that into a Binary domain raises
+                # Pyomo W1001 for every such variable. Round to the decision the
+                # MIP actually made, then relax the domain.
+                m.build[e, y].fix(1.0 if pyo.value(m.build[e, y]) > 0.5 else 0.0)
+                m.build[e, y].domain = pyo.Reals
+        m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
+        res = solvers.make_solver(time_limit=solvers.env_time_limit()).solve(m, tee=False)
+        if res.solver.termination_condition != pyo.TerminationCondition.optimal:
+            return f"scarcity-rent LP: {res.solver.termination_condition}"
+        return "ok"
 
     def get_scarcity_rents(self):
         """Hotelling rent on each stock-limited supply row, {(node, is_pot, year): $/GJ}.
@@ -1015,9 +1047,11 @@ class CapacityExpansionModel:
         saves it for the years that value it most and the two layers agree.
 
         The objective discounts each year, so the dual is on an NPV basis. Dividing
-        by that year's discount factor puts it back on a cash basis -- which makes
-        the rent grow at the discount rate, the Hotelling result, rather than
-        being imposed as one.
+        by that year's discount factor puts it back on a cash basis, so the rent
+        grows at exactly the discount rate. That is IMPOSED, not a Hotelling result
+        arrived at: reserve_limit is one constraint per tranche over the whole
+        horizon, so it has one dual, and de-discounting a single number must give a
+        path growing at r whatever the data says (docs/model.md, TODO item 16).
         """
         m = self.model
         if not self.solved or not hasattr(m, 'dual') or not hasattr(m, 'reserve_limit'):

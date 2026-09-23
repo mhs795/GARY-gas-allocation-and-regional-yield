@@ -3,6 +3,35 @@
 Things known to be wrong, unfinished, or resting on an assumption worth revisiting.
 Each entry says what the issue is, how big it is, and what closing it would take.
 
+## CLOSED 23 Sep 2026 — code review fixes
+
+Full list and evidence in `REVIEW_2026-09-23.md`. In short:
+
+- **Reserved gas reached the trains** through same-day round trips (Surat → Silver
+  Springs → Surat; 18.8 PJ in the 20% reservation, 91.6 PJ contract-breaking). Reserved
+  gas is now tracked as its own commodity in both layers and cannot use an arc into a
+  train. `tests/check_results_invariants.py` catches the old cache.
+- **Parameters had silent in-code defaults**, some different from the workbook (Winter
+  defaulted to 1.0/1.5/2.2). `params.py` now raises on anything missing.
+- **The MIP gap was looser than the build decisions it settles.** 0.5% of a ~$94bn
+  objective; now 0.01% plus a $10m absolute cap, and the achieved gap is stored.
+- **Dispatch did not check 2C reserves.** It does now (`stock_cap`).
+- **Dual re-solve failures were swallowed**, including an empty rent set. They now
+  fail the run.
+- **Cached results carried no provenance.** Each is now stamped with an input and code
+  fingerprint, and the dashboard flags a stale one.
+- Hard-coded lever shapes moved to the workbook. The flat 8% dispatch capital charge
+  was replaced by a capital recovery factor over `AssetLife`. Stale docs corrected.
+
+## OPEN — Port Kembla is `Status = Built` but treated as a new investment
+
+`Port_Kembla_Terminal` is neither forced in, as `Committed` projects are, nor costed as
+sunk: the capacity MIP charges its full $250m CapEx as a fresh decision. The note says
+the terminal is mechanically complete but its FSRU was redeployed, and AEMO lists it
+as Proposed, so optional may be right. The open question is what the $250m
+represents. If it is the cost of securing a new FSRU, relabel it. If it is the sunk
+jetty and pipeline, it should be zero. Needs a source; left unchanged.
+
 ## CLOSED 29 Aug 2026 — price-responsive demand removed
 
 The mass-market step demand curve and the industrial and GPG raise blocks are gone,

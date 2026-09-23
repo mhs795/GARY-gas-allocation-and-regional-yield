@@ -12,7 +12,7 @@ therefore pin ``GARY_SOLVER_THREADS=1`` and win by running several solves at
 once instead.
 
 Workers are spawned rather than forked: this is called from inside a Dash
-background-callback process that already holds diskcache/sqlite handles, and
+background-callback process that already holds open files and server sockets, and
 forking those into children is a good way to find rare, ugly bugs. Spawn costs a
 couple of seconds of re-import per worker against solves that run for minutes.
 

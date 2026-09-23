@@ -5,31 +5,32 @@ import time
 
 import datacentre_series
 import params as P
+import results_io
 import solvers
-from model import (IMPORT_NODES, GasMarketModel, _import_injection_cost,
-                   apply_lng_reservation)
+from model import (IMPORT_NODES, LNG_NODES, WINTER_DAYS, GasMarketModel,
+                   _import_injection_cost, apply_lng_reservation)
 
 
-def _lever(lever, level, default):
-    """One row of the Scenario_Levers sheet, or the in-code default."""
+def _lever(lever, level):
+    """One row of the Scenario_Levers sheet, as a Series. Raises if absent."""
     df = P.sheet('Scenario_Levers')
-    if df.empty:
-        return default
     hit = df[(df['Lever'].astype(str) == lever) & (df['Level'].astype(str) == level)]
-    return default if hit.empty else float(hit.iloc[0]['Value'])
+    if hit.empty:
+        raise P.ParamError(f"Scenario_Levers has no row for {lever} / {level}")
+    return hit.iloc[0]
 
 
-HORIZON_START = P.get_int('horizon_start', 2025)
-HORIZON_END = P.get_int('horizon_end', 2051)
+HORIZON_START = P.get_int('horizon_start')
+HORIZON_END = P.get_int('horizon_end')
 # Last year anyone SEES. The model solves one year past it so the terminal-year
 # artefact -- a finite horizon exhausts its tranches exactly at the last year it can
 # see -- lands outside the reported range instead of inside it. See TODO item 14.
-HORIZON_REPORT_END = P.get_int('horizon_report_end', 2050)
+HORIZON_REPORT_END = P.get_int('horizon_report_end')
 
 # Terminal-value fixed point: how many extra capacity solves to spend chasing it,
 # and the tau movement (years) below which it is called settled.
-SALVAGE_MAX_PASSES = P.get_int('salvage_max_passes', 4)
-SALVAGE_TAU_TOL = P.get('salvage_tau_tol', 0.25)
+SALVAGE_MAX_PASSES = P.get_int('salvage_max_passes')
+SALVAGE_TAU_TOL = P.get('salvage_tau_tol')
 
 
 def _nameplate_tau(cap, key):
@@ -41,9 +42,9 @@ def _nameplate_tau(cap, key):
         return None
 
 # Which Source value in expansion_options.csv counts as "in the GSOO".
-GSOO_SOURCE = P.get_str('expansion_source_gsoo', 'GSOO')
-GSOO_ONLY_DEFAULT = str(P.get_str('gsoo_expansions_only', 'FALSE')).strip().upper() in ('TRUE', '1', 'YES')
-IMPORTS_DEFAULT = str(P.get_str('allow_import_terminals', 'TRUE')).strip().upper() in ('TRUE', '1', 'YES')
+GSOO_SOURCE = P.get_str('expansion_source_gsoo')
+GSOO_ONLY_DEFAULT = P.get_bool('gsoo_expansions_only')
+IMPORTS_DEFAULT = P.get_bool('allow_import_terminals')
 
 
 def filter_expansions(expansion, gsoo_only, allow_imports=True):
@@ -116,17 +117,8 @@ def lng_price_scenario(lng_level, baseline):
     "Step Change demand with Slower Growth LNG prices" is expressible. That is the
     sensitivity, not a mistake.
     """
-    df = P.sheet('Scenario_Levers')
-    target = None
-    if not df.empty and 'Lever' in df.columns:
-        hit = df[(df['Lever'].astype(str) == 'LNG_Netback')
-                 & (df['Level'].astype(str) == str(lng_level))]
-        if not hit.empty:
-            target = str(hit.iloc[0]['Value']).strip()
-    if target is None:
-        target = {'Low': 'Accelerated', 'Medium': 'baseline',
-                  'High': 'SlowerGrowth'}.get(lng_level, 'baseline')
-    return baseline if target in ('baseline', '', 'nan') else target
+    target = str(_lever('LNG_Netback', str(lng_level))['Value']).strip()
+    return baseline if target == 'baseline' else target
 
 def load_data(baseline="StepChange"):
     base_path = os.path.dirname(__file__)
@@ -145,21 +137,36 @@ def load_data(baseline="StepChange"):
     }
 
 def get_lng_mult(scenario, year):
-    """LNG export demand multiplier for one year. Levels come from the
-    Scenario_Levers sheet of the parameters workbook (see params.py); the piecewise
-    SHAPE stays here because it is model structure, not a parameter."""
-    HIGH_LNG_START = 2026
-    HIGH_LNG_END = 2030
+    """LNG export VOLUME multiplier for one year (netback pricing off only).
+
+    Every number is on the workbook: the Low and High rows of Scenario_Levers carry
+    the value and the FromYear/ToYear window it applies over, and the Parameters
+    sheet carries the Low path's post-window decline and floor and the High case's
+    level outside its window.
+
+      Low     1.0 before FromYear; falls by Value a year to ToYear; then by
+              lng_low_decline_after a year, floored at lng_low_floor. One
+              continuous line -- the post-window leg starts from wherever the
+              window leg ended, so changing the step cannot open a jump.
+      High    Value over FromYear..ToYear, lng_high_outside_window elsewhere.
+      Medium  Value (1.0) throughout.
+    """
+    row = _lever('LNG', scenario)
     if scenario == "Low":
-        step = _lever('LNG', 'Low', 0.04)
-        if year <= 2025: return 1.0
-        elif year <= 2030: return 1.0 - (year - 2025) * step
-        elif year <= 2040: return 0.8 - (year - 2030) * 0.03
-        else: return max(0.2, 0.5 - (year - 2040) * 0.03)
-    elif scenario == "High":
-        if HIGH_LNG_START <= year <= HIGH_LNG_END: return _lever('LNG', 'High', 1.6)
-        else: return 1.1
-    return _lever('LNG', 'Medium', 1.0)
+        lo, hi, step = int(row['FromYear']), int(row['ToYear']), float(row['Value'])
+        if year < lo:
+            return 1.0
+        if year <= hi:
+            return 1.0 - (year - lo + 1) * step
+        at_hi = 1.0 - (hi - lo + 1) * step
+        return max(P.get('lng_low_floor'),
+                   at_hi - (year - hi) * P.get('lng_low_decline_after'))
+    if scenario == "High":
+        if int(row['FromYear']) <= year <= int(row['ToYear']):
+            return float(row['Value'])
+        return P.get('lng_high_outside_window')
+    return float(row['Value'])
+
 
 def _year_demand(data, year, winter, lng, reservation=0.0, netback_pricing=False,
                  respect_contracts=True):
@@ -181,20 +188,18 @@ def _year_demand(data, year, winter, lng, reservation=0.0, netback_pricing=False
     dm = data['demand'].copy()
     # HOLD THE LAST PUBLISHED YEAR past the end of the demand file, the way
     # load_lng_prices holds the nearest year and _load_year_profile clamps to
-    # 2045. The file runs to 2051; horizon_end is solved beyond that so the
-    # terminal condition lands outside the reporting window (see the Horizon rows
-    # in the parameters workbook), and a bare ``Year == year`` filter would hand
-    # those padding years an EMPTY frame -- zero demand, which is not a neutral
-    # assumption but the most extreme one available. Holding the last year flat
-    # is padding, not a forecast: the padded years are never reported.
+    # gsoo_index_last_year. The file is built to horizon_end, so today this only
+    # bites if horizon_end is raised without regenerating the demand files; then
+    # a bare ``Year == year`` filter would hand the extra years an EMPTY frame --
+    # zero demand, which is not a neutral assumption but the most extreme one
+    # available. Holding the last year flat is padding, not a forecast.
     dyear = min(max(int(year), int(dm['Year'].min())), int(dm['Year'].max()))
-    winter_mult = _lever('Winter', winter,
-                         {"Low": 1.0, "Medium": 1.5, "High": 2.2}[winter])
-    dm.loc[(dm['Year'] == dyear) & (dm['Node'].isin(['Melbourne', 'Adelaide', 'Sydney'])) &
-           (dm['Day'] >= 150) & (dm['Day'] <= 250), 'Demand'] *= winter_mult
+    winter_mult = float(_lever('Winter', winter)['Value'])
+    dm.loc[(dm['Year'] == dyear) & (dm['Node'].isin(P.get_list('winter_nodes'))) &
+           (dm['Day'].isin(WINTER_DAYS)), 'Demand'] *= winter_mult
     if not netback_pricing:
         lng_mult = get_lng_mult(lng, year)
-        dm.loc[(dm['Year'] == dyear) & (dm['Node'].isin(['APLNG', 'GLNG', 'QCLNG'])), 'Demand'] *= lng_mult
+        dm.loc[(dm['Year'] == dyear) & (dm['Node'].isin(LNG_NODES)), 'Demand'] *= lng_mult
     # The frame comes from dyear; the CONTRACT rules still key off the real year,
     # because the foundation SPAs expire on their own calendar, not the file's.
     return apply_lng_reservation(dm[dm['Year'] == dyear].copy(), reservation,
@@ -253,8 +258,8 @@ def run_title(winter, lng, baseline="StepChange", dunkelflaute=False, reservatio
     return "  ·  ".join(bits)
 
 
-def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
-                   baseline="StepChange", dunkelflaute=False, discount_rate=0.07,
+def solve_scenario(winter, lng, mip_gap=None, callback=None,
+                   baseline="StepChange", dunkelflaute=False, discount_rate=None,
                    foresight=True, reservation=0.0,
                    datacentre=None, netback_pricing=False,
                    respect_contracts=True, gsoo_expansions_only=None,
@@ -306,6 +311,10 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     # One header per scenario, then one line per year: with the batch solving 28
     # scenarios x 26 years, the year lines are meaningless without it. Callers that
     # already have a nicer label (the dashboard passes its scenario key) override it.
+    if mip_gap is None:
+        mip_gap = P.get('mip_gap_default')
+    if discount_rate is None:
+        discount_rate = P.get('discount_rate_default')
     if gsoo_expansions_only is None:
         gsoo_expansions_only = GSOO_ONLY_DEFAULT
     if allow_import_terminals is None:
@@ -327,7 +336,16 @@ def solve_scenario(winter, lng, mip_gap=0.005, callback=None,
     else:
         results = _solve_myopic(data, years, winter, lng, baseline,
                                 dunkelflaute, mip_gap, callback, reservation, log,
-                                datacentre, netback_pricing, respect_contracts)
+                                datacentre, netback_pricing, respect_contracts,
+                                discount_rate)
+    # PROVENANCE: what this answer was solved with, so a cached copy can be told
+    # apart from a fresh one after an input or code change (results_io.stale_reason)
+    # and a build schedule can be read against the gap it was settled to.
+    meta = dict(results_io.provenance(), solver=solvers.get_solver_name(),
+                mip_gap=float(mip_gap), mip_abs_gap_aud=P.get('mip_abs_gap_aud'),
+                discount_rate=float(discount_rate))
+    for r in results:
+        r['run_meta'] = meta
     return _trim_to_report_horizon(results)
 
 
@@ -342,29 +360,25 @@ def _trim_to_report_horizon(results):
     shows shortage at value-of-lost-load. Measured 30 Aug 2026 at 207,569 TJ.
 
     The salvage value on remaining reserves now exists, so the last year no longer
-    empties the basins. It replaced that artefact with a subtler one: the credit is
-    de-discounted in get_scarcity_rents, so the Hotelling rent it implies GROWS AT
-    THE DISCOUNT RATE and hits the full salvage rate exactly at HORIZON_END. The
-    decade before the horizon is contaminated by it whatever the salvage price --
-    a rent compounding at 7%/yr against a netback drifting down ~1%/yr crosses
-    somewhere, and at the crossing exports stop dead rather than tapering.
+    empties the basins. The pad is ONE year (horizon_end 2051, reported to 2050).
+    A fifteen-year pad to 2065 was tried on 2 Sep 2026 and reverted: it put
+    fourteen extra years of held-flat demand against the same finite reserves and
+    moved every late-horizon result (see the horizon_end note in the workbook and
+    docs/depletion.md). The remaining terminal effects are TODO items 14 and 16.
 
-    So the pad is now FIFTEEN years, not one: solved to 2065, reported to 2050,
-    which puts the contaminated tail outside the window anyone reads. This moves
-    the artefact rather than fixing it -- see TODO item 15 for the cancellation bug
-    still underneath.
-
-    The padded years do real work: they are in the capacity MIP's foresight, so
-    builds and scarcity rents are struck against them.
+    The padded year does real work: it is in the capacity MIP's foresight, so
+    builds and scarcity rents are struck against it.
     """
     return [r for r in results if r.get('Year', 0) <= HORIZON_REPORT_END]
 
 
 def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
                   mip_gap, callback, reservation=0.0, log=True,
-                  datacentre=None, netback_pricing=False, respect_contracts=True):
+                  datacentre=None, netback_pricing=False, respect_contracts=True,
+                  discount_rate=None):
     """Reactive year-by-year solve: each year decides builds with no foresight."""
     built_projects, results = [], []
+    build_years = {}         # project -> year first built, for the capital charge
     cumulative = {}          # (Node, IsPotential) -> PJ produced so far
     for i, year in enumerate(years):
         if callback:
@@ -378,7 +392,8 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
             baseline=baseline, dunkelflaute=dunkelflaute, reserved_by_day=reserved_day,
             datacentre=datacentre, netback_pricing=netback_pricing,
             netback_scenario=lng_price_scenario(lng, baseline) if netback_pricing else None,
-            reservation_applied=applied, respect_contracts=respect_contracts)
+            reservation_applied=applied, respect_contracts=respect_contracts,
+            discount_rate=discount_rate, build_years=build_years)
         gm.cumulative_pj = cumulative
         gm.build_model()
         status = gm.solve(mip_gap=mip_gap)
@@ -392,7 +407,10 @@ def _solve_myopic(data, years, winter, lng, baseline, dunkelflaute,
         yr_res['lng_reserved_tj'] = diverted
         cumulative = _accumulate(cumulative, yr_res)
         results.append(yr_res)
-        built_projects.extend([b for b in yr_res['builds'] if b not in built_projects])
+        for b in yr_res['builds']:
+            if b not in built_projects:
+                built_projects.append(b)
+                build_years[b] = year
         if log:
             print(f"    Year {year} complete", flush=True)
     if callback:
@@ -425,6 +443,14 @@ def _accumulate(cum, results):
         k = (r['Node'], is_pot)
         cum[k] = cum.get(k, 0.0) + float(r['Value']) / 1000.0   # TJ -> PJ
     return cum
+
+
+def _supply_import_cost(supply):
+    """$/GJ an import terminal costs in supply.csv: the backstop without netback."""
+    rows = supply[supply['Node'].isin(IMPORT_NODES) & supply['IsPotential'].astype(bool)]
+    if rows.empty:
+        raise ValueError("supply.csv has no import-terminal rows to take a backstop from")
+    return float(rows['Cost'].max())
 
 
 def _num_or_none(v):
@@ -504,8 +530,11 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
             for y in years} if netback_pricing else None,
         # Backstop price for the terminal salvage value: what replacement gas costs
         # landed in the final year. Published (ACIL Allen injection cost), not chosen.
+        # Without netback pricing there is no ACIL series, and the backstop is the
+        # import terminals' own cost in supply.csv -- the same number dispatch
+        # charges them -- rather than a literal here.
         salvage_price=(float(dispatch_models[years[-1]].lng_prices['Import_Injection_AUD_GJ'])
-                       if netback_pricing else 14.0),
+                       if netback_pricing else _supply_import_cost(data['supply'])),
         lng_nameplate=dispatch_models[start_year].lng_nameplate,
         # Per-year, not a scalar: the contracts expire mid-horizon, so the MIP has
         # to see the same must-serve profile the dispatch layer will face.
@@ -522,6 +551,10 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         return c
 
     # --- Pass 2: the investment MIP, iterated to a terminal-value fixed point ----
+    # OFF BY DEFAULT: salvage_max_passes is 0 on the workbook, so the loop below
+    # does not run and every row keeps its nameplate tau. It was measured on
+    # 3 Sep 2026 and found not to matter (TODO item 16 addendum); it is kept so it
+    # can be switched back on. What follows describes it when it is on.
     # The salvage credit scales the margin on leftover gas by 1/(1+r.tau), where tau
     # is how many years of production the stock represents. tau therefore has to be
     # measured on the stock LEFT AT THE HORIZON -- but that is an output of the very
@@ -568,6 +601,10 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
             break
         cap_kwargs['tau_override'] = tau_now
         cap = _build_cap()
+    else:
+        if SALVAGE_MAX_PASSES > 0:
+            print(f"    WARNING: salvage tau did not settle within {SALVAGE_MAX_PASSES} "
+                  f"passes (last move {moved:.2f} yr > {SALVAGE_TAU_TOL} yr)", flush=True)
     globals()['_LAST_TAU'] = tau_now
     # THE SCARCITY RENT. Without it the myopic dispatch layer burns each cheap
     # tranche at full rate and hits a wall the perfect-foresight MIP never saw --
@@ -575,6 +612,13 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
     # capacity_model.get_scarcity_rents.
     rents = cap.get_scarcity_rents()
     globals()['_LAST_RENTS'] = rents
+    if not rents:
+        print("    WARNING: the capacity model produced no scarcity rents; dispatch "
+              "will run on bare field costs", flush=True)
+    cap_gap = {'abs_aud': getattr(cap, 'gap_abs', None), 'rel': getattr(cap, 'gap_rel', None)}
+    if log and cap_gap['abs_aud'] is not None:
+        print(f"    capacity MIP closed to ${cap_gap['abs_aud']/1e6:,.1f}m "
+              f"({cap_gap['rel']:.4%}) of its bound", flush=True)
     build_year = cap.get_build_schedule()
     active_by_year = {y: {e for e, by in build_year.items() if by is not None and by <= y} for y in years}
 
@@ -586,6 +630,8 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
             callback(year, (i + 1) / len(years))
         gm = dispatch_models[year]
         gm.builds_fixed = active_by_year[year]
+        gm.build_years = {e: by for e, by in build_year.items() if by is not None}
+        gm.discount_rate = discount_rate
         gm.cumulative_pj = cumulative
         gm.scarcity_rent = rents
         gm.build_model()
@@ -602,6 +648,7 @@ def _solve_foresight(data, years, winter, lng, baseline, dunkelflaute,
         # other run metadata so a result can be read back without re-solving.
         yr_res['scarcity_rent'] = {(n, pot): v for (n, pot, yy), v in rents.items()
                                    if yy == year}
+        yr_res['capacity_gap'] = cap_gap
         cumulative = _accumulate(cumulative, yr_res)
         scenario_results.append(yr_res)
         if log:
@@ -664,7 +711,9 @@ def main():
                              "expansion_options.csv)")
     parser.add_argument("--myopic", action="store_true",
                         help="Year-by-year solve instead of the two-stage foresight method")
-    parser.add_argument("--mip-gap", type=float, default=0.005)
+    parser.add_argument("--mip-gap", type=float, default=None,
+                        help="Relative MIP gap (default: mip_gap_default on the "
+                             "workbook; mip_abs_gap_aud caps it in dollars)")
     solvers.add_solver_argument(parser)
     args = parser.parse_args()
 

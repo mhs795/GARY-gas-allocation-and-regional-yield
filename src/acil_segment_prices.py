@@ -81,26 +81,14 @@ WEIGHTS_FILE = "acil_segment_weights.csv"
 
 # Fallback weights, used only if the file is missing. Same numbers as the CSV;
 # duplicated so the module still runs on a clone that has not regenerated data.
-DEFAULT_WEIGHTS = {
-    'ResidentialCommercial': {'contract': 1.00, 'spot': 0.00, 'premium': 0.00},
-    'Industrial':            {'contract': 0.90, 'spot': 0.10, 'premium': 0.00},
-    'GPG_CCGT':              {'contract': 0.80, 'spot': 0.20, 'premium': 0.00},
-    'GPG_OCGT':              {'contract': 0.20, 'spot': 0.80, 'premium': 1.00},
-}
-
-
 def load_weights(data_dir=DATA):
     """Segment weights as {segment: {contract, spot, premium}}.
 
-    From the Segment_Weights sheet of the parameters workbook, falling back to the
-    plain-text CSV mirror and then to DEFAULT_WEIGHTS.
+    From the Segment_Weights sheet of the parameters workbook, and nowhere else:
+    acil_segment_weights.csv is a plain-text mirror for reading, not a fallback,
+    and there are no in-code defaults (see params.py).
     """
     df = P.sheet('Segment_Weights')
-    if df.empty:
-        try:
-            df = pd.read_csv(os.path.join(data_dir, WEIGHTS_FILE))
-        except FileNotFoundError:
-            return dict(DEFAULT_WEIGHTS)
     out = {}
     for _, r in df.iterrows():
         out[str(r['Segment'])] = {

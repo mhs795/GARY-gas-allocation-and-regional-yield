@@ -34,7 +34,7 @@ _NODES = pd.read_csv(os.path.join(DATA, "nodes.csv"))
 # The distribution-delivery nodes, from the CityGate flag on nodes.csv -- a node
 # attribute belongs with the node, not in a set in a module.
 CITY_NODES = set(_NODES.loc[_NODES["CityGate"] == 1, "Name"])
-YEARS = np.arange(P.get_int("horizon_start", 2025), P.get_int("horizon_end", 2050) + 1)
+YEARS = np.arange(P.get_int('horizon_start'), P.get_int('horizon_end') + 1)
 
 # NT (Darwin) city-gate commercial / light-industrial load only — small, and held
 # flat (AER: "local demand is not expected to change significantly"). Sized from the
@@ -42,17 +42,17 @@ YEARS = np.arange(P.get_int("horizon_start", 2025), P.get_int("horizon_end", 205
 # distribution system (0.3) plus Townend Road (0.2) plus Elliot (0.1). The bulk of NT
 # gas demand is power generation, modelled separately as a curtailable GPG tier at
 # the Darwin and Amadeus nodes (see build_gpg_demand_gsoo.py / gpg_facilities.csv).
-NT_DARWIN_COMMERCIAL_TJD = P.get("nt_darwin_commercial_tjd", 0.6)
+NT_DARWIN_COMMERCIAL_TJD = P.get('nt_darwin_commercial_tjd')
 
 # Baseline scenarios -> output filename slug. Mirrors build_gsoo_scenarios.SCENARIOS.
-SCENARIOS = P.get_list("gsoo_baselines", ["StepChange", "Accelerated", "SlowerGrowth"])
+SCENARIOS = P.get_list('gsoo_baselines')
 
 
 def _gsoo_index(annual, scenario, sector, lo=None, hi=None, base=None):
     """Year -> level relative to the base year, for a GSOO sector/scenario, clamped."""
-    lo = P.get_int("gsoo_index_base_year", 2026) if lo is None else lo
-    hi = P.get_int("gsoo_index_last_year", 2045) if hi is None else hi
-    base = P.get_int("gsoo_index_base_year", 2026) if base is None else base
+    lo = P.get_int('gsoo_index_base_year') if lo is None else lo
+    hi = P.get_int('gsoo_index_last_year') if hi is None else hi
+    base = P.get_int('gsoo_index_base_year') if base is None else base
     s = annual[(annual.Scenario == scenario) & (annual.Sector == sector)
                ].set_index("Year")["PJ_per_year"].to_dict()
     base_val = s[base]
@@ -64,15 +64,15 @@ def _gsoo_index(annual, scenario, sector, lo=None, hi=None, base=None):
 
 def _gsoo_level(annual, scenario, sector, year=None):
     """A GSOO sector's absolute level in ``year``, TJ/day."""
-    year = P.get_int("gsoo_index_base_year", 2026) if year is None else year
+    year = P.get_int('gsoo_index_base_year') if year is None else year
     row = annual[(annual.Scenario == scenario) & (annual.Sector == sector)
                  & (annual.Year == year)]
     return float(row["PJ_per_year"].iloc[0]) * 1000.0 / 365.0
 
 
-PEAK_MATCHING = str(P.get_str("peak_shape_matching", "TRUE")).strip().upper() in ("TRUE", "1", "YES")
-PEAK_K_MIN = P.get("peak_shape_k_min", 0.25)
-PEAK_K_MAX = P.get("peak_shape_k_max", 2.5)
+PEAK_MATCHING = P.get_bool("peak_shape_matching")
+PEAK_K_MIN = P.get('peak_shape_k_min')
+PEAK_K_MAX = P.get('peak_shape_k_max')
 
 
 def _rescale_peak(shape, target_ratio):
@@ -140,9 +140,7 @@ def build(scenario="StepChange"):
     # get_pairs returns the value side as text (a node name and a price share sit
     # in the same untyped column), so cast here the way model.py does.
     lng_nodes = {n: float(v) for n, v in
-                 P.get_pairs('lng_train_shares',
-                             [('APLNG', 0.3682), ('GLNG', 0.3023),
-                              ('QCLNG', 0.3295)])}
+                 P.get_pairs('lng_train_shares')}
     aplng_trace = daily_trace[daily_trace["Node"] == "APLNG"]
     # ANCHOR THE TRAINS TO THE GSOO, NOT TO NAMEPLATE. This used to scale the
     # Curtis Island trace so the 2026 base equalled lng_daily_target (3,680 TJ/d
@@ -202,8 +200,8 @@ def build(scenario="StepChange"):
     _nodes = pd.read_csv(os.path.join(DATA, "nodes.csv"))
     node_region = dict(zip(_nodes["Name"], _nodes["Region"]))
     regional_peak = _regional_winter_peaks(scenario) if PEAK_MATCHING else {}
-    idx_lo = P.get_int("gsoo_index_base_year", 2026)
-    idx_hi = P.get_int("gsoo_index_last_year", 2045)
+    idx_lo = P.get_int('gsoo_index_base_year')
+    idx_hi = P.get_int('gsoo_index_last_year')
     # Mean-1 daily shape and base mean level for each city-gate node.
     city_shapes, node_base_mean = {}, {}
     for node in sorted(CITY_NODES):

@@ -28,7 +28,7 @@ BASE = os.path.dirname(__file__)
 DATA = os.path.join(BASE, "data")
 GBB = os.path.join(DATA, "GasBBActualFlowStorage.CSV")
 
-RECENT_FROM = P.get_int("gbb_recent_from", 2022)
+RECENT_FROM = P.get_int('gbb_recent_from')
 
 # Model demand/transport nodes that can carry gas. GPG/industrial facilities are
 # mapped to the nearest of these. Facilities not on the modelled eastern network
@@ -101,8 +101,8 @@ EXCLUDE = {
 #   Industrial ~ $120/GJ : high cost of lost production, few alternatives, so
 #                          they curtail only in extreme scarcity (still < VoLL).
 # Same two strikes model.py reads; one definition, on the Parameters sheet.
-STRIKES = {"GPG": P.get("strike_gpg_default", 22.0),
-           "Industrial": P.get("strike_ind_default", 120.0)}
+STRIKES = {"GPG": P.get('strike_gpg_default'),
+           "Industrial": P.get('strike_ind_default')}
 
 # Northern Territory gas-power stations. NT is not on the (NEM) Gas Bulletin Board,
 # so its facilities are added explicitly. NT domestic gas demand is principally power

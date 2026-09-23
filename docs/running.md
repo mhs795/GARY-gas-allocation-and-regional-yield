@@ -62,7 +62,7 @@ python src/solve.py [flags]
 | `--dc-start YEAR` | `2030` | Year the flat volumes switch on |
 | `--dc-file PATH` | none | Linked year-by-year series; `path#SheetName` to name a sheet |
 | `--myopic` | off | Year-by-year investment instead of perfect foresight |
-| `--mip-gap` | `0.005` | Optimality gap for the capacity MILP |
+| `--mip-gap` | `mip_gap_default` (0.0001) | Relative optimality gap for the capacity MILP. `mip_abs_gap_aud` ($10m) caps it in dollars as well |
 | `--solver` | `highs` | `highs` or `glpk` |
 
 Other entry points: `src/main.py` (single solve), `src/batch_solve.py` (batch),

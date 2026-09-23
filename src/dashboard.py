@@ -242,15 +242,15 @@ static_data = load_static_data()
 # with it off the LNG lever scales export VOLUME instead, which at High pushes
 # planned exports past physical liquefaction nameplate and reports the excess as
 # domestic lost load at VOLL.
-NETBACK_DEFAULT = str(P.get_str('netback_pricing_default', 'TRUE')).strip().upper() in ('TRUE', '1', 'YES')
-IMPORTS_DEFAULT = str(P.get_str('allow_import_terminals', 'TRUE')).strip().upper() in ('TRUE', '1', 'YES')
+NETBACK_DEFAULT = P.get_bool('netback_pricing_default')
+IMPORTS_DEFAULT = P.get_bool('allow_import_terminals')
 
 # Default contents of the "link a demand series" box. Empty ships the flat-cell
 # lever exactly as it was; set datacentre_series_path in the parameters workbook
 # to a file an analyst keeps a live pipeline in and the box comes up pointing at
 # it. The path is a default, not a lock -- it is editable in the sidebar, and a
 # missing file is reported there rather than being fatal at startup.
-DC_FILE_DEFAULT = str(P.get_str('datacentre_series_path', 'none') or '').strip()
+DC_FILE_DEFAULT = str(P.get_str('datacentre_series_path') or '').strip()
 if DC_FILE_DEFAULT.lower() in ('none', 'nan', '-'):     # workbook's way of saying unset
     DC_FILE_DEFAULT = ''
 
@@ -1143,12 +1143,13 @@ LEVELS = ['Low', 'Medium', 'High']
 # so the workbook stays the single place a default is set. WINTER OPENS ON LOW: it
 # used to open on Medium, which is a 1.5x stress case, so every headline figure was
 # a stressed run unless someone moved the slider.
-_WINTER_DEFAULT_IX = LEVELS.index(P.get_str('winter_default', 'Medium')) \
-    if P.get_str('winter_default', 'Medium') in LEVELS else 1
-_LNG_DEFAULT_IX = LEVELS.index(P.get_str('lng_default', 'Medium')) \
-    if P.get_str('lng_default', 'Medium') in LEVELS else 1
-_MIP_GAP_DEFAULT = P.get('mip_gap_default', 0.005)
-_REP_BINS_DEFAULT = P.get_int('rep_bins_per_month', 3)
+_WINTER_DEFAULT_IX = LEVELS.index(P.get_str('winter_default')) \
+    if P.get_str('winter_default') in LEVELS else 1
+_LNG_DEFAULT_IX = LEVELS.index(P.get_str('lng_default')) \
+    if P.get_str('lng_default') in LEVELS else 1
+_MIP_GAP_DEFAULT = P.get('mip_gap_default')
+_DISCOUNT_DEFAULT = P.get('discount_rate_default')
+_REP_BINS_DEFAULT = P.get_int('rep_bins_per_month')
 # Domestic gas reservation shares offered by the slider, as whole percents.
 RESERVATION_PCTS = [int(round(x * 100)) for x in RESERVATION_LEVELS]
 # Uncontracted share of export volume: the ceiling on a reservation that respects
@@ -1218,18 +1219,18 @@ def _base_of(k):
 
 
 def _dr_of(k):
-    """Discount rate out of a scenario key, defaulting to the slider's 0.07.
+    """Discount rate out of a scenario key, defaulting to discount_rate_default.
 
     The key only carries a ``_DR<pct>`` suffix when a run's discount rate
-    deviated from the 0.07 default (see the key-building logic around line 1709).
+    deviated from the workbook default (see scenario_key).
     """
     if '_DR' not in k:
-        return 0.07
+        return _DISCOUNT_DEFAULT
     pct = k.rsplit('_DR', 1)[1].split('_', 1)[0]
     try:
         return float(pct) / 100.0
     except ValueError:
-        return 0.07
+        return _DISCOUNT_DEFAULT
 
 
 def _annualised_capex(capex, life, r):
@@ -1657,14 +1658,16 @@ sidebar = html.Div(className='md-sidebar', children=[
                       style={'marginBottom': '20px', 'fontSize': '12px'}),
 
         slider_group('Discount Rate (capacity NPV)',
-            dcc.Slider(id='discount-slider', min=0, max=0.12, step=0.01, value=0.07,
-                       marks={0: '0%', 0.05: '5%', 0.07: '7%', 0.1: '10%'},
+            dcc.Slider(id='discount-slider', min=0, max=0.12, step=0.01,
+                       value=_DISCOUNT_DEFAULT,
+                       marks={0: '0%', 0.05: '5%', _DISCOUNT_DEFAULT: f'{_DISCOUNT_DEFAULT:.0%}',
+                              0.1: '10%'},
                        tooltip={'placement': 'bottom', 'always_visible': True})),
 
         slider_group('Optimality Gap',
-            dcc.Slider(id='gap-slider', min=0, max=0.05, step=0.001,
+            dcc.Slider(id='gap-slider', min=0, max=0.01, step=0.0001,
                        value=_MIP_GAP_DEFAULT,
-                       marks={0: '0%', 0.01: '1%', 0.02: '2%', 0.05: '5%'},
+                       marks={0: '0%', 0.001: '0.1%', 0.005: '0.5%', 0.01: '1%'},
                        tooltip={'placement': 'bottom', 'always_visible': True})),
 
         slider_group('Representative days per year',
@@ -1955,7 +1958,7 @@ def datacentre_segment(datacentre):
 
 
 def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
-                 foresight=True, discount=0.07, datacentre=None,
+                 foresight=True, discount=None, datacentre=None,
                  netback=False, respect_contracts=True, gsoo_exp=False,
                  allow_imports=True, rep_bins=None):
     """Cache key for one scenario.
@@ -1965,6 +1968,8 @@ def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
     inline, or a sweep silently writes keys the dropdown can't read back.
     """
     dc = datacentre_segment(datacentre)
+    if discount is None:
+        discount = _DISCOUNT_DEFAULT
     return (f'Base_{baseline}_Winter_{winter}_LNG_{lng}'
             + ('_Dunkelflaute' if dunkelflaute else '')
             + ((f'_Reserve{round(reservation * 100)}'
@@ -1974,7 +1979,7 @@ def scenario_key(baseline, winter, lng, dunkelflaute=False, reservation=0.0,
             + ('' if allow_imports else '_NoImports')
             + ('_Netback' if netback else '')
             + ('' if foresight else '_Myopic')
-            + (f'_DR{round(discount * 100)}' if foresight and abs(discount - 0.07) > 1e-9 else '')
+            + (f'_DR{round(discount * 100)}' if foresight and abs(discount - _DISCOUNT_DEFAULT) > 1e-9 else '')
             # Only when it differs from the sheet, so every key solved before this
             # lever existed stays byte-identical.
             + (f'_Rep{rep_bins}' if rep_bins and rep_bins != _REP_BINS_DEFAULT else ''))
@@ -2093,7 +2098,9 @@ def exp_label(name):
     return str(name).replace('_', ' ')
 
 
-def build_summary(filtered_results, discount_rate=0.07):
+def build_summary(filtered_results, discount_rate=None):
+    if discount_rate is None:
+        discount_rate = _DISCOUNT_DEFAULT
     rows, prices_trend, builds_timeline, total_cost = [], [], [], 0
     exp_lookup = static_data['expansion'].set_index('Name').to_dict('index')
     premium_by_node = _2c_premium_by_node()
@@ -2199,7 +2206,7 @@ def run_scenario(set_progress, n_clicks, wi, li, gap, rep_bins, baseline, dunkel
     dunkelflaute = bool(dunkel) and 'on' in dunkel
     reservation = reservation_share(resv_on, resv_i)
     foresight = 'on' in (foresight_v or [])
-    dr = 0.07 if discount is None else float(discount)
+    dr = _DISCOUNT_DEFAULT if discount is None else float(discount)
     netback = 'on' in (netback_v or [])
     gsoo_exp = 'on' in (gsoo_exp_v or [])
     allow_imports = 'on' in (imports_v or [])
@@ -2496,6 +2503,10 @@ def update_header_kpis(key, end_year):
             caveats.append('export revenue counted on spot tail only')
         caveats.append('reserved gas at $0')
     cost_caveat = ' · '.join(caveats)
+    # A result solved against different inputs or model code than the working
+    # tree now holds is still shown -- it may be exactly what you want to compare
+    # against -- but never silently. See results_io.stale_reason.
+    stale = results_io.stale_reason(filtered)
     chips = [
         kpi_card('Final Price', [final_price,
                                  html.Span(f'demand-weighted, {final_year}',
@@ -2554,6 +2565,10 @@ def update_header_kpis(key, end_year):
     dc_pj = sum(r.get('datacentre_tj', 0) for r in filtered) / 1000
     if dc_pj:
         chips.insert(3, kpi_card('Data Centre Load', f"{dc_pj:,.0f} PJ"))
+    if stale:
+        chips.insert(0, kpi_card('⚠ Stale result',
+                                 [html.Span(f'{stale} -- re-solve to refresh',
+                                            className='md-kpi-sub')]))
     return pretty_key(key), chips
 
 # ---------------------------------------------------------------------------

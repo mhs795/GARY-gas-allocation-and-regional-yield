@@ -192,9 +192,9 @@ itself worth seeing.
 ## Terminal value on the assets
 
 The capacity MILP charges a project's **whole CapEx, discounted, in the year it is
-built** — there is no capital recovery factor in that layer, and the 8%
-`capex_annualisation_rate` the dispatch layer charges is a separate proxy that plays no
-part in the build decision. Against a 2050 horizon that meant a pipeline commissioned in
+built** — there is no capital recovery factor in that layer. The dispatch layer's annual
+capital charge (a capital recovery factor over `AssetLife`, used for the System Cost
+figure) plays no part in the build decision. Against a 2050 horizon that meant a pipeline commissioned in
 2029 paid fifty years of steel for twenty-two years of service and was worth nothing at
 the end of them — while the **gas** it was built to move *was* credited at the horizon by
 the salvage term. That asymmetry is a bias, not a conservatism: it pushed the model away

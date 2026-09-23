@@ -72,7 +72,7 @@ The objective is total system cost over 365 days:
 minimise    production cost          field opex, stepping to full cost as reserves depletes
           + transport cost           arc tariff × flow
           + storage cost             $0.50/GJ round trip, so inventory cycles only when the spread pays
-          + annualised capex         8%/yr on anything the capacity layer builds
+          + annualised capex         capital recovery factor over each asset's life
           + curtailment penalties    GPG at $22/GJ, large industrial at $120/GJ
           + unserved load            at VOLL, $300/GJ
           − LNG export revenue       contestable export volume valued at the netback
@@ -177,10 +177,14 @@ worker processes — see [`docs/running.md`](docs/running.md#parallel-sweeps).
 | **LNG netback pricing (ACIL Allen)** | **on** / off | On: trains bid for gas at the export netback and imports are priced at ACIL Allen's injection cost, so the international price disciplines domestic prices. Off: exports revert to must-serve demand at any price. See [Pricing](#pricing). |
 | **Perfect-foresight capacity build** | **on** / off | Off switches to myopic year-by-year investment. |
 | **Discount Rate** | 0–12%, default **7%** | Discount rate on the capacity-expansion NPV. |
-| **Optimality Gap** | 0–5%, default **1%** | MIP gap for the capacity layer. Tighten it if two solvers need to agree exactly. |
+| **Optimality Gap** | 0–1%, default **0.01%** | Relative MIP gap for the capacity layer. A $10m absolute gap (`mip_abs_gap_aud`) also applies, and HiGHS stops at whichever is met first. The relative gap is measured against the whole-system NPV (~$94bn), so anything looser than about 0.05% can leave build decisions unsettled. The gap each run actually achieved is recorded with its result. |
 
-Every setting that changes the answer is written into the **scenario key**, so runs with
-different settings sit alongside each other in the cache instead of overwriting.
+Every **scenario setting** is written into the **scenario key**, so runs with different
+settings sit alongside each other in the cache instead of overwriting. The key does not
+carry the inputs or the model code. Instead, every result is stamped with a fingerprint
+of both (plus the solver, the MIP gap and the gap actually achieved). A result whose
+fingerprint no longer matches the working tree shows a **⚠ Stale result** card until it
+is re-solved.
 
 ### Results
 

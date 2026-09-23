@@ -38,7 +38,7 @@ BASE = os.path.dirname(__file__)
 DATA = os.path.join(BASE, "data")
 GSOO = os.path.join(DATA, "gsoo")
 
-SCENARIOS = P.get_list("gsoo_baselines", ["StepChange", "Accelerated", "SlowerGrowth"])
+SCENARIOS = P.get_list('gsoo_baselines')
 
 # GSOO region -> model nodes. NT/TAS have no modelled node; Gladstone(=Yarwun)
 # is reclassified industrial.
@@ -47,7 +47,7 @@ SCENARIOS = P.get_list("gsoo_baselines", ["StepChange", "Accelerated", "SlowerGr
 # because Yarwun is reclassified to industrial (see the module docstring), and the
 # NT is outside the NEM so it is handled separately below.
 DROP_NODES = {"Gladstone"}
-_GPG_REGIONS = P.get_list("gpg_nem_regions", ["NSW", "SA", "VIC", "QLD"])
+_GPG_REGIONS = P.get_list('gpg_nem_regions')
 
 
 @functools.lru_cache(maxsize=1)
@@ -109,16 +109,15 @@ def model_regions():
 # significantly", which is what the gentle decline below represents (rooftop solar).
 # Tropical -> roughly flat across the year. Per-station split: gpg_facilities.csv.
 NT_GPG_BASE_TJD = {n: float(v) for n, v in
-                   P.get_pairs("nt_gpg_base_tjd",
-                               [("Darwin", 33.4), ("Amadeus", 11.0)])}
-NT_GPG_DECLINE = P.get("nt_gpg_decline", 0.008)
+                   P.get_pairs('nt_gpg_base_tjd')}
+NT_GPG_DECLINE = P.get('nt_gpg_decline')
 
 # Gas winter (Jun-Aug) and summer (Dec-Feb) day-of-year windows.
 # Same southern winter window model.py uses, plus the summer window the
 # winter:summer peak ratio is struck against. Both on the Parameters sheet.
-WINTER_DAYS = set(range(P.get_int("winter_day_start", 150),
-                        P.get_int("winter_day_end", 250) + 1))
-_S0, _S1 = P.get_int("summer_day_start", 335), P.get_int("summer_day_end", 59)
+WINTER_DAYS = set(range(P.get_int('winter_day_start'),
+                        P.get_int('winter_day_end') + 1))
+_S0, _S1 = P.get_int('summer_day_start'), P.get_int('summer_day_end')
 SUMMER_DAYS = set(range(_S0, 366)) | set(range(1, _S1 + 1))
 
 

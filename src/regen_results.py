@@ -36,8 +36,7 @@ from solve import HORIZON_END, HORIZON_START, run_title
 # solve_scenario's False default AND omit the segment, so a rebuilt cache was
 # filed under keys the dashboard never looks up in its default mode -- a fresh
 # clone would rebuild for an hour and still see an empty dashboard.
-NETBACK_DEFAULT = str(P.get_str('netback_pricing_default', 'TRUE')
-                      ).strip().upper() in ('TRUE', '1', 'YES')
+NETBACK_DEFAULT = P.get_bool('netback_pricing_default')
 
 BASELINES = ['StepChange', 'Accelerated', 'SlowerGrowth']
 LEVELS = ['Low', 'Medium', 'High']
@@ -83,7 +82,8 @@ def main():
                          'Allen netback price formation. The default follows '
                          'netback_pricing_default on the Parameters sheet, which '
                          'is what the dashboard uses.')
-    ap.add_argument('--mip-gap', type=float, default=0.005)
+    ap.add_argument('--mip-gap', type=float, default=None,
+                    help='Relative MIP gap (default: mip_gap_default on the workbook)')
     args = ap.parse_args()
 
     baselines = args.baselines or BASELINES
