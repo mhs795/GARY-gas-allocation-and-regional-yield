@@ -84,6 +84,14 @@ its basin's **2C** tranche in `supply.csv`, which cannot produce at all until on
 [`model.md`](model.md#sizing-a-2c-tranches-deliverability) for the sizing rule — AEMO's own
 production forecast where one covers the basin, else the 2C/2P resource ratio.
 
+> **How builds are reported.** Because a field development costs nothing to switch on, the
+> capacity MIP often "builds" ones whose gas is never used (14 of 17 in the central case,
+> 24 Sep 2026). Build lists, the New Projects count and the map therefore show a
+> zero-CapEx, uncommitted development from its **first year of gas**, and leave it out if
+> it never produces (`src/build_report.py`). Pipelines, import terminals and committed
+> projects show from the year they are switched on. The model's own decisions are
+> unchanged.
+
 ¶ **A field development carries no CapEx, deliberately.** Its capital is already inside
 AEMO's blended $/GJ and is left there: the basin's 2C supply row carries the published full
 cost, recovered **per GJ as gas is produced**. `build[e]` on one of these rows buys

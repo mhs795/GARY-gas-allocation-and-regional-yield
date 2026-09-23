@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import datacentre_series
 import acil_segment_prices
 import params as P
+import build_report
 import results_io
 import supply_curve as sc
 from model import RESERVATION_LEVELS, VOLL_PER_GJ, lng_foundation_share
@@ -2116,22 +2117,28 @@ def build_summary(filtered_results, discount_rate=None):
         total_cost += res['total_cost']
         if not _prices.empty:
             prices_trend.append(_prices[['Node', 'Price']].assign(Year=y))
-        for b in res['builds']:
-            if not any(bt['Project'] == b for bt in builds_timeline):
-                info = exp_lookup.get(b, {})
-                ann = _annualised_cost(info, discount_rate, premium_by_node)
-                builds_timeline.append({
-                    'Year': y,
-                    # Project stays the RAW name: it is the join key back to
-                    # expansion_options.csv and to res['builds'], and several
-                    # callers look up by it. Label is the display string.
-                    'Project': b,
-                    'Label': exp_label(b),
-                    'Type': info.get('Type', '—'),
-                    'New Capacity (TJ/d)': info.get('NewCapacity', '—'),
-                    'CapEx ($M)': f"{info['CapEx']/1e6:,.0f}" if info.get('CapEx') else '—',
-                    'Annualised Cost ($M/yr)': f"{ann/1e6:,.1f}" if ann is not None else '—',
-                })
+    # WHICH builds to show, and from when: build_report.reported_build_years. A
+    # zero-CapEx field development appears from its first year of gas, or not at
+    # all if it never produces -- the MIP switches those on for free (TODO #32).
+    # Everything paid for, and anything AEMO lists as committed, appears from the
+    # year it is switched on. The KPI card, the Expansions tab and the map all
+    # read this table, so they agree.
+    reported = build_report.reported_build_years(filtered_results, static_data['expansion'])
+    for b, y in sorted(reported.items(), key=lambda kv: (kv[1], kv[0])):
+        info = exp_lookup.get(b, {})
+        ann = _annualised_cost(info, discount_rate, premium_by_node)
+        builds_timeline.append({
+            'Year': y,
+            # Project stays the RAW name: it is the join key back to
+            # expansion_options.csv and to res['builds'], and several
+            # callers look up by it. Label is the display string.
+            'Project': b,
+            'Label': exp_label(b),
+            'Type': info.get('Type', '—'),
+            'New Capacity (TJ/d)': info.get('NewCapacity', '—'),
+            'CapEx ($M)': f"{info['CapEx']/1e6:,.0f}" if info.get('CapEx') else '—',
+            'Annualised Cost ($M/yr)': f"{ann/1e6:,.1f}" if ann is not None else '—',
+        })
     return (
         pd.DataFrame(rows) if rows else pd.DataFrame(columns=['Year','Production_PJ','Shortage_TJ','Avg_Price']),
         pd.concat(prices_trend, ignore_index=True)[['Year', 'Node', 'Price']]
@@ -3801,7 +3808,7 @@ def update_expansions(key, end_year, active_tab, theme, sort_col, sort_dir):
     for _, row in sorted_df.iterrows():
         color = type_colors.get(row.get('Type', ''), '#78909C')
         name = row.get('Label') or row['Project']
-        label = f"<b>{name}</b><br>Built: {row['Year']}<br>Type: {row.get('Type','—')}<br>Capacity: {row.get('New Capacity (TJ/d)','—')} TJ/d<br>CapEx: ${row.get('CapEx ($M)','—')}M"
+        label = f"<b>{name}</b><br>{'First gas' if row.get('CapEx ($M)') == '—' and row.get('Type') == 'Terminal' else 'Built'}: {row['Year']}<br>Type: {row.get('Type','—')}<br>Capacity: {row.get('New Capacity (TJ/d)','—')} TJ/d<br>CapEx: ${row.get('CapEx ($M)','—')}M"
         fig.add_trace(go.Bar(
             x=[end_year - row['Year'] + 1],
             y=[name],

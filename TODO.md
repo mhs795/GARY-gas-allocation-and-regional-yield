@@ -147,30 +147,10 @@ tariffs, about 12 PJ in 2029 (roughly $20m), and 11–14 PJ in each reservation 
 - **To close:** optional. The strict version is conservative, and relaxing it risks
   reopening the old leak.
 
-### #32 — Free field developments are "built" without producing
-Field developments carry no CapEx, because their capital is inside the 2C gas cost. So the
-capacity MIP can switch one on at zero cost whether or not its gas is ever used. In the
-central case (re-solve of 24 Sep 2026), **14 of the 17 developments built produced nothing
-over 2025–50**: the five Otway projects, Golden Beach, Judith, Cooper_2C, Amadeus_2C,
-Bass_2C and the three Beetaloo rows. Only Bowen, Mahalo and Mt St Martin produced.
-Narrabri was the sharpest case (built in 16 of 17 runs with no pipeline to take its gas),
-and `Requires` now fixes that one.
-- **How big:** no effect on prices, flows or costs, since an idle build changes nothing.
-  But every build list and the dashboard's "New Projects" count overstate what gets
-  developed, and a build year for these rows means nothing.
-- **To close, options:**
-  1. Report a zero-CapEx development as built only in the first year its tranche
-     produces (reporting only, simplest).
-  2. Give each development a small, sourced fixed cost, so building an idle one is never
-     free.
-  3. Gate 2C production on the build *and* use the MIP's planned production to drop
-     builds with none.
-
-  Option 1 fixes the reporting without touching the optimisation.
-
 ### #30 — Code paths not yet exercised end to end
 - The dashboard hasn't been opened in a browser since the 23 Sep changes: the stale-result
-  card, the 0–1% gap slider, the discount default, and the new nodes and routes on the map.
+  card, the 0–1% gap slider, the discount default, the new nodes and routes on the map, and
+  the build list that now reports field developments from their first gas.
 - Myopic mode has only had a 6-year smoke test, not a full-horizon run.
 - The GLPK backend is untested with the tighter gap. It has no absolute gap, so its
   capacity solves may be slow.
