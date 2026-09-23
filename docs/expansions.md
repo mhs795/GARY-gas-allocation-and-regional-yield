@@ -40,6 +40,7 @@ and the foundation share follow.
 | `ECGG_3A_Culcairn` | `VNI_Rev` | +39 TJ/d | $95m † | Winter 2028 | APA ECGG Stage 3A, Young–Culcairn lateral |
 | `MSEP_Conversion` | `MSP` | +25 TJ/d | $25m | Winter 2026 | Moomba–Sydney Ethane Pipeline converted to gas; NSW approval Oct 2025. APA: total southbound 565 → 590 TJ/d |
 | `EGP_Reversal` | `EGP_Rev` **(new arc)** | +200 TJ/d **south** | $220m ‡ | Winter 2026 | Jemena EGP reversal stage 1 |
+| `Hunter_Gas_Pipeline` | `HGP` **(new arc)** | 200 TJ/d | $548m ‡ | 2030 ◊ | Santos' HGP, Narrabri → Hexham (Newcastle), 413 km; AEMO: Proposed, "planning for up to 200 TJ/d". CapEx = the Narrabri Lateral's published ~$90m plus the rest at NEAP's unit rate. **Carries Narrabri gas to the NSW network**, so `Narrabri_Gas_Project` carries `Requires = Hunter_Gas_Pipeline` and cannot be built before it |
 | `SWP_Compression` | `SWP` | +45 TJ/d | $213m | Winter 2029 | APA rule 80; Irrewillipe + Stonehaven + Winchelsea; Iona injection 570→615 TJ/d; AER approved 2026 |
 | `SEA_Gas_Reversal` | `SEA_Gas_Rev` **(new arc)** | 250 TJ/d | $150m ‡ | With Outer Harbor | *Port Campbell to Adelaide pipeline reversal* in AEMO's options report, which publishes **250 TJ/d** and attributes it to the GSOO. **Reclassified from `Market` to `GSOO`** on that finding |
 
@@ -77,6 +78,7 @@ its basin's **2C** tranche in `supply.csv`, which cannot produce at all until on
 | `Beetaloo_Dev` | Beetaloo | 450 TJ/d | **none** ¶ ¤ | — | Appraisal |
 | `Beetaloo_Pilot` | Beetaloo | 40 TJ/d | **none** ¶ ¤ | 2026 | Appraisal (pilot figure, not full field) |
 | `Carpentaria_Pilot` | Beetaloo | 25 TJ/d | **none** ¶ ¤ | 2025 | Committed |
+| `Narrabri_Gas_Project` | Gunnedah | 192 TJ/d ◊ | **none** ¶ | 2030 ◊ | Producing (5 TJ/d to Wilga Park only); "significant expansion planned". Sized at the Future Gas Strategy's ~70 PJ/yr; dated to ACIL Allen's Step Change assumption |
 
 ◊ AEMO publishes no deliverability for this development. See
 [`model.md`](model.md#sizing-a-2c-tranches-deliverability) for the sizing rule — AEMO's own
@@ -135,8 +137,9 @@ it on this side of the line.
 | `ECGG_VTS_Expansion` | `VNI_Rev` | +93 TJ/d § | $226m ‡ | Winter 2029 | APA ECGG Stage 5; MSP+VTS to 350 TJ/d Young→Wollert |
 | `SWP_Looping` | `SWP` | +45 TJ/d | $340m ‡ | 2029 | APA's alternative to `SWP_Compression`: 88 km of looping; more linepack. **Mutually exclusive** with it |
 | `MAPS_Compression` | `MAPS` | +52 TJ/d ◊ | $246m ‡ | 2029 ◊ | AEMO's *2025 Gas Infrastructure Options Report* option **MAPS to PCA connection**, compression half only — see below |
-| `Cooper_2C` | `Moomba` | 282 TJ/d ◊ | $5.1bn ¶ | 2030 | **GARY's own.** AEMO names no discrete Cooper/Eromanga development, but the basin holds 1,603 PJ of 2C that Figure 27's Uncertain category plainly produces |
-| `Amadeus_2C` | `Amadeus` | 47 TJ/d ◊ | $2.0bn ¶ | 2030 | **GARY's own.** The Amadeus fields are "Commercial in confidence" in AEMO's sheet |
+| `Cooper_2C` | `Moomba` | 282 TJ/d ◊ | **none** ¶ | 2030 | **GARY's own.** AEMO names no discrete Cooper/Eromanga development, but the basin holds 1,603 PJ of 2C that Figure 27's Uncertain category plainly produces |
+| `Amadeus_2C` | `Amadeus` | 47 TJ/d ◊ | **none** ¶ | 2030 | **GARY's own.** The Amadeus fields are "Commercial in confidence" in AEMO's sheet |
+| `Bass_2C` | `Bass` | 38.3 TJ/d ◊ | **none** ¶ | 2030 | **GARY's own.** AEMO names no Bass Basin development, but the basin holds 135 PJ of 2C. Sized to the Lang Lang plant's 67 TJ/d less the 2P row's observed 28.7 TJ/d |
 | `NGP_Reversal` | `NGP_Rev` | 60 TJ/d | $67m ‡ | 2029 ◊ | Reverse flow on Jemena's NGP. **Was an existing free arc at 106 TJ/d** — see below |
 | `NEAP` | `NEAP` **(new arc)** | 200 TJ/d ‡ | $2.0bn ‡ | 2030s, investigation | APA's North to East Australia Pipeline; 1561 km Beetaloo→SWQP, 100% APA. **The only candidate that relieves the Beetaloo corridor** — it bypasses the NGP and the 65 TJ/d Carpentaria southbound leg. APA publishes no capacity; the 50 TJ/d figure in circulation is survey-permit material and implies $40m per TJ/d, so GARY sizes it itself. CapEx at Jemena's NGP unit rate ($800m / 622 km) |
 
@@ -244,8 +247,7 @@ of the short-term outlook, and every month of uncontracted capacity — while th
 direction runs at 80–90. The AER says the same thing in words: reverse flow into the NT is
 *"not a normal operational case… expected to only be utilised in emergencies"* (AAR
 2026-31). It was carrying 16,107 TJ north over the horizon in the central case and 157,000
-in LNG Low. It is now a candidate like any other reversal. Closes [`TODO`](../TODO.md)
-item 5.
+in LNG Low. It is now a candidate like any other reversal (fixed 4 Sep 2026).
 
 **Beetaloo now joins the AGP at Daly Waters, not at Tennant Creek.** The Sturt Plateau
 Pipeline ties into the AGP near Daly Waters, ~380 km *north* of Tennant Creek. GARY hung it

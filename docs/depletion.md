@@ -9,7 +9,7 @@ three things still wrong with it, what you can safely conclude anyway, and what 
 would take.
 
 Plain language throughout. The technical detail and the measurements behind every number
-here are in [`TODO.md`](../TODO.md) items 15, 16 and 17.
+here are tracked in [`TODO.md`](../TODO.md) as #16, the only list of what is still open.
 
 ---
 

@@ -35,7 +35,7 @@ PARAMETERS = [
      "profiles 2045). Padding further does NOT buy a cleaner answer: measured 2 Sep 2026, "
      "a 2065 pad put 14 extra years of held-flat demand against the same finite reserves "
      "and drove the Surat reserve dual from $0.00 to $14.42/GJ, manufacturing scarcity "
-     "rather than removing an artefact. Fix the terminal value instead -- see TODO item 15."),
+     "rather than removing an artefact. Fix the terminal value instead (done 3 Sep 2026)."),
     ("Horizon", "horizon_report_end", 2050, "year",
      "Last year PRESENTED. Results beyond this are solved but trimmed off before they "
      "reach the dashboard or a caller -- see solve.solve_scenario. Keep it strictly "

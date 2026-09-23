@@ -263,6 +263,7 @@ COORDS = {
     'QCLNG':          [-23.84, 151.30], 'Port_Kembla':   [-34.45, 150.9],
     'Iona':           [-38.55, 142.9],  'Silver_Springs':[-27.4,  149.2],
     'Geelong':        [-38.10, 144.42],
+    'Narrabri':       [-30.45, 149.64], 'Bass':          [-38.33, 145.62],
     # Northern Territory
     'Amadeus':        [-23.85, 132.30], 'Beetaloo':      [-16.55, 133.85],
     'Darwin':         [-12.46, 130.84], 'Tennant_Creek': [-19.65, 134.19],

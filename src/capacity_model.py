@@ -680,6 +680,26 @@ class CapacityExpansionModel:
                 pyo.Set(initialize=_committed), rule=lambda m, e: sum(
                     m.build[e, y] for y in Y if y <= max(_earliest(e), Y[0])) == 1)
 
+        # PREREQUISITES. A field development whose gas can only reach the market down
+        # a pipeline that is itself a candidate -- Narrabri needs the Hunter Gas
+        # Pipeline -- may be built only once that pipeline is. Field developments
+        # carry no CapEx (their capital is in the 2C cost), so without this the MIP
+        # "builds" a stranded one for free and it shows up in every build list while
+        # delivering nothing. Measured 23 Sep 2026: Narrabri_Gas_Project built in 16
+        # of 17 scenarios, the pipeline in one. A prerequisite missing from the menu
+        # (filtered out) forbids the dependant outright.
+        _req = {e: str(exp_data[e].get('Requires') or '').strip() for e in m.Expansion}
+        _req = {e: r for e, r in _req.items() if r and r.lower() != 'nan'}
+        for e, r in _req.items():
+            if r not in exp_data:
+                for y in Y:
+                    m.build[e, y].fix(0)
+        _req_pairs = [(e, r, y) for e, r in _req.items() if r in exp_data for y in Y]
+        if _req_pairs:
+            m.build_requires = pyo.Constraint(
+                pyo.Set(initialize=_req_pairs, dimen=3), rule=lambda m, e, r, y:
+                    active(e, y) <= active(r, y))
+
         # --- NPV objective ---------------------------------------------------
         # Annual production against a reserve, PJ. The representative-day weights
         # sum to ~370 rather than 365 -- the annual peak day carries PEAK_DAY_WEIGHT

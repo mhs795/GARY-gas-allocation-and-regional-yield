@@ -1345,6 +1345,17 @@ class GasMarketModel:
                 m.ExpGroup = pyo.Set(initialize=sorted(groups))
                 m.build_group_once = pyo.Constraint(m.ExpGroup, rule=lambda m, g:
                     sum(m.build[e] for e in groups[g]) <= 1)
+            # Prerequisites -- see build_requires in capacity_model.py.
+            reqs = {e: str(exp_data[e].get('Requires') or '').strip() for e in m.Expansion}
+            reqs = {e: r for e, r in reqs.items() if r and r.lower() != 'nan'}
+            for e, r in reqs.items():
+                if r not in exp_data:
+                    m.build[e].fix(0)
+            req_pairs = [(e, r) for e, r in reqs.items() if r in exp_data]
+            if req_pairs:
+                m.build_requires = pyo.Constraint(
+                    pyo.Set(initialize=req_pairs, dimen=2),
+                    rule=lambda m, e, r: m.build[e] <= m.build[r])
 
     def _capital_charge(self, e, row):
         """This year's capital charge on project ``e`` per $ of CapEx."""

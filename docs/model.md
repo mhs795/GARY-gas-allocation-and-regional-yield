@@ -27,7 +27,7 @@ resolution.
 | `Arcs` | 32 directed pipeline arcs |
 | `Supply` | (node, is_potential) pairs — 12 rows, developed fields and potential developments |
 | `Expansion` | expansion candidates from `expansion_options.csv` |
-| `StorageNodes` | nodes with `StorageCapacity > 0` — Iona, Silver Springs, Moomba |
+| `StorageNodes` | nodes with `StorageCapacity > 0` — Iona, Silver Springs, Moomba, Surat (Roma UGS), Melbourne (Dandenong LNG), Sydney (Newcastle Gas Storage) |
 | `GPGNodes` / `INDNodes` | nodes carrying gas-powered generation / large-industrial load |
 | `LNGNodes` | export trains, **only when netback pricing is on** — otherwise empty |
 
@@ -126,6 +126,7 @@ this equation.
 | `storage_cap`, `inj_rate`, `wd_rate` | Volume and plant-rate limits |
 | `storage_close` | Inventory on day 365 ≥ the opening level |
 | `build_group_once` | Mutually exclusive candidates (rival FSRUs at one landing point) cannot both be built |
+| `build_requires` | A candidate with a `Requires` entry in `expansion_options.csv` can only be active once its prerequisite is. Narrabri Gas Project needs the Hunter Gas Pipeline, without which its gas cannot reach the network |
 
 **Why `storage_close` exists.** Each year is solved independently and opens at half full.
 Before this constraint nothing required the store to be at any level on day 365, so the
@@ -226,7 +227,17 @@ cheap tranche runs out; the dear one behind it has to be *built* to replace it.
 | Gippsland | $5.16 | 1,108 PJ | $15.76 | 1,993 PJ |
 | Otway (Iona) | $7.27 | 304 PJ | $15.62 | 293 PJ |
 | Amadeus | $6.50 | 230 PJ | $16.94 | 195 PJ |
-| Beetaloo | — | — | $9.15 | 5,109 PJ |
+| Beetaloo (incl. McArthur) | — | — | $9.15 | 7,945 PJ |
+| Bass | $5.72 | 19 PJ | $15.82 | 135 PJ |
+| Gunnedah (Narrabri) | — | — | $9.64 † | 2,156 PJ |
+
+McArthur's 2,836 PJ sits on the Beetaloo node. AEMO lists it separately, at the same
+$9.15, and the Future Gas Strategy names the basin "McArthur (Beetaloo)". † AEMO's G26
+cost table has no Gunnedah row, so Narrabri's $9.64 is GARY's own: AEMO's Surat 2C cost ×
+1.45, the Future Gas Strategy's reported Narrabri-to-Queensland ratio. Narrabri's 5 PJ of
+2P is left out because it supplies Wilga Park and is not on the network. **Galilee is
+omitted**: its 2,788 PJ has no development path, because Comet Ridge's Galilee tenure has
+been cancelled by the Queensland Government (AEMO G26 Field Developments).
 
 Both layers enforce it. The dispatch model applies the limit year by year off
 cumulative production; the capacity MIP sees all 26 years at once and states it as
@@ -326,7 +337,7 @@ $9.79 / $2.57 / $1.32). **The 2C zero is the consequence the change was made for
 Surat gas costs $6.65/GJ to lift against a $6.37 realisable wellhead price, so there is
 no margin left in the ground and its terminal credit is correctly nothing. The $1.32 it
 used to carry was holding the backfill tranche above the depleting 2P tranche it exists
-to replace — see TODO item 21.
+to replace (fixed 12 Sep 2026).
 
 Beetaloo is **not** the netting working, and the table above corrects a stale claim that
 it was. `_least_cost_paths` only walks arcs that have capacity today, and every route out
@@ -373,5 +384,5 @@ holding twenty years of inventory and keeps 42%.
 > **What is still approximate.** `τ` is struck on nameplate reserves and base capacity,
 > so it ignores decline and ignores how much has already been produced. Both push `τ`
 > down and the credit up, i.e. toward the old behaviour. Tightening it means
-> recomputing `τ` from the solved remainder and re-solving. See [`TODO.md`](../TODO.md)
-> item 15.
+> recomputing `τ` from the solved remainder and re-solving. Tracked in
+> [`TODO.md`](../TODO.md) as part of #16.

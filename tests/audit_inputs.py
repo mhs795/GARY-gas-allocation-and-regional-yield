@@ -414,7 +414,7 @@ check('every GBB export facility maps to a GARY node',
       len(_plate) == 3, f'mapped {sorted(_plate)}')
 
 _have = _M.lng_train_nameplate()
-_avail = _M.P.get('lng_availability', 0.897)
+_avail = _M.P.get('lng_availability')
 for _n, _v in sorted(_plate.items()):
     check(f'{_n} limit is the GBB MDQ x availability',
           abs(_have.get(_n, 0) - _v * _avail) < 0.5,

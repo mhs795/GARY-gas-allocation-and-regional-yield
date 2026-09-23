@@ -37,7 +37,7 @@ all of them to find out.
 
 | | |
 |---|---|
-| **[`../TODO.md`](../TODO.md)** | The engineering log: every known defect and limitation, what it is worth, and what closing it would take. Long on purpose — items are numbered and stay numbered, including after they're fixed, so a commit can point at one. |
+| **[`../TODO.md`](../TODO.md)** | **The single list of outstanding work** — every open defect and limitation, what it is worth, and what closing it would take. Open items only; a fixed item is deleted and its commit records the fix. Numbers are permanent IDs, so a gap is a closed item. |
 | **[`investigations/`](investigations/)** | One-off write-ups that didn't belong in a numbered item. |
 | **[`../src/data/README_DATA.md`](../src/data/README_DATA.md)** | File-by-file account of `src/data/`. |
 | **`tests/`** | Not a pytest suite — plain scripts, run them directly. `audit_inputs.py` checks every input against its source or against another input; `check_realisable_backstop.py` and `check_asset_salvage.py` check the terminal-value formulas; `check_salvage_objective.py` proves the credit is wired into the objective. |

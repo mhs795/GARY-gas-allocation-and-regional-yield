@@ -55,7 +55,7 @@ just an invisible one. Adding it then overshot in the other direction, and until
 September 2026 it carried Queensland prices somewhere no buyer would go: **Gladstone
 reached $26.91/GJ by 2050** against a netback of $7.12. That was the terminal value being
 struck on a price the gas could not reach, plus a backfill tranche priced above the
-tranche it replaces — see [`scarcity-rent.md`](scarcity-rent.md) and TODO item 21.
+tranche it replaces (both fixed 12 Sep 2026) — see [`scarcity-rent.md`](scarcity-rent.md).
 
 **Where it shows up now** (Step Change · Winter Medium · LNG Medium, measured):
 

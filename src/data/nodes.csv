@@ -1,9 +1,9 @@
 Name,Type,CityGate,Region,Description,StorageCapacity,MaxInjection,MaxWithdrawal
-Surat,Supply,0,QLD,Queensland gas basin,0,0,0
+Surat,Supply,0,QLD,Queensland gas basin (storage: Roma Underground Storage),54000,92,75
 Moomba,Hub,0,SA,Central Australian gas hub and supply,70000,100,120
 Gippsland,Supply,0,VIC,Victorian gas basin (offshore),0,0,0
-Sydney,Demand,1,NSW,Major demand center,0,0,0
-Melbourne,Demand,1,VIC,Major demand center,0,0,0
+Sydney,Demand,1,NSW,Major demand center (storage: Newcastle Gas Storage Facility LNG tank),1600,11,120
+Melbourne,Demand,1,VIC,Major demand center (storage: Dandenong LNG),680,8.2,237
 Adelaide,Demand,1,SA,Major demand center,0,0,0
 Brisbane,Demand,1,QLD,Major demand center,0,0,0
 Gladstone,Hub,0,QLD,LNG hub and export center,0,0,0
@@ -20,3 +20,5 @@ Tennant_Creek,Hub,0,NT,NT pipeline junction (Amadeus GP / NGP),0,0,0
 Daly_Waters,Hub,0,NT,NT pipeline junction (AGP / Sturt Plateau Pipeline tie-in),0,0,0
 Geelong,Import,0,VIC,Potential LNG import terminal (Viva / Vopak FSRU),0,0,0
 Blacktip,Supply,0,NT,NT Blacktip / Bonaparte Basin via the Yelcherr plant (declining; GSA ends mid-2030s),0,0,0
+Narrabri,Supply,0,NSW,"NSW Gunnedah Basin - Narrabri Gas Project (Santos), via the Hunter Gas Pipeline",0,0,0
+Bass,Supply,0,VIC,Bass Basin - Yolla field via the Lang Lang gas plant (Beach Energy),0,0,0

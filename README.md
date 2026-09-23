@@ -49,17 +49,17 @@ Western Australia is a physically separate market and is not included.
 
 ### The network
 
-20 nodes and 32 pipeline arcs (28 existing, 4 that exist only if built), with 12 supply
-rows across 10 nodes:
+23 nodes and 35 pipeline arcs (29 existing, 6 that exist only if built), with 18 supply
+rows across 12 nodes (fields, plus the three import terminals):
 
 | Node type | Nodes |
 |---|---|
-| **Supply** | Surat, Gippsland, Amadeus, Beetaloo, Blacktip |
+| **Supply** | Surat, Gippsland, Amadeus, Beetaloo, Blacktip, Bass, Narrabri (only if the Narrabri Gas Project and Hunter Gas Pipeline are built) |
 | **Demand** | Sydney, Melbourne, Adelaide, Brisbane, Darwin |
-| **Hub** | Moomba, Gladstone, Tennant Creek |
+| **Hub** | Moomba, Gladstone, Tennant Creek, Daly Waters |
 | **LNG export** | APLNG, GLNG, QCLNG (Gladstone trains) |
 | **LNG import** | Port Kembla, Geelong |
-| **Storage** | Iona, Silver Springs (Moomba also stores) |
+| **Storage** | Iona and Silver Springs are storage nodes. Moomba, Surat (Roma Underground Storage), Melbourne (Dandenong LNG) and Sydney (Newcastle Gas Storage) also store |
 
 Nodes, arcs, supply and expansion candidates are one CSV row each in `src/data/` — see
 [Key inputs](#key-inputs).
@@ -209,7 +209,7 @@ taken up), **LNG Exported**, **LNG Netback** and **Data Centre Load**.
 |---|---|
 | **Network Map** | Geographic map on real OpenStreetMap pipeline routes, for a chosen year, with optional node labels and capacity shading. Its own KPI strip sits above it. |
 | **Production & Dispatch** | Annual production by source, daily dispatch, arc flows, and any shortage. |
-| **Storage Dynamics** | Inventory trajectories at Iona, Silver Springs and Moomba, plus injection/withdrawal activity. |
+| **Storage Dynamics** | Inventory trajectories at every store (Iona, Silver Springs, Moomba, Roma, Dandenong LNG, Newcastle), plus injection/withdrawal activity. |
 | **Price Outcomes** | Daily and annual nodal prices, highest and lowest nodes, quarterly aggregations, and the ACIL Allen **customer-segment prices** at the bottom. |
 | **Supply Curves** | A grid — a row per demand node, a column every five years — of the delivered supply curve each node faced, with that year's demand and GARY's own nodal price drawn on it. See below. |
 | **Expansions** | The build schedule the capacity layer chose: which candidate, which year, what it cost. |
@@ -386,5 +386,5 @@ what order. The short version:
 | [`docs/running.md`](docs/running.md) | CLI reference, solver backends, parallel sweeps, the results cache, project layout |
 | [`docs/scarcity-rent.md`](docs/scarcity-rent.md) | What the surcharge on scarce gas is, why it has to exist, and how close GARY's is to what theory says |
 | [`docs/depletion.md`](docs/depletion.md) | What is still wrong with depletion, what you can trust anyway, and what fixing it would cost |
-| [`TODO.md`](TODO.md) | The engineering log — every known defect and limitation, numbered and kept numbered |
+| [`TODO.md`](TODO.md) | **The single list of outstanding work** — open items only, numbered with permanent IDs |
 | [`src/data/README_DATA.md`](src/data/README_DATA.md) | File-by-file account of `src/data/` |

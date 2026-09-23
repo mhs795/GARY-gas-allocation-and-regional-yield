@@ -37,7 +37,66 @@ COORDS = {
     'GLNG': [-23.80, 151.25], 'QCLNG': [-23.84, 151.30], 'Port_Kembla': [-34.45, 150.9],
     'Iona': [-38.55, 142.9], 'Silver_Springs': [-27.4, 149.2],
     'Geelong': [-38.10, 144.42],
+    # Narrabri Gas Project central processing facility at Leewood, ~20 km SW of
+    # Narrabri (Santos); Lang Lang gas plant, the onshore end of the Bass Gas Pipeline.
+    'Narrabri': [-30.45, 149.64], 'Bass': [-38.33, 145.62],
 }
+
+# --- Composite routes: OSM where the pipe is mapped, traced where it is not ------
+# Two arcs have no single OSM way to match. Each is built from the real OSM
+# geometry of the pipes it actually uses, joined by a traced section only where
+# nothing is mapped -- a proposed pipeline, or a short lateral OSM lacks.
+#
+#   PLLP  Lang Lang plant -> Pakenham (Pakenham-Lang Lang Pipeline, 35 km, NOT in
+#         OSM: traced via Koo Wee Rup, the corridor it runs up) -> the OSM
+#         Longford-Dandenong line from Pakenham into Dandenong -> Melbourne.
+#   HGP   Leewood -> Hexham (Hunter Gas Pipeline, PROPOSED, so not in OSM: traced
+#         through the towns on its approved Liverpool Plains / Hunter Valley
+#         corridor, via the Narrabri Lateral's tie-in east of Baan Baa) -> the OSM
+#         "Moomba Sydney Gas Pipeline Newcastle lateral" from Newcastle down to the
+#         MSP at Horsley Park -> Sydney.
+# Town coordinates are OSM Nominatim's.
+TRACED = {
+    'PLLP_lateral': [[-38.33, 145.62], [-38.27, 145.56], [-38.199, 145.493], [-38.081, 145.486]],
+    'HGP_proposed': [[-30.45, 149.64], [-30.598, 149.951], [-30.705, 150.044], [-31.024, 150.204],
+                     [-31.247, 150.466], [-31.502, 150.68], [-31.766, 150.839], [-32.047, 150.867],
+                     [-32.265, 150.888], [-32.602, 151.113], [-32.732, 151.551], [-32.832, 151.684]],
+}
+PAKENHAM = [-38.081, 145.486]
+HEXHAM = [-32.832, 151.684]
+NEWCASTLE_LATERAL = 'Moomba Sydney Gas Pipeline Newcastle lateral'
+
+
+def _suffix_from(route, point):
+    """The part of ``route`` from its vertex nearest ``point`` to the end."""
+    i = min(range(len(route)), key=lambda k: _dist(route[k], point))
+    return route[i:]
+
+
+def composite_routes(ways, geom):
+    """{arc: polyline} for PLLP and HGP, from OSM ``ways`` plus the traced pieces.
+
+    PLLP joins the Longford-Dandenong line at Pakenham and follows it west. That line
+    is read from the OSM ways directly rather than from the stored 'Longford' route,
+    which also carries the parallel Morwell-Dandenong line and doubles back on itself.
+    """
+    out = {}
+    trunk = [[[g['lat'], g['lon']] for g in w['geometry']] for w in ways
+             if w.get('tags', {}).get('name') == 'Longford - Dandenong']
+    if trunk:
+        line = stitch(trunk, COORDS['Gippsland'], COORDS['Melbourne'])
+        west = _suffix_from(line, PAKENHAM)
+        if line and _dist(west[-1], COORDS['Melbourne']) < 1.0:
+            out['PLLP'] = TRACED['PLLP_lateral'] + west[1:] + [COORDS['Melbourne']]
+    lateral = [[[g['lat'], g['lon']] for g in w['geometry']] for w in ways
+               if w.get('tags', {}).get('name') == NEWCASTLE_LATERAL]
+    if lateral:
+        tail = stitch(lateral, HEXHAM, COORDS['Sydney'])
+        if tail and _dist(tail[-1], COORDS['Sydney']) < 1.0:
+            out['HGP'] = TRACED['HGP_proposed'] + tail + [COORDS['Sydney']]
+    for arc, route in out.items():
+        out[arc] = [[round(la, 4), round(lo, 4)] for la, lo in rdp(route)]
+    return out
 
 # arc -> (From, To, OSM matcher). Matcher takes an OSM way's tags dict -> bool.
 # Trunk lines are matched by OSM `name`; the LNG export lines by `operator` (they
@@ -200,6 +259,10 @@ def build():
         geom[arc] = route
         print(f"  {arc:12s} <- {len(matched)} way(s) -> {len(route)} points")
 
+    for arc, route in composite_routes(ways, geom).items():
+        geom[arc] = route
+        print(f"  {arc:12s} <- composite OSM + traced -> {len(route)} points")
+
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(OUT_FILE, "w") as f:
         json.dump(geom, f, separators=(",", ":"))
@@ -207,5 +270,27 @@ def build():
     return geom
 
 
+def merge_composites(osm_files):
+    """Rebuild only the composite routes from saved Overpass JSON, into the existing
+    file. The full-region query is heavy and the public servers often refuse it;
+    this needs only the ways around the two composites."""
+    ways = []
+    for p in osm_files:
+        with open(p) as f:
+            ways += [e for e in json.load(f).get("elements", [])
+                     if e.get("type") == "way" and e.get("geometry")]
+    with open(OUT_FILE) as f:
+        geom = json.load(f)
+    for arc, route in composite_routes(ways, geom).items():
+        geom[arc] = route
+        print(f"  {arc:12s} <- composite OSM + traced -> {len(route)} points")
+    with open(OUT_FILE, "w") as f:
+        json.dump(geom, f, separators=(",", ":"))
+
+
 if __name__ == "__main__":
-    build()
+    import sys
+    if len(sys.argv) > 2 and sys.argv[1] == "--merge-composites":
+        merge_composites(sys.argv[2:])
+    else:
+        build()

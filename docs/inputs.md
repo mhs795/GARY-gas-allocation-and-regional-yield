@@ -67,7 +67,7 @@ take effect **on restart**, not mid-run.
 
 | File | What it is | Source |
 |---|---|---|
-| `nodes.csv` | 20 nodes: name, type, region, storage capability and plant rates | AEMO G26 *Processing Transmission Storage Facilities* |
+| `nodes.csv` | 23 nodes: name, type, region, storage capability and plant rates | AEMO G26 *Processing Transmission Storage Facilities* |
 | `arcs.csv` | 32 directed pipeline arcs: capacity and `Cost` | G26 capacities; posted GSOO reference tariffs. **`Cost` means different things for existing and new arcs** — see [`expansions.md`](expansions.md#what-the-cost-column-in-arcscsv-is) |
 | `supply.csv` | 15 supply rows, **one per tranche**: capacity, cost, `Tranche` (2P/2C), `Reserves_PJ`, decline rate, optional `EndYear`. A developed row holds a basin's 2P reserves at its 2P cost; the undeveloped row behind it holds the 2C contingent resource at the 2C cost and produces only once an AEMO field development is built | AEMO G26 *Reserves Costs assumptions* |
 | `expansion_options.csv` | 30 expansion candidates, one sourced row each — pipelines, terminals and the field developments that unlock each basin's 2C tranche | Public project announcements + AEMO G26 *Field Developments* — see [`expansions.md`](expansions.md) |
