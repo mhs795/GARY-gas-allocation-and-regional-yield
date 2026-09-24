@@ -17,6 +17,42 @@ Plus the section that matters most before quoting any of them:
 [ACIL Allen, *Natural gas price forecasts for the Final 2023 IASR and for the 2024 GSOO* (14 Jul 2023)](https://www.aemo.com.au/-/media/files/major-publications/isp/2023/iasr-supporting-material/acil-allen-natural-gas-price-forecasts.pdf) ·
 [ACCC LNG netback price series](https://www.accc.gov.au/inquiries-and-consultations/gas-inquiry-2017-30/lng-netback-price-series)
 
+**Every ACIL Allen input is from one of those two public reports**, both published by AEMO.
+Each value below was checked against the PDF text on 24 Sep 2026:
+
+| Input in GARY | Value | Report and section |
+|---|---|---|
+| Brent oil price by scenario, 2025/30/40/50 (`LNG_Anchors`) | e.g. Step Change 70 / 68 / 63 / 58 US$/bbl | Nov 2025, Table B.2 |
+| Share of LNG sold spot (`LNG_Anchors`) | e.g. Step Change 35 / 45 / 35 / 35 % | Nov 2025, Table B.3 |
+| Asian LNG price (`LNG_Anchors`) | e.g. Step Change 13.99 / 11.27 / 10.50 / 9.99 A$/GJ | Nov 2025, Table B.4 |
+| Oil-linked contract formula: FC, S, FX, C | 0.40, 0.12, 0.66, 1.055 | Nov 2025, §B.9 |
+| Shipping | A$0.80/GJ (US$0.56/mmbtu) | Nov 2025, §2.5.6 / §B.11.1 |
+| Regasification | A$1.50/GJ | Nov 2025, §2.5.6 / §B.11.2 |
+| Import injection cost, checked by `build_lng_prices.py` | e.g. Step Change 16.29 / 13.57 / 12.80 / 12.29 | Nov 2025, Table 2.1 (= Table B.7) |
+| $12/GJ Code cap, and ACIL's view that it acts more like a floor | $12/GJ | Nov 2025, §2.3.1 |
+| Cap applied as a ceiling on the netback | — | Jul 2023, §2.6.1 |
+| Foundation contracts untouched; exporters supply the domestic market and spot cargoes | — | Nov 2025, §2.3.2 |
+| Price formation from 2026 is the LNG netback | — | Jul 2023, §4.1 |
+| GasMark prices are spot-like; contract prices sit slightly higher | — | Nov 2025, §3.1 |
+| Residential/commercial 100% contract | 1.00 / 0.00 | Jul 2023, §2.6.1; Nov 2025, §4.1.1 |
+| Industrial 90/10 contract/spot | 0.90 / 0.10 | Jul 2023, §2.6.2 |
+| CCGT 80/20, OCGT 20/80 plus a premium | 0.80 / 0.20; 0.20 / 0.80 | Jul 2023, §2.7 |
+| GasMark maximises producer plus consumer surplus less transport, conversion and storage costs | — | Jul 2023, §A.1.1 |
+| Pipeline tariffs "According to 2023 GSOO" | — | Jul 2023, Table 3.1 |
+| "Step 2" overlay: vertical integration, market power, new supply priced off the netback | not reproduced | Jul 2023, §2.4 |
+| Southern prices "$12-13/GJ by 2027"; Narrabri "developed by 2030" (Step Change) | — | Nov 2025, §4.1.1 |
+
+**Not ACIL Allen's, and labelled so wherever they appear:**
+- the export netback. GARY derives it as ACIL's Asian LNG price less
+  `export_netback_deduction`. That deduction is **not published** by ACIL Allen or the
+  ACCC; GARY uses the midpoint of a public range.
+- the OCGT premium ($1.00/GJ). ACIL Allen say a premium exists but do not quantify it.
+- the foundation share (0.93), which comes from ACCC data.
+
+ACIL Allen's regional price forecasts are published only as charts (Nov 2025, Figures
+4.1–4.12), not tables. GARY therefore quotes ACIL price levels only where the report's
+text states them.
+
 ---
 
 ## 1. The nodal price
@@ -258,7 +294,7 @@ The Commonwealth's $12/GJ cap is applied the way ACIL Allen apply it — as a ce
 the *netback*, not bolted onto domestic prices:
 
 > "The price cap is operationalised in our model by setting the LNG netback price
-> (measured at Wallumbilla) to not move above $12/GJ." — ACIL Allen (14 July 2023), §4.1
+> (measured at Wallumbilla) to not move above $12/GJ." — ACIL Allen (14 July 2023), §2.6.1
 
 That rule is **self-terminating**, so no end year is needed: once long-run LNG prices pull
 the netback below $12 the ceiling stops binding, which is ACIL Allen's own assumption
@@ -456,7 +492,8 @@ second run is only worth paying for on Slower Growth.
 ### What is deliberately missing — market power and the Step 2 overlay
 
 **These prices are ACIL Allen's mechanical layer only.** On top of everything above, ACIL
-Allen apply a second step that GARY does not reproduce:
+Allen apply a second step that GARY does not reproduce (their "Step 2", ACIL Allen 14 Jul
+2023 §2.4):
 
 - vertical integration and gentailer portfolio effects;
 - **market power**;

@@ -72,7 +72,7 @@ take effect **on restart**, not mid-run.
 | `supply.csv` | 15 supply rows, **one per tranche**: capacity, cost, `Tranche` (2P/2C), `Reserves_PJ`, decline rate, optional `EndYear`. A developed row holds a basin's 2P reserves at its 2P cost; the undeveloped row behind it holds the 2C contingent resource at the 2C cost and produces only once an AEMO field development is built | AEMO G26 *Reserves Costs assumptions* |
 | `expansion_options.csv` | 30 expansion candidates, one sourced row each — pipelines, terminals and the field developments that unlock each basin's 2C tranche | Public project announcements + AEMO G26 *Field Developments* — see [`expansions.md`](expansions.md) |
 | `demand_profiles.csv` | The **raw** GBB city-gate + APLNG daily trace the demand builders index forward | Gas Bulletin Board actuals |
-| `acil_lng_anchors.csv`, `acil_lng_params.csv`, `acil_segment_weights.csv` | ACIL Allen netback inputs, mirrored on the workbook | ACIL Allen (14 Nov 2025) |
+| `acil_lng_anchors.csv`, `acil_lng_params.csv`, `acil_segment_weights.csv` | ACIL Allen LNG price and segment inputs, mirrored on the workbook | ACIL Allen (14 Nov 2025) for LNG prices; (14 Jul 2023) for segment weights. See the verification table in [`pricing.md`](pricing.md) |
 | `pipeline_geometry.json` | Real OpenStreetMap pipeline routes for the map | Built by `build_pipeline_geometry.py` |
 
 Capacities and tariffs for both the east coast and the NT are the 2026 GSOO's. The NT links

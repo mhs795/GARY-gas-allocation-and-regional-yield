@@ -309,7 +309,7 @@ Where the substance comes from:
 | Field capacity, cost, reserves | AEMO G26 *Reserves Costs assumptions* (2P and 2C) |
 | Pipeline capacity and tariffs | AEMO G26 *Processing Transmission Storage Facilities*; posted GSOO reference tariffs |
 | Storage capacity | G26, same workbook |
-| LNG prices, netback, import parity | **ACIL Allen**, *Wholesale natural gas prices for AEMO*, 14 Nov 2025 — the report behind the 2026 GSOO |
+| LNG prices, import parity, segment weights | **ACIL Allen**: *Wholesale natural gas prices for AEMO* (14 Nov 2025, the report behind the 2026 GSOO) and *Natural gas price forecasts for the Final 2023 IASR* (14 Jul 2023). Both are public on AEMO's site; every value is checked in [`docs/pricing.md`](docs/pricing.md). The export netback is GARY's own, derived from ACIL's LNG price |
 | Expansion candidates | Public project announcements, one sourced row each; every non-public figure labelled as GARY's own |
 
 Full detail — including the demand build pipeline and the GSOO sector split — is in
@@ -349,7 +349,7 @@ the cargo does not sail. That gives domestic prices a **ceiling**, and gives imp
 happened, reproducing ACIL Allen's contract/spot blend per segment (residential 100%
 contract, industrial 90/10, CCGT 80/20, OCGT 20/80 plus a premium). They appear at the
 bottom of the Prices tab. They are **ACIL Allen's mechanical layer only** — the market
-power and vertical integration overlay ACIL Allen apply on top is not reproduced, so
+power and vertical integration overlay ACIL Allen apply on top ("Step 2", 14 Jul 2023 §2.4) is not reproduced, so
 GARY's segment prices sit *below* their published forecasts wherever that overlay adds.
 
 All three, with sources and caveats, are in [`docs/pricing.md`](docs/pricing.md).

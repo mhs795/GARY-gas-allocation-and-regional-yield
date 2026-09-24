@@ -209,7 +209,7 @@ PARAMETERS = [
      "first number to test if a netback result matters."),
     ("ACIL Allen LNG price", "code_price_cap", 12.00, "A$/GJ",
      "Gas Market Code cap, ACIL Allen (14 Nov 2025) 2.3.1; applied as a ceiling on "
-     "the LNG netback per ACIL Allen (14 Jul 2023) 4.1. Self-terminating: once the "
+     "the LNG netback per ACIL Allen (14 Jul 2023) 2.6.1. Self-terminating: once the "
      "netback falls below it the ceiling stops binding."),
 
     ("LNG trains", "lng_availability", 0.897, "fraction",
@@ -273,13 +273,15 @@ SCENARIO_LEVERS = [
     # scenario. Using published paths rather than an invented percentage shift
     # keeps every number in the chain sourced.
     ("LNG_Netback", "Low", "Accelerated", "", "",
-     "Weak global LNG demand: ACIL Allen's Accelerated Transition price path "
-     "(netback $7.33/GJ in 2030, $3.94 by 2050)"),
+     "Weak global LNG demand: ACIL Allen's Accelerated Transition LNG price path "
+     "(14 Nov 2025, Table B.4). GARY's netback off it (less export_netback_deduction): "
+     "$7.33/GJ in 2030, $3.94 by 2050"),
     ("LNG_Netback", "Medium", "baseline", "", "",
      "The run's own GSOO scenario price path"),
     ("LNG_Netback", "High", "SlowerGrowth", "", "",
-     "Strong global LNG demand: ACIL Allen's Slower Growth price path "
-     "(netback $10.39/GJ in 2030, at the $12 Code cap from 2040)"),
+     "Strong global LNG demand: ACIL Allen's Slower Growth LNG price path "
+     "(14 Nov 2025, Table B.4). GARY's netback off it: $10.39/GJ in 2030, at the $12 "
+     "Code cap from 2040"),
 ]
 
 

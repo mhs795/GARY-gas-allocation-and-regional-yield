@@ -3414,7 +3414,7 @@ def update_segment_prices(key, end_year, active_tab, theme):
            'Both legs come from ONE solve, so ACIL Allen\u2019s uncapped Run 2 is '
            'approximated by the capped run \u2014 identical wherever the $12 Code '
            'cap does not bind, which is all of Step Change and all of Accelerated. ')
-        + 'ACIL Allen\u2019s Step 2 overlay \u2014 vertical integration, gentailer '
+        + 'ACIL Allen\u2019s Step 2 overlay (14 Jul 2023, \u00a72.4) \u2014 vertical integration, gentailer '
           'portfolio effects, MARKET POWER, and inflating new supply costs toward '
           'netback \u2014 is NOT reproduced: it is judgement applied outside their '
           'model, per generator and per contract, and is not reproducible from '

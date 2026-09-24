@@ -78,7 +78,7 @@ its basin's **2C** tranche in `supply.csv`, which cannot produce at all until on
 | `Beetaloo_Dev` | Beetaloo | 450 TJ/d | **none** ¶ ¤ | — | Appraisal |
 | `Beetaloo_Pilot` | Beetaloo | 40 TJ/d | **none** ¶ ¤ | 2026 | Appraisal (pilot figure, not full field) |
 | `Carpentaria_Pilot` | Beetaloo | 25 TJ/d | **none** ¶ ¤ | 2025 | Committed |
-| `Narrabri_Gas_Project` | Gunnedah | 192 TJ/d ◊ | **none** ¶ | 2030 ◊ | Producing (5 TJ/d to Wilga Park only); "significant expansion planned". Sized at the Future Gas Strategy's ~70 PJ/yr; dated to ACIL Allen's Step Change assumption |
+| `Narrabri_Gas_Project` | Gunnedah | 192 TJ/d ◊ | **none** ¶ | 2030 ◊ | Producing (5 TJ/d to Wilga Park only); "significant expansion planned". Sized at the Future Gas Strategy's ~70 PJ/yr; dated to ACIL Allen (14 Nov 2025) §4.1.1: "Narrabri (which we assume is developed by 2030)" |
 
 ◊ AEMO publishes no deliverability for this development. See
 [`model.md`](model.md#sizing-a-2c-tranches-deliverability) for the sizing rule — AEMO's own

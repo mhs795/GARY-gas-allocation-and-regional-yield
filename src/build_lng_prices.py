@@ -81,7 +81,7 @@ ceiling on the netback, not as a cap bolted onto domestic prices.
 
     "The price cap is operationalised in our model by setting the LNG netback
      price (measured at Wallumbilla) to not move above $12/GJ."
-        -- ACIL Allen (14 July 2023), s4.1
+        -- ACIL Allen (14 July 2023), s2.6.1
 
 That rule is self-terminating, which is why no end year is needed: once long-run
 LNG prices pull the netback below $12 the ceiling stops binding on its own, which

@@ -66,8 +66,8 @@ Added 23 Sep 2026.
 - **How big:** unmeasured. Narrabri is the only NSW supply source, so its cost relative to
   imports decides whether it is built.
 - **To close:**
-  - Find the Future Gas Strategy Analytical Report figure, or ACIL Allen's Narrabri
-    assumption.
+  - Find the Future Gas Strategy Analytical Report figure. ACIL Allen's public reports
+    date Narrabri ("developed by 2030", 14 Nov 2025 §4.1.1) but do not publish its cost.
   - Run a sensitivity at $6.40 and $10.
   - Replace the pipeline capital with a sourced figure if one is published.
 
@@ -169,7 +169,7 @@ than the posted median, which suggests it is zonal. The AER access arrangement w
 settle it.
 
 ### #9 — Early-year prices are about half of ACIL Allen's
-ACIL has about $12–13/GJ in 2027; GARY has about $6.4. The gap is structural, and
+ACIL Allen have "$12-13/GJ by 2027" (14 Nov 2025, §4.1.1, Step Change residential); GARY has about $6.4. The gap is structural, and
 `docs/pricing.md` explains it:
 - Before about 2032 every field is on AEMO's 2P cost, which is mostly opex.
 - GARY does not reproduce ACIL's market-power overlay.

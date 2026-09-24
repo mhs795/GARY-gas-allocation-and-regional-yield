@@ -57,7 +57,7 @@ WEIGHTS (all from ACIL Allen (14 July 2023), s2.6 and s2.7)
 
 WHAT IS DELIBERATELY NOT REPRODUCED
 -----------------------------------
-ACIL Allen's Step 2 overlay -- vertical integration, gentailer portfolio effects,
+ACIL Allen's Step 2 overlay (14 July 2023, s2.4) -- vertical integration, gentailer portfolio effects,
 market power, and "inflating" new supply costs toward netback because new entrants
 price off the next best alternative -- is judgement applied outside the model, per
 generator and per contract. It is not reproducible from published material, and
